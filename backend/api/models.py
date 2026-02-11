@@ -116,6 +116,118 @@ class Account(models.Model):
         self.full_clean()
         super().save(*args, **kwargs)
 
+    # 汇总字段（@property）
+    @property
+    def holding_cost(self):
+        """持仓成本"""
+        from decimal import Decimal
+        if self.parent is None:
+            # 父账户：汇总所有子账户
+            return sum(
+                (child.holding_cost for child in self.children.all()),
+                Decimal('0')
+            )
+        else:
+            # 子账户：汇总所有持仓
+            return sum(
+                (pos.holding_cost for pos in self.positions.all()),
+                Decimal('0')
+            )
+
+    @property
+    def holding_value(self):
+        """持仓市值（latest_nav）"""
+        from decimal import Decimal
+        if self.parent is None:
+            # 父账户：汇总所有子账户
+            return sum(
+                (child.holding_value for child in self.children.all()),
+                Decimal('0')
+            )
+        else:
+            # 子账户：汇总所有持仓
+            return sum(
+                (pos.fund.latest_nav * pos.holding_share
+                 for pos in self.positions.all() if pos.fund.latest_nav),
+                Decimal('0')
+            )
+
+    @property
+    def pnl(self):
+        """总盈亏"""
+        from decimal import Decimal
+        return self.holding_value - self.holding_cost
+
+    @property
+    def pnl_rate(self):
+        """收益率"""
+        from decimal import Decimal
+        if self.holding_cost == 0:
+            return None
+        return (self.pnl / self.holding_cost).quantize(Decimal('0.0001'))
+
+    @property
+    def estimate_value(self):
+        """预估市值"""
+        from decimal import Decimal
+        if self.parent is None:
+            # 父账户：汇总所有子账户
+            values = [child.estimate_value for child in self.children.all()]
+            if None in values:
+                return None
+            return sum(values, Decimal('0'))
+        else:
+            # 子账户：汇总所有持仓
+            total = Decimal('0')
+            for pos in self.positions.all():
+                if pos.fund.estimate_nav is None:
+                    return None  # 任一持仓缺失估值，返回 None
+                total += pos.fund.estimate_nav * pos.holding_share
+            return total if self.positions.exists() else Decimal('0')
+
+    @property
+    def estimate_pnl(self):
+        """预估盈亏"""
+        from decimal import Decimal
+        if self.estimate_value is None:
+            return None
+        return self.estimate_value - self.holding_cost
+
+    @property
+    def estimate_pnl_rate(self):
+        """预估收益率"""
+        from decimal import Decimal
+        if self.estimate_pnl is None or self.holding_cost == 0:
+            return None
+        return (self.estimate_pnl / self.holding_cost).quantize(Decimal('0.0001'))
+
+    @property
+    def today_pnl(self):
+        """今日盈亏"""
+        from decimal import Decimal
+        if self.parent is None:
+            # 父账户：汇总所有子账户
+            values = [child.today_pnl for child in self.children.all()]
+            if None in values:
+                return None
+            return sum(values, Decimal('0'))
+        else:
+            # 子账户：汇总所有持仓
+            total = Decimal('0')
+            for pos in self.positions.all():
+                if pos.fund.estimate_nav is None or pos.fund.latest_nav is None:
+                    return None  # 任一持仓缺失估值，返回 None
+                total += pos.holding_share * (pos.fund.estimate_nav - pos.fund.latest_nav)
+            return total if self.positions.exists() else Decimal('0')
+
+    @property
+    def today_pnl_rate(self):
+        """今日收益率"""
+        from decimal import Decimal
+        if self.today_pnl is None or self.holding_value == 0:
+            return None
+        return (self.today_pnl / self.holding_value).quantize(Decimal('0.0001'))
+
 
 class Position(models.Model):
     """持仓汇总模型（只读，由流水计算）"""

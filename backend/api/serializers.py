@@ -35,19 +35,49 @@ class AccountSerializer(serializers.ModelSerializer):
         allow_null=True
     )
 
+    # 汇总字段
+    holding_cost = serializers.DecimalField(max_digits=20, decimal_places=2, read_only=True)
+    holding_value = serializers.DecimalField(max_digits=20, decimal_places=2, read_only=True)
+    pnl = serializers.DecimalField(max_digits=20, decimal_places=2, read_only=True)
+    pnl_rate = serializers.DecimalField(max_digits=10, decimal_places=4, read_only=True, allow_null=True)
+    estimate_value = serializers.DecimalField(max_digits=20, decimal_places=2, read_only=True, allow_null=True)
+    estimate_pnl = serializers.DecimalField(max_digits=20, decimal_places=2, read_only=True, allow_null=True)
+    estimate_pnl_rate = serializers.DecimalField(max_digits=10, decimal_places=4, read_only=True, allow_null=True)
+    today_pnl = serializers.DecimalField(max_digits=20, decimal_places=2, read_only=True, allow_null=True)
+    today_pnl_rate = serializers.DecimalField(max_digits=10, decimal_places=4, read_only=True, allow_null=True)
+
+    # 父账户专用：子账户列表
+    children = serializers.SerializerMethodField()
+
     class Meta:
         model = Account
         fields = [
             'id', 'name', 'parent', 'is_default',
+            'holding_cost', 'holding_value', 'pnl', 'pnl_rate',
+            'estimate_value', 'estimate_pnl', 'estimate_pnl_rate',
+            'today_pnl', 'today_pnl_rate',
+            'children',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
+    def get_children(self, obj):
+        """获取子账户列表（仅父账户）"""
+        if obj.parent is not None:
+            return None
+        children = obj.children.all()
+        return AccountSerializer(children, many=True, context=self.context).data
+
     def to_representation(self, instance):
-        """序列化时将 UUID 转为字符串"""
+        """序列化时将 UUID 转为字符串，移除子账户的 children 字段"""
         data = super().to_representation(instance)
         if data.get('parent'):
             data['parent'] = str(data['parent'])
+
+        # 子账户不返回 children 字段
+        if instance.parent is not None:
+            data.pop('children', None)
+
         return data
 
     def validate(self, data):

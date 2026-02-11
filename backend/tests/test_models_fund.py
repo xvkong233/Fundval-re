@@ -32,8 +32,8 @@ class TestFundModel:
         assert fund.fund_code == '000001'
         assert fund.fund_name == '华夏成长混合'
         assert fund.fund_type == '混合型'
-        assert fund.yesterday_nav is None
-        assert fund.yesterday_date is None
+        assert fund.latest_nav is None
+        assert fund.latest_nav_date is None
 
     def test_fund_code_unique(self):
         """测试基金代码唯一性"""
@@ -61,14 +61,14 @@ class TestFundModel:
         )
 
         # 更新净值
-        fund.yesterday_nav = Decimal('1.5000')
-        fund.yesterday_date = date(2024, 2, 11)
+        fund.latest_nav = Decimal('1.5000')
+        fund.latest_nav_date = date(2024, 2, 11)
         fund.save()
 
         # 重新查询验证
         fund.refresh_from_db()
-        assert fund.yesterday_nav == Decimal('1.5000')
-        assert fund.yesterday_date == date(2024, 2, 11)
+        assert fund.latest_nav == Decimal('1.5000')
+        assert fund.latest_nav_date == date(2024, 2, 11)
 
     def test_fund_str_representation(self):
         """测试基金字符串表示"""

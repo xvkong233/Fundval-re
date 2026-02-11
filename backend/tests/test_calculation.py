@@ -38,7 +38,7 @@ class TestPositionCalculation:
         return Fund.objects.create(
             fund_code='000001',
             fund_name='华夏成长混合',
-            yesterday_nav=Decimal('1.5000'),
+            latest_nav=Decimal('1.5000'),
         )
 
     def test_single_buy(self, account, fund):
@@ -307,7 +307,7 @@ class TestPnLCalculation:
         return Fund.objects.create(
             fund_code='000001',
             fund_name='华夏成长混合',
-            yesterday_nav=Decimal('1.5000'),
+            latest_nav=Decimal('1.5000'),
         )
 
     def test_pnl_profit(self, account, fund):
@@ -351,7 +351,7 @@ class TestPnLCalculation:
         fund = Fund.objects.create(
             fund_code='000002',
             fund_name='测试基金',
-            yesterday_nav=None,
+            latest_nav=None,
         )
 
         position = Position.objects.create(

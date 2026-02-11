@@ -134,7 +134,7 @@ class TestPositionOperationCreateAPI:
         return Fund.objects.create(
             fund_code='000001',
             fund_name='华夏成长混合',
-            yesterday_nav=Decimal('1.5000'),
+            latest_nav=Decimal('1.5000'),
         )
 
     def test_create_buy_operation(self, client, user, account, fund):

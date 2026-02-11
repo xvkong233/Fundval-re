@@ -147,7 +147,7 @@ class FundViewSet(viewsets.ReadOnlyModelViewSet):
                 "estimate_nav": "1.2345",
                 "estimate_growth": "1.23",
                 "estimate_time": "2026-02-11T14:30:00Z",
-                "yesterday_nav": "1.2200",
+                "latest_nav": "1.2200",
                 "from_cache": true
             },
             ...
@@ -184,7 +184,8 @@ class FundViewSet(viewsets.ReadOnlyModelViewSet):
                     'estimate_nav': str(fund.estimate_nav),
                     'estimate_growth': str(fund.estimate_growth) if fund.estimate_growth else None,
                     'estimate_time': fund.estimate_time.isoformat(),
-                    'yesterday_nav': str(fund.yesterday_nav) if fund.yesterday_nav else None,
+                    'latest_nav': str(fund.latest_nav) if fund.latest_nav else None,
+                    'latest_nav_date': fund.latest_nav_date.isoformat() if fund.latest_nav_date else None,
                     'from_cache': True
                 }
             else:
@@ -218,7 +219,8 @@ class FundViewSet(viewsets.ReadOnlyModelViewSet):
                                 'estimate_nav': str(data.get('estimate_nav')),
                                 'estimate_growth': str(data.get('estimate_growth')),
                                 'estimate_time': fund.estimate_time.isoformat(),
-                                'yesterday_nav': str(fund.yesterday_nav) if fund.yesterday_nav else None,
+                                'latest_nav': str(fund.latest_nav) if fund.latest_nav else None,
+                                'latest_nav_date': fund.latest_nav_date.isoformat() if fund.latest_nav_date else None,
                                 'from_cache': False
                             }
                     except Exception as e:
@@ -558,8 +560,8 @@ class UserViewSet(viewsets.ViewSet):
         total_pnl = Decimal('0')
 
         for position in positions:
-            if position.fund.yesterday_nav:
-                value = position.fund.yesterday_nav * position.holding_share
+            if position.fund.latest_nav:
+                value = position.fund.latest_nav * position.holding_share
                 total_value += value
                 total_pnl += position.pnl
 

@@ -14,8 +14,15 @@ class Fund(models.Model):
     fund_type = models.CharField(max_length=50, null=True, blank=True)
 
     # 净值数据（由数据源更新）
-    yesterday_nav = models.DecimalField(max_digits=10, decimal_places=4, null=True, blank=True)
-    yesterday_date = models.DateField(null=True, blank=True)
+    latest_nav = models.DecimalField(
+        max_digits=10, decimal_places=4,
+        null=True, blank=True,
+        help_text='最新净值'
+    )
+    latest_nav_date = models.DateField(
+        null=True, blank=True,
+        help_text='最新净值日期'
+    )
 
     # 实时估值数据（缓存）
     estimate_nav = models.DecimalField(
@@ -94,9 +101,9 @@ class Position(models.Model):
     @property
     def pnl(self):
         """盈亏（实时计算）"""
-        if not self.fund.yesterday_nav or self.holding_share == 0:
+        if not self.fund.latest_nav or self.holding_share == 0:
             return 0
-        return (self.fund.yesterday_nav - self.holding_nav) * self.holding_share
+        return (self.fund.latest_nav - self.holding_nav) * self.holding_share
 
 
 class PositionOperation(models.Model):

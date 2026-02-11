@@ -91,8 +91,8 @@ class TestFundDetailAPI:
             fund_code='000001',
             fund_name='华夏成长混合',
             fund_type='混合型',
-            yesterday_nav=Decimal('1.5000'),
-            yesterday_date=date(2024, 2, 10),
+            latest_nav=Decimal('1.5000'),
+            latest_nav_date=date(2024, 2, 10),
         )
 
     def test_get_fund_detail(self, client, fund):
@@ -101,7 +101,7 @@ class TestFundDetailAPI:
         assert response.status_code == 200
         assert response.data['fund_code'] == '000001'
         assert response.data['fund_name'] == '华夏成长混合'
-        assert Decimal(response.data['yesterday_nav']) == Decimal('1.5000')
+        assert Decimal(response.data['latest_nav']) == Decimal('1.5000')
 
     def test_get_nonexistent_fund(self, client):
         """测试获取不存在的基金"""
@@ -216,7 +216,7 @@ class TestBatchEstimateAPI:
         fund1 = Fund.objects.create(
             fund_code='000001',
             fund_name='华夏成长混合',
-            yesterday_nav=Decimal('1.5000'),
+            latest_nav=Decimal('1.5000'),
             estimate_nav=Decimal('1.5100'),
             estimate_growth=Decimal('0.67'),
             estimate_time=timezone.now() - timedelta(minutes=3),  # 3分钟前，缓存有效
@@ -224,7 +224,7 @@ class TestBatchEstimateAPI:
         fund2 = Fund.objects.create(
             fund_code='000002',
             fund_name='华夏大盘精选',
-            yesterday_nav=Decimal('2.0000'),
+            latest_nav=Decimal('2.0000'),
             estimate_nav=Decimal('2.0100'),
             estimate_growth=Decimal('0.50'),
             estimate_time=timezone.now() - timedelta(minutes=10),  # 10分钟前，缓存失效
@@ -232,7 +232,7 @@ class TestBatchEstimateAPI:
         fund3 = Fund.objects.create(
             fund_code='110022',
             fund_name='易方达消费行业',
-            yesterday_nav=Decimal('3.0000'),
+            latest_nav=Decimal('3.0000'),
             # 没有估值数据
         )
         return [fund1, fund2, fund3]

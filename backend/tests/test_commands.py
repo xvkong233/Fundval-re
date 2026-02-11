@@ -103,8 +103,8 @@ class TestUpdateNavCommand:
 
         # 验证净值已更新
         fund.refresh_from_db()
-        assert fund.yesterday_nav == Decimal('1.1490')
-        assert fund.yesterday_date == date(2026, 2, 10)
+        assert fund.latest_nav == Decimal('1.1490')
+        assert fund.latest_nav_date == date(2026, 2, 10)
 
     @patch('api.sources.eastmoney.requests.get')
     def test_update_nav_single_fund(self, mock_get, fund):
@@ -121,7 +121,7 @@ class TestUpdateNavCommand:
 
         # 验证净值已更新
         fund.refresh_from_db()
-        assert fund.yesterday_nav == Decimal('1.1490')
+        assert fund.latest_nav == Decimal('1.1490')
 
     @patch('api.sources.eastmoney.requests.get')
     def test_update_nav_api_error(self, mock_get, fund):
@@ -134,7 +134,7 @@ class TestUpdateNavCommand:
 
         # 净值应该没有更新
         fund.refresh_from_db()
-        assert fund.yesterday_nav is None
+        assert fund.latest_nav is None
 
 
 @pytest.mark.django_db

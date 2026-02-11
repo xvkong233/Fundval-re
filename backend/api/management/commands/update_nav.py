@@ -1,7 +1,7 @@
 """
 更新基金净值命令
 
-从数据源更新基金的昨日净值
+从数据源更新基金的最新净值
 """
 import logging
 from django.core.management.base import BaseCommand
@@ -45,8 +45,8 @@ class Command(BaseCommand):
         for fund in funds:
             try:
                 data = source.fetch_realtime_nav(fund.fund_code)
-                fund.yesterday_nav = data['nav']
-                fund.yesterday_date = data['nav_date']
+                fund.latest_nav = data['nav']
+                fund.latest_nav_date = data['nav_date']
                 fund.save()
                 success_count += 1
 

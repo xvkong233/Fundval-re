@@ -20,7 +20,7 @@ class FundSerializer(serializers.ModelSerializer):
         model = Fund
         fields = [
             'id', 'fund_code', 'fund_name', 'fund_type',
-            'yesterday_nav', 'yesterday_date',
+            'latest_nav', 'latest_nav_date',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']

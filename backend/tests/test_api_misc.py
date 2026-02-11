@@ -162,12 +162,12 @@ class TestUserSummaryAPI:
         fund1 = Fund.objects.create(
             fund_code='000001',
             fund_name='基金1',
-            yesterday_nav=Decimal('1.5000'),
+            latest_nav=Decimal('1.5000'),
         )
         fund2 = Fund.objects.create(
             fund_code='000002',
             fund_name='基金2',
-            yesterday_nav=Decimal('2.0000'),
+            latest_nav=Decimal('2.0000'),
         )
 
         Position.objects.create(

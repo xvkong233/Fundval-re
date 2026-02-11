@@ -140,19 +140,30 @@ const MainLayout = ({ children }) => {
   // 桌面端布局
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Sider width={200} theme="light">
+      <Sider
+        width={200}
+        theme="light"
+        style={{
+          position: 'fixed',
+          left: 0,
+          top: 0,
+          bottom: 0,
+          overflow: 'auto',
+        }}
+      >
         <div
           style={{
             height: 64,
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 18,
+            padding: '0 16px',
+            fontSize: 16,
             fontWeight: 'bold',
             borderBottom: '1px solid #f0f0f0',
           }}
         >
-          基金估值与资产管理系统
+          <FundOutlined style={{ fontSize: 24, color: '#1890ff', marginRight: 12 }} />
+          <span>Fundval</span>
         </div>
         <Menu
           mode="inline"
@@ -162,7 +173,7 @@ const MainLayout = ({ children }) => {
           style={{ borderRight: 0 }}
         />
       </Sider>
-      <Layout>
+      <Layout style={{ marginLeft: 200 }}>
         <Header
           style={{
             background: '#fff',
@@ -171,6 +182,11 @@ const MainLayout = ({ children }) => {
             justifyContent: 'flex-end',
             alignItems: 'center',
             borderBottom: '1px solid #f0f0f0',
+            position: 'fixed',
+            top: 0,
+            right: 0,
+            left: 200,
+            zIndex: 999,
           }}
         >
           <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
@@ -180,7 +196,7 @@ const MainLayout = ({ children }) => {
             </Space>
           </Dropdown>
         </Header>
-        <Content style={{ padding: 24, background: '#f0f2f5' }}>
+        <Content style={{ marginTop: 64, padding: 24, background: '#f0f2f5', minHeight: 'calc(100vh - 64px)' }}>
           {children}
         </Content>
       </Layout>

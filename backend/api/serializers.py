@@ -1,0 +1,193 @@
+"""
+序列化器
+
+用于 API 数据的序列化和反序列化
+"""
+from rest_framework import serializers
+from django.contrib.auth import get_user_model
+from .models import (
+    Fund, Account, Position, PositionOperation,
+    Watchlist, WatchlistItem, EstimateAccuracy
+)
+
+User = get_user_model()
+
+
+class FundSerializer(serializers.ModelSerializer):
+    """基金序列化器"""
+
+    class Meta:
+        model = Fund
+        fields = [
+            'id', 'fund_code', 'fund_name', 'fund_type',
+            'yesterday_nav', 'yesterday_date',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class AccountSerializer(serializers.ModelSerializer):
+    """账户序列化器"""
+
+    parent = serializers.PrimaryKeyRelatedField(
+        queryset=Account.objects.all(),
+        required=False,
+        allow_null=True
+    )
+
+    class Meta:
+        model = Account
+        fields = [
+            'id', 'name', 'parent', 'is_default',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def to_representation(self, instance):
+        """序列化时将 UUID 转为字符串"""
+        data = super().to_representation(instance)
+        if data.get('parent'):
+            data['parent'] = str(data['parent'])
+        return data
+
+    def validate(self, data):
+        """验证账户名唯一性"""
+        user = self.context['request'].user
+        name = data.get('name')
+
+        # 更新时排除自己
+        if self.instance:
+            if Account.objects.filter(user=user, name=name).exclude(id=self.instance.id).exists():
+                raise serializers.ValidationError({'name': '账户名已存在'})
+        else:
+            if Account.objects.filter(user=user, name=name).exists():
+                raise serializers.ValidationError({'name': '账户名已存在'})
+
+        return data
+
+
+class PositionSerializer(serializers.ModelSerializer):
+    """持仓序列化器"""
+
+    fund_code = serializers.CharField(source='fund.fund_code', read_only=True)
+    fund_name = serializers.CharField(source='fund.fund_name', read_only=True)
+    account_name = serializers.CharField(source='account.name', read_only=True)
+    pnl = serializers.DecimalField(max_digits=20, decimal_places=2, read_only=True)
+
+    class Meta:
+        model = Position
+        fields = [
+            'id', 'account', 'account_name', 'fund', 'fund_code', 'fund_name',
+            'holding_share', 'holding_cost', 'holding_nav', 'pnl',
+            'updated_at'
+        ]
+        read_only_fields = [
+            'id', 'holding_share', 'holding_cost', 'holding_nav', 'updated_at'
+        ]
+
+
+class PositionOperationSerializer(serializers.ModelSerializer):
+    """持仓操作序列化器"""
+
+    fund_code = serializers.CharField(write_only=True)
+    fund_name = serializers.CharField(source='fund.fund_name', read_only=True)
+    account_name = serializers.CharField(source='account.name', read_only=True)
+
+    class Meta:
+        model = PositionOperation
+        fields = [
+            'id', 'account', 'account_name', 'fund', 'fund_code', 'fund_name',
+            'operation_type', 'operation_date', 'before_15',
+            'amount', 'share', 'nav',
+            'created_at'
+        ]
+        read_only_fields = ['id', 'fund', 'created_at']
+
+    def validate(self, data):
+        """验证并设置 fund"""
+        fund_code = data.pop('fund_code', None)
+        if not fund_code:
+            raise serializers.ValidationError({'fund_code': '基金代码不能为空'})
+
+        try:
+            fund = Fund.objects.get(fund_code=fund_code)
+            data['fund'] = fund
+        except Fund.DoesNotExist:
+            raise serializers.ValidationError({'fund_code': '基金不存在'})
+
+        return data
+
+    def create(self, validated_data):
+        """创建操作并自动重算持仓"""
+        from .services import recalculate_position
+
+        operation = super().create(validated_data)
+
+        # 自动重算持仓
+        recalculate_position(operation.account.id, operation.fund.id)
+
+        return operation
+
+
+class WatchlistItemSerializer(serializers.ModelSerializer):
+    """自选列表项序列化器"""
+
+    fund_code = serializers.CharField(source='fund.fund_code', read_only=True)
+    fund_name = serializers.CharField(source='fund.fund_name', read_only=True)
+    fund_type = serializers.CharField(source='fund.fund_type', read_only=True)
+
+    class Meta:
+        model = WatchlistItem
+        fields = ['id', 'fund', 'fund_code', 'fund_name', 'fund_type', 'order', 'created_at']
+        read_only_fields = ['id', 'created_at']
+
+
+class WatchlistSerializer(serializers.ModelSerializer):
+    """自选列表序列化器"""
+
+    items = WatchlistItemSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Watchlist
+        fields = ['id', 'name', 'items', 'created_at']
+        read_only_fields = ['id', 'created_at']
+
+    def validate(self, data):
+        """验证自选列表名唯一性"""
+        user = self.context['request'].user
+        name = data.get('name')
+
+        if self.instance:
+            if Watchlist.objects.filter(user=user, name=name).exclude(id=self.instance.id).exists():
+                raise serializers.ValidationError({'name': '自选列表名已存在'})
+        else:
+            if Watchlist.objects.filter(user=user, name=name).exists():
+                raise serializers.ValidationError({'name': '自选列表名已存在'})
+
+        return data
+
+
+class UserRegisterSerializer(serializers.Serializer):
+    """用户注册序列化器"""
+
+    username = serializers.CharField(max_length=150)
+    password = serializers.CharField(write_only=True, min_length=8)
+    password_confirm = serializers.CharField(write_only=True)
+
+    def validate_username(self, value):
+        """验证用户名唯一性"""
+        if User.objects.filter(username=value).exists():
+            raise serializers.ValidationError('用户名已存在')
+        return value
+
+    def validate(self, data):
+        """验证密码一致性"""
+        if data['password'] != data['password_confirm']:
+            raise serializers.ValidationError({'password_confirm': '两次密码不一致'})
+        return data
+
+    def create(self, validated_data):
+        """创建用户"""
+        validated_data.pop('password_confirm')
+        user = User.objects.create_user(**validated_data)
+        return user

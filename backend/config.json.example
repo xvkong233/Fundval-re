@@ -1,0 +1,14 @@
+{
+  "port": 8000,
+  "db_type": "postgresql",
+  "db_config": {
+    "host": "db",
+    "port": 5432,
+    "name": "fundval",
+    "user": "fundval",
+    "password": "fundval"
+  },
+  "allow_register": false,
+  "system_initialized": false,
+  "debug": false
+}

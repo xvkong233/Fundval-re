@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Fund, Account, Position, PositionOperation, Watchlist, WatchlistItem
+from .models import Fund, Account, Position, PositionOperation, Watchlist, WatchlistItem, FundNavHistory
 
 
 @admin.register(Fund)
@@ -55,3 +55,13 @@ class WatchlistItemAdmin(admin.ModelAdmin):
     list_display = ['watchlist', 'fund', 'order', 'created_at']
     list_filter = ['watchlist']
     search_fields = ['fund__fund_name', 'fund__fund_code']
+
+
+@admin.register(FundNavHistory)
+class FundNavHistoryAdmin(admin.ModelAdmin):
+    list_display = ['fund', 'nav_date', 'unit_nav', 'accumulated_nav', 'daily_growth', 'created_at']
+    list_filter = ['nav_date']
+    search_fields = ['fund__fund_code', 'fund__fund_name']
+    date_hierarchy = 'nav_date'
+    readonly_fields = ['created_at', 'updated_at']
+    ordering = ['-nav_date']

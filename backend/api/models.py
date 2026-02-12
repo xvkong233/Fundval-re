@@ -400,6 +400,48 @@ class EstimateAccuracy(models.Model):
             self.save()
 
 
+class FundNavHistory(models.Model):
+    """基金历史净值"""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    fund = models.ForeignKey(Fund, on_delete=models.CASCADE, related_name='nav_history')
+
+    # 净值数据
+    nav_date = models.DateField(help_text='净值日期')
+    unit_nav = models.DecimalField(
+        max_digits=10, decimal_places=4,
+        help_text='单位净值'
+    )
+    accumulated_nav = models.DecimalField(
+        max_digits=10, decimal_places=4,
+        null=True, blank=True,
+        help_text='累计净值'
+    )
+    daily_growth = models.DecimalField(
+        max_digits=10, decimal_places=4,
+        null=True, blank=True,
+        help_text='日增长率（%）'
+    )
+
+    # 元数据
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'fund_nav_history'
+        verbose_name = '基金历史净值'
+        verbose_name_plural = '基金历史净值'
+        unique_together = [['fund', 'nav_date']]
+        ordering = ['-nav_date']
+        indexes = [
+            models.Index(fields=['fund', '-nav_date']),
+            models.Index(fields=['nav_date']),
+        ]
+
+    def __str__(self):
+        return f'{self.fund.fund_code} - {self.nav_date}'
+
+
 # Signal handlers
 from django.db.models.signals import post_delete
 from django.dispatch import receiver

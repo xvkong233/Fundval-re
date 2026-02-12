@@ -30,6 +30,8 @@ export const changePassword = (oldPassword, newPassword) =>
 export const fundsAPI = {
   list: (params) => api.get('/funds/', { params }),
   get: (code) => api.get(`/funds/${code}/`),
+  detail: (fundCode) => api.get(`/funds/${fundCode}/`),
+  estimate: (fundCode) => api.get(`/funds/${fundCode}/estimate/`),
   search: (keyword) => api.get('/funds/', { params: { search: keyword } }),
   getEstimate: (code, source) => api.get(`/funds/${code}/estimate/`, { params: { source } }),
   getAccuracy: (code) => api.get(`/funds/${code}/accuracy/`),
@@ -39,6 +41,14 @@ export const fundsAPI = {
     fund_code: fundCode,
     operation_date: operationDate,
     before_15: before15
+  }),
+  navHistory: (fundCode, params) => api.get('/nav-history/', {
+    params: { fund_code: fundCode, ...params }
+  }),
+  syncNavHistory: (fundCodes, startDate, endDate) => api.post('/nav-history/sync/', {
+    fund_codes: fundCodes,
+    start_date: startDate,
+    end_date: endDate
   }),
 };
 
@@ -53,6 +63,7 @@ export const accountsAPI = {
 // 持仓管理
 export const positionsAPI = {
   list: (accountId) => api.get('/positions/', { params: { account_id: accountId } }),
+  listByFund: (fundCode) => api.get('/positions/', { params: { fund_code: fundCode } }),
   createOperation: (data) => api.post('/positions/operations/', data),
   listOperations: (params) => api.get('/positions/operations/', { params }),
   deleteOperation: (id) => api.delete(`/positions/operations/${id}/`),

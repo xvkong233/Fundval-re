@@ -503,6 +503,46 @@ class PositionViewSet(viewsets.ReadOnlyModelViewSet):
         recalculate_all_positions(account_id=account_id)
         return Response({'message': '重算完成'})
 
+    @action(detail=False, methods=['get'])
+    def history(self, request):
+        """
+        获取账户历史市值
+
+        GET /api/positions/history/?account_id=xxx&days=30
+
+        响应:
+        [
+            {'date': '2026-02-01', 'value': 10000.00, 'cost': 9500.00},
+            {'date': '2026-02-02', 'value': 10200.00, 'cost': 9500.00},
+            ...
+        ]
+        """
+        from .services.position_history import calculate_account_history
+
+        account_id = request.query_params.get('account_id')
+        days = int(request.query_params.get('days', 30))
+
+        if not account_id:
+            return Response(
+                {'error': '缺少 account_id 参数'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 验证账户归属
+        account = get_object_or_404(Account, id=account_id, user=request.user)
+
+        # 只支持子账户
+        if account.parent is None:
+            return Response(
+                {'error': '暂不支持父账户历史查询'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 计算历史市值
+        result = calculate_account_history(account_id, days)
+
+        return Response(result)
+
 
 class PositionOperationViewSet(viewsets.ModelViewSet):
     """持仓操作 ViewSet"""

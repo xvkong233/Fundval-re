@@ -7,7 +7,7 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from .models import (
     Fund, Account, Position, PositionOperation,
-    Watchlist, WatchlistItem, EstimateAccuracy
+    Watchlist, WatchlistItem, EstimateAccuracy, FundNavHistory
 )
 
 User = get_user_model()
@@ -238,3 +238,25 @@ class UserRegisterSerializer(serializers.Serializer):
         validated_data.pop('password_confirm')
         user = User.objects.create_user(**validated_data)
         return user
+
+
+class FundNavHistorySerializer(serializers.ModelSerializer):
+    """基金历史净值序列化器"""
+
+    fund_code = serializers.CharField(source='fund.fund_code', read_only=True)
+    fund_name = serializers.CharField(source='fund.fund_name', read_only=True)
+
+    class Meta:
+        model = FundNavHistory
+        fields = [
+            'id',
+            'fund_code',
+            'fund_name',
+            'nav_date',
+            'unit_nav',
+            'accumulated_nav',
+            'daily_growth',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = fields

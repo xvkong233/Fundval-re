@@ -10,6 +10,7 @@ router.register(r'positions', viewsets.PositionViewSet, basename='position')
 router.register(r'watchlists', viewsets.WatchlistViewSet, basename='watchlist')
 router.register(r'sources', viewsets.SourceViewSet, basename='source')
 router.register(r'users', viewsets.UserViewSet, basename='user')
+router.register(r'nav-history', viewsets.FundNavHistoryViewSet, basename='nav-history')
 
 urlpatterns = [
     # 系统管理

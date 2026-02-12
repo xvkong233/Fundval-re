@@ -15,11 +15,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .models import (
     Fund, Account, Position, PositionOperation,
-    Watchlist, WatchlistItem, EstimateAccuracy
+    Watchlist, WatchlistItem, EstimateAccuracy, FundNavHistory
 )
 from .serializers import (
     FundSerializer, AccountSerializer, PositionSerializer,
-    PositionOperationSerializer, WatchlistSerializer, UserRegisterSerializer
+    PositionOperationSerializer, WatchlistSerializer, UserRegisterSerializer,
+    FundNavHistorySerializer
 )
 from .sources import SourceRegistry
 from .services import recalculate_all_positions
@@ -645,3 +646,108 @@ class UserViewSet(viewsets.ViewSet):
             'total_value': total_value,
             'total_pnl': total_pnl,
         })
+
+
+class FundNavHistoryViewSet(viewsets.ReadOnlyModelViewSet):
+    """基金历史净值 ViewSet（只读）"""
+
+    queryset = FundNavHistory.objects.all()
+    serializer_class = FundNavHistorySerializer
+    permission_classes = []  # 不需要认证
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+
+        # 按基金代码过滤
+        fund_code = self.request.query_params.get('fund_code')
+        if fund_code:
+            queryset = queryset.filter(fund__fund_code=fund_code)
+
+        # 按日期范围过滤
+        start_date = self.request.query_params.get('start_date')
+        end_date = self.request.query_params.get('end_date')
+
+        if start_date:
+            queryset = queryset.filter(nav_date__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(nav_date__lte=end_date)
+
+        return queryset
+
+    @action(detail=False, methods=['post'])
+    def batch_query(self, request):
+        """
+        批量查询历史净值
+
+        POST /api/nav-history/batch_query/
+        {
+            "fund_codes": ["000001", "000002"],
+            "start_date": "2024-01-01",  // 可选
+            "end_date": "2024-12-31",    // 可选
+            "nav_date": "2024-06-01"     // 可选，查询单日
+        }
+        """
+        fund_codes = request.data.get('fund_codes', [])
+        start_date = request.data.get('start_date')
+        end_date = request.data.get('end_date')
+        nav_date = request.data.get('nav_date')
+
+        if not fund_codes:
+            return Response(
+                {'error': '缺少 fund_codes 参数'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        results = {}
+        for fund_code in fund_codes:
+            queryset = FundNavHistory.objects.filter(fund__fund_code=fund_code)
+
+            # 单日查询
+            if nav_date:
+                queryset = queryset.filter(nav_date=nav_date)
+            else:
+                # 时间段查询
+                if start_date:
+                    queryset = queryset.filter(nav_date__gte=start_date)
+                if end_date:
+                    queryset = queryset.filter(nav_date__lte=end_date)
+
+            serializer = self.get_serializer(queryset, many=True)
+            results[fund_code] = serializer.data
+
+        return Response(results)
+
+    @action(detail=False, methods=['post'])
+    def sync(self, request):
+        """
+        同步历史净值
+
+        POST /api/nav-history/sync/
+        {
+            "fund_codes": ["000001", "000002"],
+            "start_date": "2024-01-01",  // 可选
+            "end_date": "2024-12-31",    // 可选
+        }
+        """
+        from .services.nav_history import batch_sync_nav_history
+        from datetime import datetime
+
+        fund_codes = request.data.get('fund_codes', [])
+        start_date = request.data.get('start_date')
+        end_date = request.data.get('end_date')
+
+        if not fund_codes:
+            return Response(
+                {'error': '缺少 fund_codes 参数'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 转换日期格式
+        if start_date:
+            start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+        if end_date:
+            end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+
+        results = batch_sync_nav_history(fund_codes, start_date, end_date)
+
+        return Response(results)

@@ -14,9 +14,40 @@ import {
   Table,
   Space,
   AutoComplete,
+  Typography,
 } from 'antd';
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
+import { Resizable } from 'react-resizable';
+import 'react-resizable/css/styles.css';
 import { watchlistsAPI, fundsAPI } from '../api';
+
+const { Text } = Typography;
+
+// 可调整大小的表头组件
+const ResizableTitle = (props) => {
+  const { onResize, width, ...restProps } = props;
+
+  if (!width) {
+    return <th {...restProps} />;
+  }
+
+  return (
+    <Resizable
+      width={width}
+      height={0}
+      handle={
+        <span
+          className="react-resizable-handle"
+          onClick={(e) => e.stopPropagation()}
+        />
+      }
+      onResize={onResize}
+      draggableOpts={{ enableUserSelectHack: false }}
+    >
+      <th {...restProps} />
+    </Resizable>
+  );
+};
 
 // 自选列表内容组件（移到外面避免重新创建）
 const WatchlistContent = ({
@@ -31,6 +62,7 @@ const WatchlistContent = ({
   fundsLoading,
   columns,
   navigate,
+  components,
 }) => {
   if (!watchlist) {
     return <Empty description="请选择自选列表" />;
@@ -82,6 +114,8 @@ const WatchlistContent = ({
           rowKey="fund_code"
           pagination={false}
           size="middle"
+          scroll={{ x: 'max-content' }}
+          components={components}
         />
       )}
     </div>
@@ -100,6 +134,24 @@ const WatchlistsPage = () => {
   const [searchKeyword, setSearchKeyword] = useState('');
   const [fundOptions, setFundOptions] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
+
+  // 列宽状态
+  const [columnWidths, setColumnWidths] = useState({
+    fund_code: 100,
+    fund_name: window.innerWidth < 768 ? 120 : 200,
+    latest_nav: window.innerWidth < 768 ? 100 : 140,
+    estimate_nav: 100,
+    estimate_growth: 100,
+    action: 80,
+  });
+
+  // 处理列宽调整
+  const handleResize = (key) => (e, { size }) => {
+    setColumnWidths((prev) => ({
+      ...prev,
+      [key]: size.width,
+    }));
+  };
 
   // 加载自选列表
   const loadWatchlists = async () => {
@@ -210,9 +262,19 @@ const WatchlistsPage = () => {
     return () => clearInterval(interval);
   }, [selectedWatchlistId, watchlists]);
 
-  // 移除基金（占位，阶段四实现）
+  // 移除基金
   const handleRemoveFund = async (fundCode) => {
-    message.info('移除功能将在阶段四实现');
+    if (!selectedWatchlistId) return;
+
+    try {
+      await watchlistsAPI.removeItem(selectedWatchlistId, fundCode);
+      message.success('移除成功');
+      await loadWatchlists();
+      // 立即刷新基金详情
+      loadFundDetails();
+    } catch (error) {
+      message.error('移除失败');
+    }
   };
 
   // 搜索基金
@@ -271,7 +333,13 @@ const WatchlistsPage = () => {
       title: '基金代码',
       dataIndex: 'fund_code',
       key: 'fund_code',
-      width: 100,
+      width: columnWidths.fund_code,
+      responsive: ['sm'],
+      resizable: true,
+      onHeaderCell: (column) => ({
+        width: column.width,
+        onResize: handleResize('fund_code'),
+      }),
       render: (code) => (
         <a onClick={() => navigate(`/dashboard/funds/${code}`)}>{code}</a>
       ),
@@ -280,27 +348,64 @@ const WatchlistsPage = () => {
       title: '基金名称',
       dataIndex: 'fund_name',
       key: 'fund_name',
+      width: columnWidths.fund_name,
       ellipsis: true,
+      resizable: true,
+      onHeaderCell: (column) => ({
+        width: column.width,
+        onResize: handleResize('fund_name'),
+      }),
     },
     {
       title: '最新净值',
       dataIndex: 'latest_nav',
       key: 'latest_nav',
-      width: 120,
-      render: (value) => value ? `¥${parseFloat(value).toFixed(4)}` : '-',
+      width: columnWidths.latest_nav,
+      resizable: true,
+      onHeaderCell: (column) => ({
+        width: column.width,
+        onResize: handleResize('latest_nav'),
+      }),
+      render: (value, record) => {
+        if (!value) return '-';
+
+        const date = record.latest_nav_date;
+        const dateStr = date ? `(${date.slice(5)})` : '';
+
+        return (
+          <span style={{ whiteSpace: 'nowrap' }}>
+            ¥{parseFloat(value).toFixed(4)}
+            <Text type="secondary" style={{ fontSize: '11px', marginLeft: '2px' }}>
+              {dateStr}
+            </Text>
+          </span>
+        );
+      },
     },
     {
       title: '估算净值',
       dataIndex: 'estimate_nav',
       key: 'estimate_nav',
-      width: 120,
+      width: columnWidths.estimate_nav,
+      responsive: ['lg'],
+      resizable: true,
+      onHeaderCell: (column) => ({
+        width: column.width,
+        onResize: handleResize('estimate_nav'),
+      }),
       render: (value) => value ? `¥${parseFloat(value).toFixed(4)}` : '-',
     },
     {
       title: '估算涨跌',
       dataIndex: 'estimate_growth',
       key: 'estimate_growth',
-      width: 120,
+      width: columnWidths.estimate_growth,
+      responsive: ['md'],
+      resizable: true,
+      onHeaderCell: (column) => ({
+        width: column.width,
+        onResize: handleResize('estimate_growth'),
+      }),
       render: (value) => {
         if (value === null || value === undefined) return '-';
         const num = parseFloat(value);
@@ -314,7 +419,8 @@ const WatchlistsPage = () => {
     {
       title: '操作',
       key: 'action',
-      width: 80,
+      width: columnWidths.action,
+      fixed: 'right',
       render: (_, record) => (
         <Popconfirm
           title="确定移除？"
@@ -439,6 +545,11 @@ const WatchlistsPage = () => {
               fundsLoading={fundsLoading}
               columns={columns}
               navigate={navigate}
+              components={{
+                header: {
+                  cell: ResizableTitle,
+                },
+              }}
             />
           ),
         }))}

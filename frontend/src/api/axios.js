@@ -2,7 +2,17 @@ import axios from 'axios';
 
 // 获取 API 基础 URL
 const getApiBaseUrl = () => {
-  return localStorage.getItem('apiBaseUrl') || 'http://localhost:8000';
+  // 优先使用 localStorage 中的配置
+  const stored = localStorage.getItem('apiBaseUrl');
+  if (stored) return stored;
+
+  // 否则使用当前域名（生产环境）
+  if (typeof window !== 'undefined') {
+    return window.location.origin;
+  }
+
+  // 开发环境 fallback
+  return 'http://localhost:8000';
 };
 
 const api = axios.create({

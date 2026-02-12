@@ -15,9 +15,28 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import path, include, re_path
+from django.views.generic import TemplateView
+from django.conf import settings
+from django.views.static import serve
+import os
+
+def serve_frontend(request, path=''):
+    """服务前端静态文件"""
+    frontend_dir = settings.FRONTEND_BUILD_DIR
+
+    # 如果请求的是文件且存在，直接返回
+    file_path = os.path.join(frontend_dir, path)
+    if os.path.isfile(file_path):
+        return serve(request, path, document_root=frontend_dir)
+
+    # 否则返回 index.html（用于 SPA 路由）
+    return serve(request, 'index.html', document_root=frontend_dir)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('api.urls')),
+
+    # 前端路由（必须放在最后）
+    re_path(r'^(?!api/).*$', serve_frontend),
 ]

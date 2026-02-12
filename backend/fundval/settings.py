@@ -136,6 +136,14 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+# 前端构建文件目录
+FRONTEND_BUILD_DIR = BASE_DIR.parent / 'frontend' / 'dist'
+
+STATICFILES_DIRS = [
+    FRONTEND_BUILD_DIR / 'assets',
+] if (FRONTEND_BUILD_DIR / 'assets').exists() else []
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/6.0/ref/settings/#default-auto-field

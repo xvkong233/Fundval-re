@@ -88,16 +88,17 @@ def _replay_operations(operations, start_date, end_date):
             current_positions[fund_id]['share'] += op.share
             current_positions[fund_id]['cost'] += op.amount
         else:  # SELL
-            # 卖出：减少份额，按比例减少成本
+            # 卖出：按每份成本计算，与 Position 汇总逻辑一致
             if current_positions[fund_id]['share'] > 0:
-                # 成本比例 = 卖出份额 / 当前份额
-                cost_ratio = op.share / current_positions[fund_id]['share']
-                # 减少成本 = 当前成本 × 成本比例
-                cost_reduction = current_positions[fund_id]['cost'] * cost_ratio
-                current_positions[fund_id]['cost'] -= cost_reduction
-
-            # 减少份额
-            current_positions[fund_id]['share'] -= op.share
+                # 计算每份成本
+                cost_per_share = current_positions[fund_id]['cost'] / current_positions[fund_id]['share']
+                # 减少份额
+                current_positions[fund_id]['share'] -= op.share
+                # 减少成本（卖出份额 × 每份成本）
+                current_positions[fund_id]['cost'] -= op.share * cost_per_share
+            else:
+                # 如果没有持仓，只减少份额（可能出现负数）
+                current_positions[fund_id]['share'] -= op.share
 
         # 记录当日持仓（只记录操作日期的持仓）
         if fund_id not in daily_positions:
@@ -189,11 +190,13 @@ def _get_daily_nav(fund_ids: Set[str], start_date, end_date):
         if fund_id not in daily_nav:
             daily_nav[fund_id] = {}
 
-        # 如果某个基金没有任何历史净值，使用 latest_nav 填充所有日期
-        if not daily_nav[fund_id] and fund_id in fund_latest_nav:
+        # 为每个日期填充净值（如果缺失，使用 latest_nav）
+        if fund_id in fund_latest_nav:
             current_date = start_date
             while current_date <= end_date:
-                daily_nav[fund_id][current_date] = fund_latest_nav[fund_id]
+                # 如果当日没有历史净值，使用 latest_nav
+                if current_date not in daily_nav[fund_id]:
+                    daily_nav[fund_id][current_date] = fund_latest_nav[fund_id]
                 current_date += timedelta(days=1)
 
     return daily_nav
@@ -222,15 +225,20 @@ def _calculate_daily_value(daily_positions, daily_nav, start_date, end_date):
             if not position or position['share'] == 0:
                 continue
 
+            # 成本始终计入
+            total_cost += position['cost']
+
             # 获取当日净值
             nav = daily_nav.get(fund_id, {}).get(current_date)
-            if not nav:
-                # 如果没有当日净值，跳过（不计入市值）
-                continue
-
-            # 计算市值
-            total_value += position['share'] * nav
-            total_cost += position['cost']
+            if nav:
+                # 如果有净值，计算市值
+                total_value += position['share'] * nav
+            else:
+                # 如果没有净值，使用持仓净值估算市值
+                # 持仓净值 = 成本 / 份额
+                if position['share'] > 0:
+                    holding_nav = position['cost'] / position['share']
+                    total_value += position['share'] * holding_nav
 
         # 添加到结果
         result.append({

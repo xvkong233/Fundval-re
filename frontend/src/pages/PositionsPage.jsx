@@ -901,7 +901,7 @@ const PositionsPage = () => {
       </Card>
 
       {/* 数据可视化 */}
-      <PositionCharts positions={positions} />
+      <PositionCharts positions={positions} accountId={selectedAccountId} />
 
       <Card
         title="持仓列表"

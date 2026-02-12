@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Card, Tabs, Radio, Empty } from 'antd';
+import { useState, useEffect } from 'react';
+import { Card, Tabs, Radio, Empty, Spin, message } from 'antd';
 import {
   LineChart,
   Line,
@@ -15,9 +15,13 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
+import { positionsAPI } from '../api';
 
-const PositionCharts = ({ positions }) => {
+const PositionCharts = ({ positions, accountId }) => {
   const [timeRange, setTimeRange] = useState('30d'); // 30d, 90d, all
+  const [historyData, setHistoryData] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState(null);
 
   // 计算市值：holding_share * latest_nav
   const calculateMarketValue = (position) => {
@@ -35,36 +39,43 @@ const PositionCharts = ({ positions }) => {
   console.log('Total value:', totalValue);
   console.log('Total cost:', totalCost);
 
-  // 生成收益趋势数据（根据时间范围）
-  // TODO: 需要后端提供账户历史市值数据接口
-  // 接口格式: GET /api/positions/history/?account_id=xxx&days=30
-  // 返回: [{ date: '2026-02-01', value: 10000, cost: 9500 }, ...]
-  const generateTrendData = () => {
-    const days = timeRange === '30d' ? 30 : timeRange === '90d' ? 90 : 180;
-    const data = [];
-    const today = new Date();
+  // 获取历史数据
+  const fetchHistory = async (accountId, days) => {
+    if (!accountId) return;
 
-    for (let i = days; i >= 0; i -= Math.ceil(days / 10)) {
-      const date = new Date(today);
-      date.setDate(date.getDate() - i);
-      const dateStr = `${date.getMonth() + 1}-${date.getDate()}`;
+    console.log('请求历史数据 - accountId:', accountId, 'days:', days);
 
-      // 模拟数据：从成本线开始，逐渐波动到当前市值
-      const progress = (days - i) / days;
-      const fluctuation = Math.sin(progress * Math.PI * 2) * 0.05;
-      const value = totalCost * (1 + (totalValue / totalCost - 1) * progress + fluctuation);
+    setHistoryLoading(true);
+    setHistoryError(null);
 
-      data.push({
-        date: dateStr,
-        value: parseFloat(value.toFixed(2)),
-        cost: totalCost,
-      });
+    try {
+      const response = await positionsAPI.getHistory(accountId, days);
+      console.log('历史市值 API 响应:', response.data);
+      setHistoryData(response.data);
+    } catch (error) {
+      setHistoryError(error.response?.data?.error || '加载失败');
+      message.error('加载历史数据失败');
+    } finally {
+      setHistoryLoading(false);
     }
-
-    return data;
   };
 
-  const trendData = generateTrendData();
+  // 监听 accountId 和 timeRange 变化
+  useEffect(() => {
+    if (accountId) {
+      const days = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : timeRange === '90d' ? 90 : 180;
+      fetchHistory(accountId, days);
+    }
+  }, [accountId, timeRange]);
+
+  // 生成趋势数据（使用真实历史数据）
+  const trendData = historyData.map(item => ({
+    date: new Date(item.date).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }),
+    value: item.value,
+    cost: item.cost
+  }));
+
+  console.log('趋势图数据:', trendData);
 
   // 仓位分布数据（按基金类型）
   // 将复杂的基金类型映射到简单分类
@@ -176,33 +187,44 @@ const PositionCharts = ({ positions }) => {
             onChange={(e) => setTimeRange(e.target.value)}
             style={{ marginBottom: 16 }}
           >
+            <Radio.Button value="7d">近7天</Radio.Button>
             <Radio.Button value="30d">近30天</Radio.Button>
             <Radio.Button value="90d">近90天</Radio.Button>
             <Radio.Button value="all">全部</Radio.Button>
           </Radio.Group>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={trendData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="date" />
-              <YAxis />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend />
-              <Line
-                type="monotone"
-                dataKey="value"
-                stroke="#1890ff"
-                name="账户市值"
-                strokeWidth={2}
-              />
-              <Line
-                type="monotone"
-                dataKey="cost"
-                stroke="#ff4d4f"
-                name="持仓成本"
-                strokeDasharray="5 5"
-              />
-            </LineChart>
-          </ResponsiveContainer>
+          {historyLoading ? (
+            <div style={{ textAlign: 'center', padding: '50px 0' }}>
+              <Spin tip="加载中..." />
+            </div>
+          ) : historyError ? (
+            <Empty description={historyError} />
+          ) : trendData.length === 0 ? (
+            <Empty description="暂无历史数据" />
+          ) : (
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={trendData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="date" />
+                <YAxis />
+                <Tooltip content={<CustomTooltip />} />
+                <Legend />
+                <Line
+                  type="monotone"
+                  dataKey="value"
+                  stroke="#1890ff"
+                  name="账户市值"
+                  strokeWidth={2}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="cost"
+                  stroke="#ff4d4f"
+                  name="持仓成本"
+                  strokeDasharray="5 5"
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
         </div>
       ),
     },

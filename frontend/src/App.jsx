@@ -9,6 +9,7 @@ import FundDetailPage from './pages/FundDetailPage';
 import AccountsPage from './pages/AccountsPage';
 import PositionsPage from './pages/PositionsPage';
 import WatchlistsPage from './pages/WatchlistsPage';
+import SettingsPage from './pages/SettingsPage';
 import { isAuthenticated } from './utils/auth';
 import { AuthProvider } from './contexts/AuthContext';
 import { AccountProvider } from './contexts/AccountContext';
@@ -91,6 +92,16 @@ function App() {
                   <PrivateRoute>
                     <MainLayout>
                       <WatchlistsPage />
+                    </MainLayout>
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/dashboard/settings"
+                element={
+                  <PrivateRoute>
+                    <MainLayout>
+                      <SettingsPage />
                     </MainLayout>
                   </PrivateRoute>
                 }

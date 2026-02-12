@@ -1,16 +1,24 @@
 import axios from 'axios';
 
+// 获取 API 基础 URL
+const getApiBaseUrl = () => {
+  return localStorage.getItem('apiBaseUrl') || 'http://localhost:8000';
+};
+
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: `${getApiBaseUrl()}/api`,
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
-// 请求拦截器：添加 token
+// 请求拦截器：添加 token 和动态更新 baseURL
 api.interceptors.request.use(
   (config) => {
+    // 动态更新 baseURL
+    config.baseURL = `${getApiBaseUrl()}/api`;
+
     const token = localStorage.getItem('access_token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -36,7 +44,8 @@ api.interceptors.response.use(
 
       try {
         const refreshToken = localStorage.getItem('refresh_token');
-        const response = await axios.post('/api/auth/refresh', {
+        const apiBaseUrl = getApiBaseUrl();
+        const response = await axios.post(`${apiBaseUrl}/api/auth/refresh`, {
           refresh_token: refreshToken,
         });
 

@@ -7,6 +7,7 @@ import {
   StarOutlined,
   UserOutlined,
   LogoutOutlined,
+  SettingOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -42,6 +43,11 @@ const MainLayout = ({ children }) => {
       key: '/dashboard/watchlists',
       icon: <StarOutlined />,
       label: isMobile ? '自选' : '自选列表',
+    },
+    {
+      key: '/dashboard/settings',
+      icon: <SettingOutlined />,
+      label: isMobile ? '设置' : '系统设置',
     },
   ];
 

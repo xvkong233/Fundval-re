@@ -41,6 +41,10 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+      - name: Add Android platform
+        working-directory: frontend
+        run: npx cap add android
+
       - name: Sync Capacitor
         working-directory: frontend
         run: npx cap sync android

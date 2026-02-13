@@ -62,9 +62,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.name }}
-          path: |
-            frontend/src-tauri/target/*/release/bundle/dmg/*.dmg
-            frontend/src-tauri/target/*/release/bundle/macos/*.app
+          path: frontend/src-tauri/target/*/release/bundle/dmg/*.dmg
 
       - name: Upload artifacts (Linux)
         if: matrix.platform == 'ubuntu-22.04'

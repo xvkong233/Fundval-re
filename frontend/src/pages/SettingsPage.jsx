@@ -1,18 +1,22 @@
 import { useState, useEffect } from 'react';
-import { Card, Form, Input, Button, message, Space } from 'antd';
-import { SaveOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Card, Form, Input, Button, message, Space, Divider } from 'antd';
+import { SaveOutlined, ReloadOutlined, CloudServerOutlined } from '@ant-design/icons';
+import { isNativeApp } from '../App';
 
 const SettingsPage = () => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
+  const isNative = isNativeApp();
 
   // 从 localStorage 加载配置
   useEffect(() => {
-    const savedApiUrl = localStorage.getItem('apiBaseUrl') || 'http://localhost:8000';
-    form.setFieldsValue({
-      apiBaseUrl: savedApiUrl
-    });
-  }, [form]);
+    if (isNative) {
+      const savedApiUrl = localStorage.getItem('apiBaseUrl') || '';
+      form.setFieldsValue({
+        apiBaseUrl: savedApiUrl
+      });
+    }
+  }, [form, isNative]);
 
   // 保存配置
   const handleSave = async (values) => {
@@ -22,18 +26,28 @@ const SettingsPage = () => {
       const url = values.apiBaseUrl.trim();
       if (!url.startsWith('http://') && !url.startsWith('https://')) {
         message.error('服务器地址必须以 http:// 或 https:// 开头');
+        setLoading(false);
         return;
       }
 
       // 移除末尾的斜杠
       const cleanUrl = url.replace(/\/$/, '');
 
-      // 保存到 localStorage
-      localStorage.setItem('apiBaseUrl', cleanUrl);
+      // 测试连接
+      const response = await fetch(`${cleanUrl}/api/health/`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+      });
 
-      message.success('配置已保存，刷新页面后生效');
+      if (response.ok) {
+        // 保存到 localStorage
+        localStorage.setItem('apiBaseUrl', cleanUrl);
+        message.success('配置已保存，刷新页面后生效');
+      } else {
+        message.error('无法连接到服务器，请检查地址是否正确');
+      }
     } catch (error) {
-      message.error('保存失败');
+      message.error(`连接失败: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -42,9 +56,9 @@ const SettingsPage = () => {
   // 重置为默认值
   const handleReset = () => {
     form.setFieldsValue({
-      apiBaseUrl: 'http://localhost:8000'
+      apiBaseUrl: ''
     });
-    message.info('已重置为默认值');
+    message.info('已清空服务器配置');
   };
 
   // 测试连接
@@ -74,65 +88,58 @@ const SettingsPage = () => {
 
   return (
     <Card title="系统设置">
-      <Form
-        form={form}
-        layout="vertical"
-        onFinish={handleSave}
-        style={{ maxWidth: 600 }}
-      >
-        <Form.Item
-          label="服务器地址"
-          name="apiBaseUrl"
-          rules={[
-            { required: true, message: '请输入服务器地址' },
-            {
-              pattern: /^https?:\/\/.+/,
-              message: '请输入有效的 URL（以 http:// 或 https:// 开头）'
-            }
-          ]}
-          extra="后端 API 服务器地址，例如：http://localhost:8000"
-        >
-          <Input placeholder="http://localhost:8000" />
-        </Form.Item>
+      {isNative ? (
+        <>
+          <Form
+            form={form}
+            layout="vertical"
+            onFinish={handleSave}
+            style={{ maxWidth: 600 }}
+          >
+            <Form.Item
+              label="服务器地址"
+              name="apiBaseUrl"
+              rules={[
+                { required: true, message: '请输入服务器地址' },
+                {
+                  pattern: /^https?:\/\/.+/,
+                  message: '请输入有效的 URL（以 http:// 或 https:// 开头）'
+                }
+              ]}
+              extra="后端 API 服务器地址，例如：http://192.168.1.100:8000"
+            >
+              <Input
+                prefix={<CloudServerOutlined />}
+                placeholder="http://your-server:8000"
+              />
+            </Form.Item>
 
-        <Form.Item>
-          <Space>
-            <Button
-              type="primary"
-              htmlType="submit"
-              icon={<SaveOutlined />}
-              loading={loading}
-            >
-              保存配置
-            </Button>
-            <Button
-              onClick={handleTest}
-              loading={loading}
-            >
-              测试连接
-            </Button>
-            <Button
-              icon={<ReloadOutlined />}
-              onClick={handleReset}
-            >
-              重置默认
-            </Button>
-          </Space>
-        </Form.Item>
-      </Form>
-
-      <Card
-        type="inner"
-        title="说明"
-        style={{ marginTop: 24, backgroundColor: '#f5f5f5' }}
-      >
-        <ul style={{ margin: 0, paddingLeft: 20 }}>
-          <li>修改服务器地址后需要刷新页面才能生效</li>
-          <li>默认地址为 http://localhost:8000</li>
-          <li>如果服务器部署在其他地址，请修改此配置</li>
-          <li>建议先点击"测试连接"确认服务器可访问</li>
-        </ul>
-      </Card>
+            <Form.Item>
+              <Space>
+                <Button
+                  type="primary"
+                  htmlType="submit"
+                  icon={<SaveOutlined />}
+                  loading={loading}
+                >
+                  保存配置
+                </Button>
+                <Button
+                  icon={<ReloadOutlined />}
+                  onClick={handleReset}
+                >
+                  清空配置
+                </Button>
+              </Space>
+            </Form.Item>
+          </Form>
+        </>
+      ) : (
+        <div style={{ padding: '20px 0' }}>
+          <p>Web 版本无需配置服务器地址。</p>
+          <p>如需修改服务器，请使用桌面端或移动端应用。</p>
+        </div>
+      )}
     </Card>
   );
 };

@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Form, Input, Button, Card, message, Typography, Layout, theme } from 'antd';
-import { UserOutlined, LockOutlined, LoginOutlined, CloudServerOutlined } from '@ant-design/icons';
+import { Form, Input, Button, Card, message, Typography, Layout, theme, Modal } from 'antd';
+import { UserOutlined, LockOutlined, LoginOutlined, CloudServerOutlined, SettingOutlined } from '@ant-design/icons';
 import { useNavigate, Link } from 'react-router-dom';
 import { login } from '../api';
 import { setToken } from '../utils/auth';
 import { useAuth } from '../contexts/AuthContext';
+import { isNativeApp } from '../App';
 
 const { Title, Text } = Typography;
 const { Content, Footer } = Layout;
@@ -12,6 +13,9 @@ const { Content, Footer } = Layout;
 function LoginPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [serverModalVisible, setServerModalVisible] = useState(false);
+  const [serverUrl, setServerUrl] = useState(localStorage.getItem('apiBaseUrl') || '');
+  const [testingConnection, setTestingConnection] = useState(false);
   const { token } = theme.useToken();
   const { login: authLogin } = useAuth();
 
@@ -30,6 +34,40 @@ function LoginPage() {
       message.error(error.response?.data?.error || '登录失败');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleServerConfig = async () => {
+    if (!serverUrl.trim()) {
+      message.error('请输入服务器地址');
+      return;
+    }
+
+    if (!serverUrl.startsWith('http://') && !serverUrl.startsWith('https://')) {
+      message.error('服务器地址必须以 http:// 或 https:// 开头');
+      return;
+    }
+
+    setTestingConnection(true);
+    try {
+      const response = await fetch(`${serverUrl}/api/health/`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      if (response.ok) {
+        localStorage.setItem('apiBaseUrl', serverUrl);
+        message.success('服务器配置成功！');
+        setServerModalVisible(false);
+        // 刷新页面以应用新配置
+        window.location.reload();
+      } else {
+        message.error('无法连接到服务器，请检查地址是否正确');
+      }
+    } catch (error) {
+      message.error(`连接失败: ${error.message}`);
+    } finally {
+      setTestingConnection(false);
     }
   };
 
@@ -76,6 +114,19 @@ function LoginPage() {
         </div>
 
         <Card style={cardStyle} styles={{ body: { padding: 40 } }}>
+          {isNativeApp() && (
+            <div style={{ marginBottom: 16, textAlign: 'right' }}>
+              <Button
+                type="text"
+                size="small"
+                icon={<SettingOutlined />}
+                onClick={() => setServerModalVisible(true)}
+              >
+                服务器配置
+              </Button>
+            </div>
+          )}
+
           <Form
             name="login"
             onFinish={onFinish}
@@ -128,6 +179,31 @@ function LoginPage() {
       <Footer style={{ textAlign: 'center', background: 'transparent' }}>
         <Text type="secondary" style={{ fontSize: 12 }}>&copy; 2026 Fundval. All rights reserved.</Text>
       </Footer>
+
+      {/* 服务器配置弹窗 */}
+      <Modal
+        title="服务器配置"
+        open={serverModalVisible}
+        onOk={handleServerConfig}
+        onCancel={() => setServerModalVisible(false)}
+        confirmLoading={testingConnection}
+        okText="保存"
+        cancelText="取消"
+      >
+        <Form layout="vertical">
+          <Form.Item
+            label="服务器地址"
+            extra="例如: http://192.168.1.100:8000 或 https://fundval.example.com"
+          >
+            <Input
+              prefix={<CloudServerOutlined />}
+              placeholder="http://your-server:8000"
+              value={serverUrl}
+              onChange={(e) => setServerUrl(e.target.value)}
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
     </Layout>
   );
 }

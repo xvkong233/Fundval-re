@@ -1,0 +1,22 @@
+{
+  "docker-ci": {
+    "core": "自动构建并推送 Docker 镜像到 GitHub Container Registry 和 Docker Hub",
+    "details": [
+      "触发条件：push 到任意分支",
+      "构建 frontend 镜像 (jasamine/fundval-frontend)",
+      "构建 backend 镜像 (jasamine/fundval-backend)",
+      "推送到 ghcr.io 和 Docker Hub",
+      "打 tag: latest + commit sha"
+    ],
+    "finish": true
+  },
+  "docker-compose-update": {
+    "core": "修改 docker-compose.yml 使用远程镜像",
+    "details": [
+      "将 build: ./backend 改为 image: jasamine/fundval-backend:latest",
+      "将 build: ./frontend 改为 image: jasamine/fundval-frontend:latest",
+      "保留 db/redis 等官方镜像配置"
+    ],
+    "finish": true
+  }
+}

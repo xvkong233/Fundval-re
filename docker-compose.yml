@@ -30,7 +30,7 @@ services:
       - fundval
 
   backend:
-    build: ./backend
+    image: jasamine/fundval-backend:latest
     command: >
       sh -c "python manage.py migrate &&
              gunicorn fundval.wsgi:application --bind 0.0.0.0:8000 --workers 4 --access-logfile - --error-logfile -"
@@ -57,7 +57,7 @@ services:
       - fundval
 
   celery-worker:
-    build: ./backend
+    image: jasamine/fundval-backend:latest
     command: celery -A fundval worker -l info
     volumes:
       - ./backend:/app
@@ -81,7 +81,7 @@ services:
       - fundval
 
   celery-beat:
-    build: ./backend
+    image: jasamine/fundval-backend:latest
     command: celery -A fundval beat -l info
     volumes:
       - ./backend:/app
@@ -105,7 +105,7 @@ services:
       - fundval
 
   frontend:
-    build: ./frontend
+    image: jasamine/fundval-frontend:latest
     ports:
       - "80:80"
     depends_on:

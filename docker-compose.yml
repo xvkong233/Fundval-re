@@ -45,7 +45,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - SECRET_KEY=${SECRET_KEY:-django-insecure-dev-only}
       - DEBUG=${DEBUG:-false}
-      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1,backend,frontend}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-*}
     depends_on:
       db:
         condition: service_healthy

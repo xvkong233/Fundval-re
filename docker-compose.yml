@@ -33,7 +33,9 @@ services:
     image: jasamine/fundval-backend:latest
     command: gunicorn fundval.wsgi:application --bind 0.0.0.0:8000 --workers 4 --access-logfile - --error-logfile -
     volumes:
-      - ./backend:/app
+      # 生产环境：只挂载配置目录，不挂载代码
+      # 开发环境：取消注释下面这行以挂载本地代码
+      # - ./backend:/app
       - config_data:/app/config
     environment:
       - DB_TYPE=postgresql
@@ -65,7 +67,8 @@ services:
     entrypoint: []
     command: celery -A fundval worker -l info
     volumes:
-      - ./backend:/app
+      # 生产环境：只挂载配置目录
+      # - ./backend:/app
       - config_data:/app/config
     environment:
       - DB_TYPE=postgresql
@@ -90,7 +93,8 @@ services:
     entrypoint: []
     command: celery -A fundval beat -l info
     volumes:
-      - ./backend:/app
+      # 生产环境：只挂载配置目录
+      # - ./backend:/app
       - config_data:/app/config
     environment:
       - DB_TYPE=postgresql

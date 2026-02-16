@@ -1,5 +1,6 @@
 pub mod routes;
 pub mod config;
+pub mod jwt;
 pub mod state;
 
 use axum::Router;

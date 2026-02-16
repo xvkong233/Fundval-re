@@ -3,6 +3,7 @@ use axum::Router;
 use crate::state::AppState;
 
 pub mod bootstrap;
+pub mod auth;
 pub mod health;
 
 pub fn router(state: AppState) -> Router<AppState> {
@@ -18,5 +19,9 @@ pub fn router(state: AppState) -> Router<AppState> {
             "/api/admin/bootstrap/initialize",
             axum::routing::post(bootstrap::initialize),
         )
+        .route("/api/auth/login", axum::routing::post(auth::login))
+        .route("/api/auth/refresh", axum::routing::post(auth::refresh))
+        .route("/api/auth/me", axum::routing::get(auth::me))
+        .route("/api/auth/password", axum::routing::put(auth::change_password))
         .with_state(state)
 }

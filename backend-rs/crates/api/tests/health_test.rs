@@ -7,7 +7,8 @@ use api::state::AppState;
 async fn health_returns_ok_shape() {
     let config = api::config::ConfigStore::load();
     config.set_system_initialized(false);
-    let state = AppState::new(None, config);
+    let jwt = api::jwt::JwtService::from_secret("test-secret");
+    let state = AppState::new(None, config, jwt);
     let app = api::app(state);
 
     let res = app

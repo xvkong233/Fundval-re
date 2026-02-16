@@ -4,6 +4,7 @@ use serde::Serialize;
 use sqlx::PgPool;
 
 use crate::config::ConfigStore;
+use crate::jwt::JwtService;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -13,14 +14,16 @@ pub struct AppState {
 struct InnerState {
     pub pool: Option<PgPool>,
     pub config: ConfigStore,
+    pub jwt: JwtService,
 }
 
 impl AppState {
-    pub fn new(pool: Option<PgPool>, config: ConfigStore) -> Self {
+    pub fn new(pool: Option<PgPool>, config: ConfigStore, jwt: JwtService) -> Self {
         Self {
             inner: Arc::new(InnerState {
                 pool,
                 config,
+                jwt,
             }),
         }
     }
@@ -30,6 +33,10 @@ impl AppState {
     }
     pub fn config(&self) -> &ConfigStore {
         &self.inner.config
+    }
+
+    pub fn jwt(&self) -> &JwtService {
+        &self.inner.jwt
     }
 }
 

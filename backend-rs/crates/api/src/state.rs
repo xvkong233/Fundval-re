@@ -3,6 +3,8 @@ use std::sync::Arc;
 use serde::Serialize;
 use sqlx::PgPool;
 
+use crate::config::ConfigStore;
+
 #[derive(Clone)]
 pub struct AppState {
     inner: Arc<InnerState>,
@@ -10,15 +12,15 @@ pub struct AppState {
 
 struct InnerState {
     pub pool: Option<PgPool>,
-    pub system_initialized: bool,
+    pub config: ConfigStore,
 }
 
 impl AppState {
-    pub fn new(pool: Option<PgPool>, system_initialized: bool) -> Self {
+    pub fn new(pool: Option<PgPool>, config: ConfigStore) -> Self {
         Self {
             inner: Arc::new(InnerState {
                 pool,
-                system_initialized,
+                config,
             }),
         }
     }
@@ -26,9 +28,8 @@ impl AppState {
     pub fn pool(&self) -> Option<&PgPool> {
         self.inner.pool.as_ref()
     }
-
-    pub fn system_initialized(&self) -> bool {
-        self.inner.system_initialized
+    pub fn config(&self) -> &ConfigStore {
+        &self.inner.config
     }
 }
 
@@ -38,4 +39,3 @@ pub struct HealthResponse {
     pub database: &'static str,
     pub system_initialized: bool,
 }
-

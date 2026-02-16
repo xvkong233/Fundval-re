@@ -7,8 +7,11 @@ edition = "2024"
 license = "AGPL-3.0"
 
 [workspace.dependencies]
+argon2 = "0.5"
 axum = { version = "0.8", features = ["json"] }
 dotenvy = "0.15"
+rand = "0.8"
+rand_core = "0.6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
@@ -19,5 +22,4 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 
 # 数据库先引入（health 会做最小探活），后续模块逐步使用
-sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "chrono"] }
-
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "chrono", "migrate"] }

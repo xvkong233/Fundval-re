@@ -1,0 +1,9 @@
+CREATE TABLE IF NOT EXISTS users (
+  id UUID PRIMARY KEY,
+  username TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  email TEXT NOT NULL,
+  is_superuser BOOLEAN NOT NULL DEFAULT FALSE,
+  date_joined TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+

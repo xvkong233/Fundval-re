@@ -5,6 +5,9 @@ use axum::http::HeaderValue;
 use sqlx::postgres::PgPoolOptions;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing_subscriber::EnvFilter;
+use sqlx::migrate::Migrator;
+
+static MIGRATOR: Migrator = sqlx::migrate!("../../migrations");
 
 #[tokio::main]
 async fn main() {
@@ -30,12 +33,16 @@ async fn main() {
             .ok(),
     };
 
-    let system_initialized = std::env::var("SYSTEM_INITIALIZED")
-        .ok()
-        .and_then(|s| s.parse::<bool>().ok())
-        .unwrap_or(false);
+    // 初始化配置（文件 + env 覆盖）
+    let config = api::config::ConfigStore::load();
 
-    let state = AppState::new(pool, system_initialized);
+    if let Some(ref pool) = pool {
+        if let Err(e) = MIGRATOR.run(pool).await {
+            tracing::warn!(error=%e, "failed to run migrations");
+        }
+    }
+
+    let state = AppState::new(pool, config);
 
     let cors = CorsLayer::new()
         .allow_origin(HeaderValue::from_static("*"))

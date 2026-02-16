@@ -5,7 +5,9 @@ use api::state::AppState;
 
 #[tokio::test]
 async fn health_returns_ok_shape() {
-    let state = AppState::new(None, false);
+    let config = api::config::ConfigStore::load();
+    config.set_system_initialized(false);
+    let state = AppState::new(None, config);
     let app = api::app(state);
 
     let res = app
@@ -24,4 +26,3 @@ async fn health_returns_ok_shape() {
     assert!(json.get("database").is_some());
     assert_eq!(json["system_initialized"], false);
 }
-

@@ -18,9 +18,8 @@ pub async fn health(state: axum::extract::State<AppState>) -> impl IntoResponse 
     let body = HealthResponse {
         status: "ok",
         database,
-        system_initialized: state.system_initialized(),
+        system_initialized: state.config().system_initialized(),
     };
 
     (StatusCode::OK, Json(body))
 }
-

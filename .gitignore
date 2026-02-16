@@ -82,6 +82,7 @@ lerna-debug.log*
 .env.local
 .env.*.local
 /backend/config.json
+/backend-rs/config.json
 
 # Logs
 logs/

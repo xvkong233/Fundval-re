@@ -6,6 +6,7 @@ pub mod bootstrap;
 pub mod auth;
 pub mod users;
 pub mod sources;
+pub mod funds;
 pub mod health;
 
 pub fn router(state: AppState) -> Router<AppState> {
@@ -29,5 +30,9 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/api/users/register", axum::routing::post(users::register))
         .route("/api/sources/", axum::routing::get(sources::list))
         .route("/api/sources", axum::routing::get(sources::list))
+        .route("/api/funds/", axum::routing::get(funds::list))
+        .route("/api/funds", axum::routing::get(funds::list))
+        .route("/api/funds/{fund_code}/", axum::routing::get(funds::retrieve))
+        .route("/api/funds/{fund_code}", axum::routing::get(funds::retrieve))
         .with_state(state)
 }

@@ -1,13 +1,10 @@
-use argon2::{
-    password_hash::{PasswordHash, PasswordVerifier, SaltString},
-    Argon2, PasswordHasher,
-};
 use axum::{http::StatusCode, response::IntoResponse, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
 use crate::{jwt::JwtService, state::AppState};
+use crate::django_password;
 
 #[derive(Debug, Deserialize)]
 pub struct LoginRequest {
@@ -102,8 +99,8 @@ pub async fn login(
 
     let row = sqlx::query(
         r#"
-        SELECT id::text as id, username, password_hash, email, is_superuser, date_joined
-        FROM users
+        SELECT id::text as id, username, password, email, is_superuser, date_joined
+        FROM auth_user
         WHERE username = $1
         "#,
     )
@@ -132,7 +129,7 @@ pub async fn login(
             .into_response();
     };
 
-    let password_hash = match row.try_get::<String, _>("password_hash") {
+    let password_hash = match row.try_get::<String, _>("password") {
         Ok(v) => v,
         Err(_) => {
             return (
@@ -145,23 +142,7 @@ pub async fn login(
         }
     };
 
-    let parsed_hash = match PasswordHash::new(&password_hash) {
-        Ok(h) => h,
-        Err(_) => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(ErrorResponse {
-                    error: "用户名或密码错误".to_string(),
-                }),
-            )
-                .into_response();
-        }
-    };
-
-    if Argon2::default()
-        .verify_password(body.password.as_bytes(), &parsed_hash)
-        .is_err()
-    {
+    if !django_password::verify_password(&body.password, &password_hash) {
         return (
             StatusCode::UNAUTHORIZED,
             Json(ErrorResponse {
@@ -249,7 +230,7 @@ pub async fn me(
     let row = sqlx::query(
         r#"
         SELECT id::text as id, username, email, is_superuser, date_joined
-        FROM users
+        FROM auth_user
         WHERE id::text = $1
         "#,
     )
@@ -284,7 +265,7 @@ pub async fn me(
             } else {
                 "user".to_string()
             },
-            created_at: created_at.to_rfc3339(),
+            created_at: created_at.to_rfc3339_opts(chrono::SecondsFormat::AutoSi, false),
         }),
     )
         .into_response()
@@ -315,8 +296,8 @@ pub async fn change_password(
 
     let row = sqlx::query(
         r#"
-        SELECT password_hash
-        FROM users
+        SELECT password
+        FROM auth_user
         WHERE id::text = $1
         "#,
     )
@@ -339,15 +320,8 @@ pub async fn change_password(
         return invalid_token_response();
     };
 
-    let password_hash: String = row.get("password_hash");
-    let parsed_hash = match PasswordHash::new(&password_hash) {
-        Ok(h) => h,
-        Err(_) => return invalid_token_response(),
-    };
-    if Argon2::default()
-        .verify_password(body.old_password.as_bytes(), &parsed_hash)
-        .is_err()
-    {
+    let password_hash: String = row.get("password");
+    if !django_password::verify_password(&body.old_password, &password_hash) {
         return (
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
@@ -357,21 +331,9 @@ pub async fn change_password(
             .into_response();
     }
 
-    let salt = SaltString::generate(&mut rand_core::OsRng);
-    let new_hash = match Argon2::default().hash_password(body.new_password.as_bytes(), &salt) {
-        Ok(h) => h.to_string(),
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: e.to_string(),
-                }),
-            )
-                .into_response();
-        }
-    };
+    let new_hash = django_password::hash_password(&body.new_password);
 
-    let updated = sqlx::query("UPDATE users SET password_hash = $1 WHERE id::text = $2")
+    let updated = sqlx::query("UPDATE auth_user SET password = $1 WHERE id::text = $2")
         .bind(new_hash)
         .bind(&user_id)
         .execute(pool)

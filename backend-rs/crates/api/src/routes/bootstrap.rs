@@ -1,8 +1,8 @@
 use axum::{http::StatusCode, response::IntoResponse, Json};
-use argon2::{password_hash::SaltString, Argon2, PasswordHasher};
 use serde::{Deserialize, Serialize};
 
 use crate::state::AppState;
+use crate::django_password;
 
 #[derive(Debug, Deserialize)]
 pub struct BootstrapVerifyRequest {
@@ -133,33 +133,19 @@ pub async fn initialize(
     // 为后续 auth 模块做准备：此处先写入 users 表。
     // 若未配置 DB，则返回与 Django 类似的 400（创建管理员失败）。
     if let Some(pool) = state.pool() {
-        let salt = SaltString::generate(&mut rand_core::OsRng);
-        let password_hash = match Argon2::default()
-            .hash_password(admin_password.as_bytes(), &salt)
-        {
-            Ok(hash) => hash.to_string(),
-            Err(e) => {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(ErrorResponse {
-                        error: format!("创建管理员失败: {e}"),
-                    }),
-                )
-                    .into_response();
-            }
-        };
+        let password_hash = django_password::hash_password(admin_password);
         let email = format!("{admin_username}@fundval.local");
 
-        let id = uuid::Uuid::new_v4();
         let result = sqlx::query(
             r#"
-            INSERT INTO users (id, username, password_hash, email, is_superuser)
-            VALUES ($1, $2, $3, $4, TRUE)
+            INSERT INTO auth_user (
+              password, last_login, is_superuser, username, first_name, last_name, email, is_staff, is_active, date_joined
+            )
+            VALUES ($1, NULL, TRUE, $2, '', '', $3, TRUE, TRUE, NOW())
             "#,
         )
-        .bind(id)
-        .bind(admin_username)
         .bind(password_hash)
+        .bind(admin_username)
         .bind(email)
         .execute(pool)
         .await;

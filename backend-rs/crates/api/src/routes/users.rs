@@ -1,9 +1,8 @@
-use argon2::{password_hash::SaltString, Argon2, PasswordHasher};
 use axum::{http::StatusCode, response::IntoResponse, Json};
 use serde::{Deserialize, Serialize};
-// sqlx::Row 暂不需要（后续 summary 会用到）
 
 use crate::state::AppState;
+use crate::django_password;
 
 #[derive(Debug, Deserialize)]
 pub struct RegisterRequest {
@@ -150,7 +149,7 @@ pub async fn register(
     };
 
     // username 唯一性（对齐 Django serializer 行为）
-    let exists = sqlx::query("SELECT 1 FROM users WHERE username = $1")
+    let exists = sqlx::query("SELECT 1 FROM auth_user WHERE username = $1")
         .bind(username)
         .fetch_optional(pool)
         .await;
@@ -176,55 +175,48 @@ pub async fn register(
         }
     }
 
-    let salt = SaltString::generate(&mut rand_core::OsRng);
-    let password_hash = match Argon2::default().hash_password(password.as_bytes(), &salt) {
-        Ok(hash) => hash.to_string(),
+    let password_hash = django_password::hash_password(password);
+    let email = body.email.unwrap_or_default();
+
+    let inserted_id = sqlx::query_scalar::<_, i64>(
+        r#"
+        INSERT INTO auth_user (
+          password, last_login, is_superuser, username, first_name, last_name, email, is_staff, is_active, date_joined
+        )
+        VALUES ($1, NULL, FALSE, $2, '', '', $3, FALSE, TRUE, NOW())
+        RETURNING id
+        "#,
+    )
+    .bind(password_hash)
+    .bind(username)
+    .bind(email)
+    .fetch_one(pool)
+    .await;
+
+    let id = match inserted_id {
+        Ok(v) => v,
         Err(e) => {
+            let msg = e.to_string();
+            if msg.to_lowercase().contains("duplicate") || msg.to_lowercase().contains("unique") {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(FieldErrors {
+                        username: Some(vec!["用户名已存在".to_string()]),
+                        password: None,
+                        password_confirm: None,
+                    }),
+                )
+                    .into_response();
+            }
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse { error: e.to_string() }),
+                Json(ErrorResponse { error: msg }),
             )
                 .into_response();
         }
     };
 
-    let id = uuid::Uuid::new_v4();
-    let email = body.email.unwrap_or_default();
-
-    let inserted = sqlx::query(
-        r#"
-        INSERT INTO users (id, username, password_hash, email, is_superuser)
-        VALUES ($1, $2, $3, $4, FALSE)
-        "#,
-    )
-    .bind(id)
-    .bind(username)
-    .bind(password_hash)
-    .bind(email)
-    .execute(pool)
-    .await;
-
-    if let Err(e) = inserted {
-        // 兜底：并发情况下仍可能触发唯一约束冲突
-        let msg = e.to_string();
-        if msg.to_lowercase().contains("duplicate") || msg.to_lowercase().contains("unique") {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(FieldErrors {
-                    username: Some(vec!["用户名已存在".to_string()]),
-                    password: None,
-                    password_confirm: None,
-                }),
-            )
-                .into_response();
-        }
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse { error: msg }),
-        )
-            .into_response();
-    }
-
+    // 生成 token
     let jwt = state.jwt();
     let access_token = jwt.issue_access_token(&id.to_string());
     let refresh_token = jwt.issue_refresh_token(&id.to_string());

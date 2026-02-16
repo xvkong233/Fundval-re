@@ -210,6 +210,5 @@ pub async fn retrieve(
 }
 
 fn format_dt(dt: DateTime<Utc>) -> String {
-    dt.to_rfc3339_opts(SecondsFormat::AutoSi, true)
+    dt.to_rfc3339_opts(SecondsFormat::AutoSi, false)
 }
-

@@ -1,0 +1,13 @@
+{
+  "name": "fundval-contract-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:contract": "tsx src/run.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.1",
+    "tsx": "^4.20.5",
+    "typescript": "^5.8.2"
+  }
+}

@@ -130,10 +130,11 @@ services:
     environment:
       - PORT=8001
       - DATABASE_URL=postgresql://${POSTGRES_USER:-fundval}:${POSTGRES_PASSWORD:-fundval}@db:5432/${POSTGRES_DB:-fundval}
-      - SYSTEM_INITIALIZED=false
     depends_on:
       db:
         condition: service_healthy
+    volumes:
+      - config_data:/app/config
     ports:
       - "8001:8001"
     healthcheck:

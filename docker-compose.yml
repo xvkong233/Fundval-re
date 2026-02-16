@@ -160,6 +160,25 @@ services:
     networks:
       - fundval
 
+  contract-tests:
+    image: node:22-alpine
+    working_dir: /tests
+    volumes:
+      - ./tools/contract-tests:/tests
+    environment:
+      - GOLDEN_BASE=http://backend:8000
+      - CANDIDATE_BASE=http://backend-rs:8001
+    command: sh -c "npm ci && npm run test:contract"
+    depends_on:
+      backend:
+        condition: service_healthy
+      backend-rs:
+        condition: service_healthy
+    profiles:
+      - contract
+    networks:
+      - fundval
+
 volumes:
   postgres_data:
   config_data:

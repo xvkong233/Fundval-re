@@ -2,6 +2,7 @@ import { runHealth } from "./cases/health.js";
 import { runBootstrap } from "./cases/bootstrap.js";
 import { runAuth } from "./cases/auth.js";
 import { runUsers } from "./cases/users.js";
+import { runSources } from "./cases/sources.js";
 
 type Case = {
   name: string;
@@ -16,6 +17,7 @@ const cases: Case[] = [
   { name: "bootstrap", run: runBootstrap },
   { name: "auth", run: runAuth },
   { name: "users", run: runUsers },
+  { name: "sources", run: runSources },
 ];
 
 async function main() {

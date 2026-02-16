@@ -36,7 +36,7 @@ services:
       # 生产环境：只挂载配置目录，不挂载代码
       # 开发环境：取消注释下面这行以挂载本地代码
       # - ./backend:/app
-      - config_data:/app/config
+      - config_data_py:/app/config
     environment:
       - DB_TYPE=postgresql
       - POSTGRES_DB=${POSTGRES_DB:-fundval}
@@ -69,7 +69,7 @@ services:
     volumes:
       # 生产环境：只挂载配置目录
       # - ./backend:/app
-      - config_data:/app/config
+      - config_data_py:/app/config
     environment:
       - DB_TYPE=postgresql
       - POSTGRES_DB=${POSTGRES_DB:-fundval}
@@ -95,7 +95,7 @@ services:
     volumes:
       # 生产环境：只挂载配置目录
       # - ./backend:/app
-      - config_data:/app/config
+      - config_data_py:/app/config
     environment:
       - DB_TYPE=postgresql
       - POSTGRES_DB=${POSTGRES_DB:-fundval}
@@ -130,11 +130,12 @@ services:
     environment:
       - PORT=8001
       - DATABASE_URL=postgresql://${POSTGRES_USER:-fundval}:${POSTGRES_PASSWORD:-fundval}@db:5432/${POSTGRES_DB:-fundval}
+      - SECRET_KEY=${SECRET_KEY:-django-insecure-dev-only}
     depends_on:
       db:
         condition: service_healthy
     volumes:
-      - config_data:/app/config
+      - config_data_rs:/app/config
     ports:
       - "8001:8001"
     healthcheck:
@@ -165,9 +166,13 @@ services:
     working_dir: /tests
     volumes:
       - ./tools/contract-tests:/tests
+      - config_data_py:/configs/golden
+      - config_data_rs:/configs/candidate
     environment:
       - GOLDEN_BASE=http://backend:8000
       - CANDIDATE_BASE=http://backend-rs:8001
+      - GOLDEN_CONFIG_PATH=/configs/golden/config.json
+      - CANDIDATE_CONFIG_PATH=/configs/candidate/config.json
     command: sh -c "npm ci && npm run test:contract"
     depends_on:
       backend:
@@ -181,7 +186,8 @@ services:
 
 volumes:
   postgres_data:
-  config_data:
+  config_data_py:
+  config_data_rs:
 
 networks:
   fundval:

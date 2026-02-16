@@ -1,5 +1,6 @@
 import { runHealth } from "./cases/health.js";
 import { runBootstrap } from "./cases/bootstrap.js";
+import { runAuth } from "./cases/auth.js";
 
 type Case = {
   name: string;
@@ -12,6 +13,7 @@ const candidateBase = process.env.CANDIDATE_BASE ?? "http://localhost:8001";
 const cases: Case[] = [
   { name: "health", run: runHealth },
   { name: "bootstrap", run: runBootstrap },
+  { name: "auth", run: runAuth },
 ];
 
 async function main() {

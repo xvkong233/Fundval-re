@@ -173,6 +173,7 @@ services:
       - CANDIDATE_BASE=http://backend-rs:8001
       - GOLDEN_CONFIG_PATH=/configs/golden/config.json
       - CANDIDATE_CONFIG_PATH=/configs/candidate/config.json
+      - ENABLE_DB_CASES=true
     command: sh -c "npm ci && npm run test:contract"
     depends_on:
       backend:

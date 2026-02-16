@@ -3,6 +3,7 @@ import { runBootstrap } from "./cases/bootstrap.js";
 import { runAuth } from "./cases/auth.js";
 import { runUsers } from "./cases/users.js";
 import { runSources } from "./cases/sources.js";
+import { runFunds } from "./cases/funds.js";
 
 type Case = {
   name: string;
@@ -18,6 +19,7 @@ const cases: Case[] = [
   { name: "auth", run: runAuth },
   { name: "users", run: runUsers },
   { name: "sources", run: runSources },
+  { name: "funds", run: runFunds },
 ];
 
 async function main() {

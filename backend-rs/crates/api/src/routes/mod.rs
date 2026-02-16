@@ -5,6 +5,7 @@ use crate::state::AppState;
 pub mod bootstrap;
 pub mod auth;
 pub mod users;
+pub mod sources;
 pub mod health;
 
 pub fn router(state: AppState) -> Router<AppState> {
@@ -26,5 +27,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/api/auth/password", axum::routing::put(auth::change_password))
         .route("/api/users/register/", axum::routing::post(users::register))
         .route("/api/users/register", axum::routing::post(users::register))
+        .route("/api/sources/", axum::routing::get(sources::list))
+        .route("/api/sources", axum::routing::get(sources::list))
         .with_state(state)
 }

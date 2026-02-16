@@ -124,6 +124,41 @@ services:
     networks:
       - fundval
 
+  backend-rs:
+    build:
+      context: ./backend-rs
+    environment:
+      - PORT=8001
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-fundval}:${POSTGRES_PASSWORD:-fundval}@db:5432/${POSTGRES_DB:-fundval}
+      - SYSTEM_INITIALIZED=false
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8001:8001"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8001/api/health/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - fundval
+
+  frontend-next:
+    build:
+      context: ./frontend-next
+    environment:
+      # Next.js rewrites 会将 /api/* 代理到该地址（不包含 /api 前缀）
+      - API_PROXY_TARGET=http://backend-rs:8001
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend-rs:
+        condition: service_healthy
+    networks:
+      - fundval
+
 volumes:
   postgres_data:
   config_data:

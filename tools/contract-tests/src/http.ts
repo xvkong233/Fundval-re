@@ -20,3 +20,18 @@ export async function getJson(url: string): Promise<HttpResponse> {
   return { status: res.status, json };
 }
 
+export async function postJson(url: string, body: unknown): Promise<HttpResponse> {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(body),
+  });
+  const text = await res.text();
+  let json: JsonValue;
+  try {
+    json = JSON.parse(text) as JsonValue;
+  } catch {
+    throw new Error(`非 JSON 响应: ${url} status=${res.status} body=${text.slice(0, 200)}`);
+  }
+  return { status: res.status, json };
+}

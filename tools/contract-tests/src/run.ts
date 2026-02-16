@@ -1,4 +1,5 @@
 import { runHealth } from "./cases/health.js";
+import { runBootstrap } from "./cases/bootstrap.js";
 
 type Case = {
   name: string;
@@ -8,7 +9,10 @@ type Case = {
 const goldenBase = process.env.GOLDEN_BASE ?? "http://localhost:8000";
 const candidateBase = process.env.CANDIDATE_BASE ?? "http://localhost:8001";
 
-const cases: Case[] = [{ name: "health", run: runHealth }];
+const cases: Case[] = [
+  { name: "health", run: runHealth },
+  { name: "bootstrap", run: runBootstrap },
+];
 
 async function main() {
   const failures: { name: string; error: unknown }[] = [];
@@ -38,4 +42,3 @@ main().catch((e) => {
   process.stderr.write(String(e) + "\n");
   process.exit(1);
 });
-

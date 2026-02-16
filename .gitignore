@@ -55,6 +55,9 @@ lerna-debug.log*
 /frontend/src-tauri/target/
 /frontend/src-tauri/Cargo.lock
 
+# Rust backend
+/backend-rs/target/
+
 # Capacitor
 /frontend/android/
 /frontend/ios/

@@ -69,6 +69,7 @@ lerna-debug.log*
 # IDE
 .vscode/
 .idea/
+.codex/
 *.swp
 *.swo
 *~
@@ -112,3 +113,10 @@ backend/celerybeat-schedule-shm
 backend/celerybeat-schedule-wal
 dump.rdb
 image.png
+
+# Git worktrees (local development only)
+.worktrees/
+
+# Allow committing design/plan docs
+!docs/plans/
+!docs/plans/**

@@ -30,6 +30,14 @@ export const changePassword = (oldPassword: string, newPassword: string) =>
 
 export const getMySummary = () => api.get("/users/me/summary/");
 
+// sources
+export const listSources = () => publicApi.get("/sources/");
+
+export const getSourceAccuracy = (sourceName: string, days?: number) =>
+  publicApi.get(`/sources/${encodeURIComponent(sourceName)}/accuracy/`, {
+    params: typeof days === "number" ? { days } : {},
+  });
+
 // funds
 export const listFunds = (params: {
   page?: number;

@@ -99,6 +99,9 @@ export default function SettingsPage() {
           <Link href="/server-config" prefetch={false}>
             <Button>查看服务器配置说明</Button>
           </Link>
+          <Link href="/sources" prefetch={false}>
+            <Button>查看数据源状态</Button>
+          </Link>
         </Space>
       </Card>
 

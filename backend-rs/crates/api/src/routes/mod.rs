@@ -32,6 +32,8 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/api/auth/password", axum::routing::put(auth::change_password))
         .route("/api/users/register/", axum::routing::post(users::register))
         .route("/api/users/register", axum::routing::post(users::register))
+        .route("/api/users/me/summary/", axum::routing::get(users::me_summary))
+        .route("/api/users/me/summary", axum::routing::get(users::me_summary))
         .route("/api/sources/", axum::routing::get(sources::list))
         .route("/api/sources", axum::routing::get(sources::list))
         .route(

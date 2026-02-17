@@ -1,8 +1,11 @@
 use axum::{http::StatusCode, response::IntoResponse, Json};
+use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 use serde::{Deserialize, Serialize};
 
 use crate::state::AppState;
 use crate::django_password;
+use crate::routes::auth;
 
 #[derive(Debug, Deserialize)]
 pub struct RegisterRequest {
@@ -38,6 +41,15 @@ pub struct RegisterResponse {
 pub struct RegisterUser {
     pub id: String,
     pub username: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SummaryResponse {
+    pub account_count: i64,
+    pub position_count: i64,
+    pub total_cost: f64,
+    pub total_value: f64,
+    pub total_pnl: f64,
 }
 
 pub async fn register(
@@ -230,6 +242,129 @@ pub async fn register(
                 id: id.to_string(),
                 username: username.to_string(),
             },
+        }),
+    )
+        .into_response()
+}
+
+pub async fn me_summary(
+    axum::extract::State(state): axum::extract::State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> axum::response::Response {
+    let user_id = match auth::authenticate(&state, &headers) {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+    let user_id_i64 = match user_id.parse::<i64>() {
+        Ok(v) => v,
+        Err(_) => return auth::invalid_token_response(),
+    };
+
+    let pool = match state.pool() {
+        None => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "database not configured".to_string(),
+                }),
+            )
+                .into_response();
+        }
+        Some(p) => p,
+    };
+
+    let account_count = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)::bigint
+        FROM account
+        WHERE user_id = $1
+        "#,
+    )
+    .bind(user_id_i64)
+    .fetch_one(pool)
+    .await;
+
+    let position_count = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)::bigint
+        FROM position p
+        JOIN account a ON a.id = p.account_id
+        WHERE a.user_id = $1
+        "#,
+    )
+    .bind(user_id_i64)
+    .fetch_one(pool)
+    .await;
+
+    let total_cost = sqlx::query_scalar::<_, Decimal>(
+        r#"
+        SELECT COALESCE(SUM(p.holding_cost), 0)
+        FROM position p
+        JOIN account a ON a.id = p.account_id
+        WHERE a.user_id = $1
+        "#,
+    )
+    .bind(user_id_i64)
+    .fetch_one(pool)
+    .await;
+
+    let total_value = sqlx::query_scalar::<_, Decimal>(
+        r#"
+        SELECT COALESCE(SUM(f.latest_nav * p.holding_share), 0)
+        FROM position p
+        JOIN account a ON a.id = p.account_id
+        JOIN fund f ON f.id = p.fund_id
+        WHERE a.user_id = $1 AND f.latest_nav IS NOT NULL
+        "#,
+    )
+    .bind(user_id_i64)
+    .fetch_one(pool)
+    .await;
+
+    let total_pnl = sqlx::query_scalar::<_, Decimal>(
+        r#"
+        SELECT COALESCE(SUM((f.latest_nav - p.holding_nav) * p.holding_share), 0)
+        FROM position p
+        JOIN account a ON a.id = p.account_id
+        JOIN fund f ON f.id = p.fund_id
+        WHERE a.user_id = $1 AND f.latest_nav IS NOT NULL
+        "#,
+    )
+    .bind(user_id_i64)
+    .fetch_one(pool)
+    .await;
+
+    let (account_count, position_count, total_cost, total_value, total_pnl) = match (
+        account_count,
+        position_count,
+        total_cost,
+        total_value,
+        total_pnl,
+    ) {
+        (Ok(a), Ok(p), Ok(c), Ok(v), Ok(n)) => (a, p, c, v, n),
+        (Err(e), _, _, _, _)
+        | (_, Err(e), _, _, _)
+        | (_, _, Err(e), _, _)
+        | (_, _, _, Err(e), _)
+        | (_, _, _, _, Err(e)) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: e.to_string(),
+                }),
+            )
+                .into_response();
+        }
+    };
+
+    (
+        StatusCode::OK,
+        Json(SummaryResponse {
+            account_count,
+            position_count,
+            total_cost: total_cost.to_f64().unwrap_or(0.0),
+            total_value: total_value.to_f64().unwrap_or(0.0),
+            total_pnl: total_pnl.to_f64().unwrap_or(0.0),
         }),
     )
         .into_response()

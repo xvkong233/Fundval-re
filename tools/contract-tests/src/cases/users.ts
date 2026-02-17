@@ -9,6 +9,41 @@ export async function runUsers(goldenBase: string, candidateBase: string): Promi
   const candidateInit = (candidateHealth.json as any)?.system_initialized;
   if (goldenInit !== true || candidateInit !== true) return;
 
+  // /api/users/me/summary/（需要认证）
+  const goldenLogin = await postJson(`${goldenBase}/api/auth/login`, {
+    username: "admin",
+    password: "admin123",
+  });
+  const candidateLogin = await postJson(`${candidateBase}/api/auth/login`, {
+    username: "admin",
+    password: "admin123",
+  });
+  if (goldenLogin.status !== candidateLogin.status) {
+    throw new Error(
+      `users.me.summary 前置 login 状态码不一致: golden=${goldenLogin.status} candidate=${candidateLogin.status}`
+    );
+  }
+  if (goldenLogin.status === 200) {
+    const goldenAccessToken = (goldenLogin.json as any)?.access_token as string;
+    const candidateAccessToken = (candidateLogin.json as any)?.access_token as string;
+
+    const goldenSummary = await getJsonWithBearer(
+      `${goldenBase}/api/users/me/summary/`,
+      goldenAccessToken
+    );
+    const candidateSummary = await getJsonWithBearer(
+      `${candidateBase}/api/users/me/summary/`,
+      candidateAccessToken
+    );
+
+    if (goldenSummary.status !== candidateSummary.status) {
+      throw new Error(
+        `users.me.summary 状态码不一致: golden=${goldenSummary.status} candidate=${candidateSummary.status}`
+      );
+    }
+    assertSameShape(goldenSummary.json, candidateSummary.json, "$", {});
+  }
+
   const username = `newuser_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
   const password = "password123";
 
@@ -59,3 +94,15 @@ export async function runUsers(goldenBase: string, candidateBase: string): Promi
   assertSameShape(goldenDup.json, candidateDup.json, "$", {});
 }
 
+async function getJsonWithBearer(url: string, token: string) {
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+  });
+  const text = await res.text();
+  try {
+    return { status: res.status, json: JSON.parse(text) };
+  } catch {
+    throw new Error(`非 JSON 响应: ${url} status=${res.status} body=${text.slice(0, 200)}`);
+  }
+}

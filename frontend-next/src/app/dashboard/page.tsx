@@ -8,7 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AuthedLayout } from "../../components/AuthedLayout";
 import { listAccounts, listPositions, listPositionOperations, listWatchlists } from "../../lib/api";
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 type Account = Record<string, any> & { id: string; name?: string; parent: string | null; is_default?: boolean };
 type Position = Record<string, any> & { id: string; fund_code: string; fund_name?: string; pnl?: string; holding_cost?: string; holding_share?: string };
@@ -124,7 +124,6 @@ export default function DashboardPage() {
 
   useEffect(() => {
     void loadAll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const parentColumns: TableColumnsType<Account> = [

@@ -28,6 +28,7 @@ import {
   Space,
   Statistic,
   Table,
+  Tabs,
   Tag,
   Typography,
   message,
@@ -52,6 +53,12 @@ import {
 import { normalizeFundList, type Fund } from "../../lib/funds";
 import { pickDefaultChildAccountId } from "../../lib/positions";
 import { buildPositionHistoryChartOption } from "../../lib/positionHistoryChart";
+import {
+  buildDistributionChartOption,
+  buildPnlRankingChartOption,
+  computeDistribution,
+  computePnlRanking,
+} from "../../lib/positionPortfolioCharts";
 
 const { Text } = Typography;
 const ReactECharts = dynamic(() => import("echarts-for-react"), { ssr: false });
@@ -224,6 +231,9 @@ function PositionsInner() {
       return typeof t === "string" && t.includes(fundTypeFilter);
     });
   }, [fundTypeFilter, positions]);
+
+  const distributionRows = useMemo(() => computeDistribution(positions as any), [positions]);
+  const pnlRankingRows = useMemo(() => computePnlRanking(positions as any, 10), [positions]);
 
   const getOperationTypeTag = (record: Operation) => {
     if (record.operation_type === "SELL") return <Tag color="green">减仓</Tag>;
@@ -556,39 +566,77 @@ function PositionsInner() {
 
             <Card
               size="small"
-              title="账户历史市值"
-              loading={historyLoading}
+              title="数据可视化"
               extra={
-                <Space wrap>
-                  {[7, 30, 90, 180].map((d) => (
-                    <Button
-                      key={d}
-                      size="small"
-                      type={historyDays === d ? "primary" : "default"}
-                      onClick={() => setHistoryDays(d)}
-                    >
-                      {d === 7 ? "近7天" : d === 30 ? "近30天" : d === 90 ? "近90天" : "近半年"}
-                    </Button>
-                  ))}
-                  <Checkbox checked={compactHistoryChart} onChange={(e) => setCompactHistoryChart(e.target.checked)}>
-                    紧凑
-                  </Checkbox>
-                </Space>
+                <Checkbox checked={compactHistoryChart} onChange={(e) => setCompactHistoryChart(e.target.checked)}>
+                  紧凑
+                </Checkbox>
               }
             >
-              {historyError ? (
-                <Empty description={historyError} />
-              ) : historyPoints.length === 0 ? (
-                <Empty description="暂无历史数据（无操作流水时不会生成历史曲线）" />
-              ) : (
-                <ReactECharts
-                  option={buildPositionHistoryChartOption(historyPoints, {
-                    compact: compactHistoryChart,
-                    colorValue: token.colorPrimary,
-                  })}
-                  style={{ height: compactHistoryChart ? 300 : 380 }}
-                />
-              )}
+              <Tabs
+                items={[
+                  {
+                    key: "trend",
+                    label: "收益趋势",
+                    children: (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                        <Space wrap>
+                          {[7, 30, 90, 180].map((d) => (
+                            <Button
+                              key={d}
+                              size="small"
+                              type={historyDays === d ? "primary" : "default"}
+                              loading={historyLoading}
+                              onClick={() => setHistoryDays(d)}
+                            >
+                              {d === 7 ? "近7天" : d === 30 ? "近30天" : d === 90 ? "近90天" : "近半年"}
+                            </Button>
+                          ))}
+                        </Space>
+                        {historyError ? (
+                          <Empty description={historyError} />
+                        ) : historyPoints.length === 0 ? (
+                          <Empty description="暂无历史数据（无操作流水时不会生成历史曲线）" />
+                        ) : (
+                          <ReactECharts
+                            option={buildPositionHistoryChartOption(historyPoints, {
+                              compact: compactHistoryChart,
+                              colorValue: token.colorPrimary,
+                            })}
+                            style={{ height: compactHistoryChart ? 280 : 360 }}
+                          />
+                        )}
+                      </div>
+                    ),
+                  },
+                  {
+                    key: "distribution",
+                    label: "仓位分布",
+                    children:
+                      distributionRows.length === 0 ? (
+                        <Empty description="暂无可用数据（需要持仓份额 + 最新净值）" />
+                      ) : (
+                        <ReactECharts
+                          option={buildDistributionChartOption(distributionRows, { compact: compactHistoryChart })}
+                          style={{ height: compactHistoryChart ? 300 : 380 }}
+                        />
+                      ),
+                  },
+                  {
+                    key: "ranking",
+                    label: "收益排行",
+                    children:
+                      pnlRankingRows.length === 0 ? (
+                        <Empty description="暂无可用数据（需要持仓盈亏）" />
+                      ) : (
+                        <ReactECharts
+                          option={buildPnlRankingChartOption(pnlRankingRows, { compact: compactHistoryChart })}
+                          style={{ height: compactHistoryChart ? 300 : 380 }}
+                        />
+                      ),
+                  },
+                ]}
+              />
             </Card>
 
             <Space wrap>

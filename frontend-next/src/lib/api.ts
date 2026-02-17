@@ -25,3 +25,29 @@ export const refreshToken = (refreshTokenValue: string) =>
 
 export const getCurrentUser = () => api.get("/auth/me");
 
+// funds
+export const listFunds = (params: {
+  page?: number;
+  page_size?: number;
+  search?: string;
+  fund_type?: string;
+}) => api.get("/funds/", { params });
+
+export const getFundDetail = (fundCode: string) => api.get(`/funds/${encodeURIComponent(fundCode)}/`);
+
+export const getFundEstimate = (fundCode: string, source?: string) =>
+  api.get(`/funds/${encodeURIComponent(fundCode)}/estimate/`, { params: source ? { source } : {} });
+
+export const batchEstimate = (fundCodes: string[]) =>
+  api.post("/funds/batch_estimate/", { fund_codes: fundCodes });
+
+export const batchUpdateNav = (fundCodes: string[]) =>
+  api.post("/funds/batch_update_nav/", { fund_codes: fundCodes });
+
+// nav history
+export const listNavHistory = (fundCode: string, params: Record<string, any> = {}) =>
+  api.get("/nav-history/", { params: { fund_code: fundCode, ...params } });
+
+export const syncNavHistory = (fundCodes: string[], startDate: string, endDate: string) =>
+  api.post("/nav-history/sync/", { fund_codes: fundCodes, start_date: startDate, end_date: endDate });
+

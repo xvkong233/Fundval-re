@@ -59,3 +59,17 @@ export const createWatchlist = (name: string) => api.post("/watchlists/", { name
 export const addWatchlistItem = (watchlistId: string, fundCode: string) =>
   api.post(`/watchlists/${encodeURIComponent(watchlistId)}/items/`, { fund_code: fundCode });
 
+export const patchWatchlist = (watchlistId: string, name: string) =>
+  api.patch(`/watchlists/${encodeURIComponent(watchlistId)}/`, { name });
+
+export const deleteWatchlist = (watchlistId: string) =>
+  api.delete(`/watchlists/${encodeURIComponent(watchlistId)}/`);
+
+export const removeWatchlistItem = (watchlistId: string, fundCode: string) =>
+  api.delete(
+    `/watchlists/${encodeURIComponent(watchlistId)}/items/${encodeURIComponent(fundCode)}/`
+  );
+
+export const reorderWatchlist = (watchlistId: string, fundCodes: string[]) =>
+  api.put(`/watchlists/${encodeURIComponent(watchlistId)}/reorder/`, { fund_codes: fundCodes });
+

@@ -17,13 +17,25 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { AuthedLayout } from "../../../components/AuthedLayout";
-import { getFundDetail, getFundEstimate, listNavHistory, syncNavHistory } from "../../../lib/api";
+import { getFundDetail, getFundEstimate, listNavHistory, listPositionOperations, listPositions, syncNavHistory } from "../../../lib/api";
 import { getDateRange, type TimeRange } from "../../../lib/dateRange";
 import { buildNavChartOption } from "../../../lib/navChart";
+import { buildFundPositionRows, sortOperationsDesc, type FundPositionRow } from "../../../lib/fundDetail";
 
 const { Text } = Typography;
 
 type NavRow = Record<string, any> & { nav_date?: string; unit_nav?: string; accum_nav?: string };
+type OperationRow = Record<string, any> & {
+  id?: string;
+  account_name?: string;
+  operation_type?: string;
+  operation_date?: string;
+  before_15?: boolean;
+  amount?: string;
+  share?: string;
+  nav?: string;
+  created_at?: string;
+};
 
 const ReactECharts = dynamic(() => import("echarts-for-react"), { ssr: false });
 
@@ -39,6 +51,12 @@ export default function FundDetailPage() {
   const [navHistory, setNavHistory] = useState<NavRow[]>([]);
   const [timeRange, setTimeRange] = useState<TimeRange>("1M");
   const [compactChart, setCompactChart] = useState(false);
+
+  const [positionsLoading, setPositionsLoading] = useState(false);
+  const [positionRows, setPositionRows] = useState<FundPositionRow[]>([]);
+
+  const [operationsLoading, setOperationsLoading] = useState(false);
+  const [operations, setOperations] = useState<OperationRow[]>([]);
 
   const { token } = theme.useToken();
 
@@ -74,6 +92,30 @@ export default function FundDetailPage() {
     }
   };
 
+  const loadPositionsAndOperations = async (latestNav?: string | number | null) => {
+    setPositionsLoading(true);
+    setOperationsLoading(true);
+
+    try {
+      const [posRes, opRes] = await Promise.all([
+        listPositions().catch(() => null),
+        listPositionOperations({ fund_code: fundCode }).catch(() => null),
+      ]);
+
+      const positions = Array.isArray(posRes?.data) ? (posRes?.data as any[]) : [];
+      setPositionRows(buildFundPositionRows(positions, fundCode, latestNav));
+
+      const ops = Array.isArray(opRes?.data) ? (opRes?.data as OperationRow[]) : [];
+      setOperations(sortOperationsDesc(ops));
+    } catch {
+      setPositionRows([]);
+      setOperations([]);
+    } finally {
+      setPositionsLoading(false);
+      setOperationsLoading(false);
+    }
+  };
+
   const syncAndLoadNav = async (range: TimeRange) => {
     setNavLoading(true);
     try {
@@ -104,6 +146,19 @@ export default function FundDetailPage() {
     void loadBase();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fundCode]);
+
+  useEffect(() => {
+    if (!fundCode) return;
+    void syncAndLoadNav(timeRange);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fundCode, timeRange]);
+
+  useEffect(() => {
+    if (!fundCode) return;
+    const latestNav = fund?.latest_nav ?? fund?.yesterday_nav ?? null;
+    void loadPositionsAndOperations(latestNav);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fundCode, fund?.latest_nav, fund?.yesterday_nav]);
 
   useEffect(() => {
     const update = () => setCompactChart(window.innerWidth < 768);
@@ -222,6 +277,104 @@ export default function FundDetailPage() {
             ]}
           />
         </Card>
+
+        {positionRows.length > 0 ? (
+          <Card title="我的持仓" loading={positionsLoading}>
+            <Table<FundPositionRow>
+              rowKey={(r) => r.account_name}
+              dataSource={positionRows}
+              pagination={false}
+              scroll={{ x: "max-content" }}
+              columns={[
+                { title: "账户", dataIndex: "account_name", key: "account_name" },
+                {
+                  title: "持仓份额",
+                  dataIndex: "holding_share",
+                  key: "holding_share",
+                  render: (v: any) => (Number.isFinite(Number(v)) ? Number(v).toFixed(2) : "-"),
+                },
+                {
+                  title: "持仓成本",
+                  dataIndex: "holding_cost",
+                  key: "holding_cost",
+                  render: (v: any) => (Number.isFinite(Number(v)) ? `¥${Number(v).toFixed(2)}` : "-"),
+                },
+                {
+                  title: "市值",
+                  dataIndex: "market_value",
+                  key: "market_value",
+                  render: (v: any) => (Number.isFinite(Number(v)) ? `¥${Number(v).toFixed(2)}` : "-"),
+                },
+                {
+                  title: "盈亏",
+                  dataIndex: "pnl",
+                  key: "pnl",
+                  render: (_: any, record) => {
+                    const pnl = record.pnl;
+                    const pnlRate = record.pnl_rate;
+                    if (pnl === null || pnl === undefined) return "-";
+                    const positive = pnl >= 0;
+                    const rateText =
+                      pnlRate === null || pnlRate === undefined
+                        ? ""
+                        : ` (${pnlRate >= 0 ? "+" : ""}${pnlRate.toFixed(2)}%)`;
+                    return (
+                      <span style={{ color: positive ? "#cf1322" : "#3f8600" }}>
+                        {positive ? "+" : ""}¥{pnl.toFixed(2)}
+                        {rateText}
+                      </span>
+                    );
+                  },
+                },
+              ]}
+            />
+          </Card>
+        ) : null}
+
+        {operations.length > 0 ? (
+          <Card title="操作记录" loading={operationsLoading}>
+            <Table<OperationRow>
+              rowKey={(r) => String(r.id ?? `${r.operation_date ?? ""}-${r.created_at ?? ""}`)}
+              dataSource={operations}
+              pagination={{ pageSize: 20 }}
+              scroll={{ x: "max-content" }}
+              columns={[
+                { title: "日期", dataIndex: "operation_date", width: 120 },
+                { title: "账户", dataIndex: "account_name", width: 160, ellipsis: true },
+                {
+                  title: "类型",
+                  dataIndex: "operation_type",
+                  width: 120,
+                  render: (v: any) => (v === "BUY" ? "买入" : v === "SELL" ? "卖出" : String(v ?? "-")),
+                },
+                {
+                  title: "金额",
+                  dataIndex: "amount",
+                  width: 140,
+                  render: (v: any) => (v ? `¥${Number(v).toFixed(2)}` : "-"),
+                },
+                {
+                  title: "份额",
+                  dataIndex: "share",
+                  width: 140,
+                  render: (v: any) => (v ? Number(v).toFixed(4) : "-"),
+                },
+                {
+                  title: "净值",
+                  dataIndex: "nav",
+                  width: 120,
+                  render: (v: any) => (v ? Number(v).toFixed(4) : "-"),
+                },
+                {
+                  title: "15点前",
+                  dataIndex: "before_15",
+                  width: 110,
+                  render: (v: any) => (v === true ? "是" : v === false ? "否" : "-"),
+                },
+              ]}
+            />
+          </Card>
+        ) : null}
       </Space>
     </AuthedLayout>
   );

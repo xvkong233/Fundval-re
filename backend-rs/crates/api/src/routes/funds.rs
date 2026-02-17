@@ -952,12 +952,13 @@ pub async fn sync(
         Some(p) => p,
     };
 
-    let is_admin = match sqlx::query("SELECT is_superuser FROM auth_user WHERE id = $1")
+    // Django IsAdminUser：要求 is_staff（不要求 is_superuser）
+    let is_admin = match sqlx::query("SELECT is_staff FROM auth_user WHERE id = $1")
         .bind(user_id_i64)
         .fetch_optional(pool)
         .await
     {
-        Ok(Some(row)) => row.get::<bool, _>("is_superuser"),
+        Ok(Some(row)) => row.get::<bool, _>("is_staff"),
         _ => false,
     };
 

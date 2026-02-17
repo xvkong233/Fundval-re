@@ -307,7 +307,10 @@ pub async fn sync(
 
     // 分级鉴权：>15 需要 is_staff
     if fund_codes.len() > 15 {
-        let is_staff = maybe_is_staff(&state, &headers).await.unwrap_or(false);
+        let is_staff = match maybe_is_staff(&state, &headers).await {
+            Ok(v) => v.unwrap_or(false),
+            Err(resp) => return resp,
+        };
         if !is_staff {
             return (
                 StatusCode::FORBIDDEN,
@@ -365,22 +368,47 @@ pub async fn sync(
     (StatusCode::OK, Json(serde_json::Value::Object(results))).into_response()
 }
 
-async fn maybe_is_staff(state: &AppState, headers: &axum::http::HeaderMap) -> Option<bool> {
-    let auth_header = headers.get(axum::http::header::AUTHORIZATION)?;
-    let auth_str = auth_header.to_str().ok()?;
-    if !auth_str.starts_with("Bearer ") {
-        return None;
-    }
-    let user_id = auth::authenticate(state, headers).ok()?;
-    let user_id_i64 = user_id.parse::<i64>().ok()?;
+async fn maybe_is_staff(
+    state: &AppState,
+    headers: &axum::http::HeaderMap,
+) -> Result<Option<bool>, axum::response::Response> {
+    let Some(auth_header) = headers.get(axum::http::header::AUTHORIZATION) else {
+        return Ok(None);
+    };
 
-    let pool = state.pool()?;
+    let auth_str = auth_header
+        .to_str()
+        .map_err(|_| auth::invalid_token_response())?;
+
+    // 非 Bearer 视为“未提供认证”，留给调用方按业务规则处理（这里用于 >15 的分级鉴权）。
+    if !auth_str.starts_with("Bearer ") {
+        return Ok(None);
+    }
+
+    // Bearer 但 token 无效时：应与 DRF 行为一致，直接返回 401（而不是降级为 403）。
+    let user_id = auth::authenticate(state, headers).map_err(|resp| resp)?;
+    let user_id_i64 = user_id
+        .parse::<i64>()
+        .map_err(|_| auth::invalid_token_response())?;
+
+    let Some(pool) = state.pool() else {
+        return Ok(None);
+    };
+
     let row = sqlx::query("SELECT is_staff FROM auth_user WHERE id = $1")
         .bind(user_id_i64)
         .fetch_optional(pool)
         .await
-        .ok()?;
-    row.map(|r| r.get::<bool, _>("is_staff"))
+        .map_err(|e| {
+            tracing::error!(error = %e, "nav_history.maybe_is_staff query failed");
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "服务器内部错误" })),
+            )
+                .into_response()
+        })?;
+
+    Ok(row.map(|r| r.get::<bool, _>("is_staff")))
 }
 
 async fn sync_one(

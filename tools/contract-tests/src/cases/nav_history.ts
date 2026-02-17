@@ -72,4 +72,41 @@ export async function runNavHistory(goldenBase: string, candidateBase: string): 
     );
   }
   assertSameSchema(goldenSyncForbidden.json, candidateSyncForbidden.json, "$");
+
+  // sync >15 with invalid token:
+  // DRF 会先做 JWTAuthentication；带无效 token 时应直接 401（而不是走“>15 需要管理员”分支）。
+  const goldenSyncInvalidToken = await postJsonWithBearer(
+    `${goldenBase}/api/nav-history/sync/`,
+    "invalid-token-for-contract-tests",
+    { fund_codes: fundCodes }
+  );
+  const candidateSyncInvalidToken = await postJsonWithBearer(
+    `${candidateBase}/api/nav-history/sync/`,
+    "invalid-token-for-contract-tests",
+    { fund_codes: fundCodes }
+  );
+  if (goldenSyncInvalidToken.status !== candidateSyncInvalidToken.status) {
+    throw new Error(
+      `nav-history.sync(>15 invalid token) 状态码不一致: golden=${goldenSyncInvalidToken.status} candidate=${candidateSyncInvalidToken.status}`
+    );
+  }
+  assertSameSchema(goldenSyncInvalidToken.json, candidateSyncInvalidToken.json, "$");
+}
+
+async function postJsonWithBearer(url: string, token: string, body: unknown) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(body),
+  });
+  const text = await res.text();
+  try {
+    return { status: res.status, json: JSON.parse(text) };
+  } catch {
+    throw new Error(`非 JSON 响应: ${url} status=${res.status} body=${text.slice(0, 200)}`);
+  }
 }

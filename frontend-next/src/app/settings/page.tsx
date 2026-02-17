@@ -1,12 +1,13 @@
 "use client";
 
-import { Button, Card, Form, Input, Space, Typography, message, Result } from "antd";
+import { Button, Card, Descriptions, Form, Input, Result, Space, Spin, Statistic, Typography, message, theme } from "antd";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AuthedLayout } from "../../components/AuthedLayout";
-import { changePassword } from "../../lib/api";
+import { changePassword, getCurrentUser, getMySummary } from "../../lib/api";
 import { getChangePasswordErrorMessage } from "../../lib/changePassword";
 import { useAuth } from "../../contexts/AuthContext";
+import { normalizeUserSummary } from "../../lib/userSummary";
 
 const { Paragraph, Text, Title } = Typography;
 
@@ -17,10 +18,55 @@ type ChangePasswordValues = {
 };
 
 export default function SettingsPage() {
-  const { logout } = useAuth();
+  const { logout, user, updateUser } = useAuth();
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
   const [form] = Form.useForm<ChangePasswordValues>();
+
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [me, setMe] = useState<any | null>(null);
+  const [summary, setSummary] = useState<any | null>(null);
+  const [profileNonce, setProfileNonce] = useState(0);
+
+  const { token } = theme.useToken();
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function run() {
+      setProfileLoading(true);
+      setProfileError(null);
+      try {
+        const [meRes, sumRes] = await Promise.all([getCurrentUser(), getMySummary()]);
+        if (cancelled) return;
+        setMe(meRes.data);
+        setSummary(sumRes.data);
+
+        // 尝试同步上下文（不覆盖已存在字段以外的内容也没关系）
+        if (meRes.data) {
+          updateUser(meRes.data);
+        }
+      } catch (error: any) {
+        if (cancelled) return;
+        const msg = error?.response?.data?.error || "加载用户信息失败";
+        setProfileError(msg);
+      } finally {
+        if (!cancelled) setProfileLoading(false);
+      }
+    }
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileNonce]);
+
+  const normalizedSummary = useMemo(() => {
+    if (!summary) return null;
+    return normalizeUserSummary(summary);
+  }, [summary]);
 
   const onChangePassword = async (values: ChangePasswordValues) => {
     setSaving(true);
@@ -54,6 +100,106 @@ export default function SettingsPage() {
             <Button>查看服务器配置说明</Button>
           </Link>
         </Space>
+      </Card>
+
+      <Card style={{ marginBottom: 16 }}>
+        <Title level={3} style={{ marginTop: 0 }}>
+          账号信息
+        </Title>
+
+        {profileLoading ? (
+          <div style={{ padding: "16px 0", display: "flex", justifyContent: "center" }}>
+            <Spin />
+          </div>
+        ) : profileError ? (
+          <Result
+            status="warning"
+            title="信息加载失败"
+            subTitle={profileError}
+            extra={[
+              <Button
+                key="retry"
+                onClick={() => {
+                  setProfileNonce((v) => v + 1);
+                }}
+              >
+                重试
+              </Button>,
+            ]}
+          />
+        ) : (
+          <Space direction="vertical" size="large" style={{ width: "100%" }}>
+            <Descriptions
+              column={{ xs: 1, sm: 2, md: 3 }}
+              items={[
+                { key: "username", label: "用户名", children: me?.username ?? user?.username ?? "-" },
+                { key: "role", label: "角色", children: me?.role ?? user?.role ?? "-" },
+                { key: "email", label: "邮箱", children: me?.email ?? "-" },
+                { key: "created_at", label: "创建时间", children: me?.created_at ?? "-" },
+              ]}
+            />
+
+            {normalizedSummary ? (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                  gap: 12,
+                }}
+              >
+                <Card size="small" styles={{ body: { padding: 12 } }}>
+                  <Statistic title="账户数" value={normalizedSummary.account_count} />
+                </Card>
+                <Card size="small" styles={{ body: { padding: 12 } }}>
+                  <Statistic title="持仓数" value={normalizedSummary.position_count} />
+                </Card>
+                <Card size="small" styles={{ body: { padding: 12 } }}>
+                  <Statistic
+                    title="总成本"
+                    value={normalizedSummary.total_cost}
+                    precision={2}
+                    prefix="¥"
+                  />
+                </Card>
+                <Card size="small" styles={{ body: { padding: 12 } }}>
+                  <Statistic
+                    title="总市值"
+                    value={normalizedSummary.total_value}
+                    precision={2}
+                    prefix="¥"
+                  />
+                </Card>
+                <Card size="small" styles={{ body: { padding: 12 } }}>
+                  <Statistic
+                    title="总盈亏"
+                    value={normalizedSummary.total_pnl}
+                    precision={2}
+                    prefix="¥"
+                    valueStyle={{
+                      color: normalizedSummary.total_pnl >= 0 ? "#cf1322" : "#3f8600",
+                    }}
+                    suffix={
+                      normalizedSummary.total_pnl_rate === null
+                        ? ""
+                        : ` (${normalizedSummary.total_pnl_rate >= 0 ? "+" : ""}${normalizedSummary.total_pnl_rate.toFixed(2)}%)`
+                    }
+                  />
+                </Card>
+              </div>
+            ) : (
+              <div
+                style={{
+                  border: `1px dashed ${token.colorBorder}`,
+                  borderRadius: token.borderRadiusLG,
+                  padding: 12,
+                  color: token.colorTextSecondary,
+                }}
+              >
+                暂无资产汇总数据
+              </div>
+            )}
+          </Space>
+        )}
       </Card>
 
       <Card>

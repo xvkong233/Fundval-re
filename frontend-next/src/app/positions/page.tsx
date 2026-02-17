@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import {
   DeleteOutlined,
   MinusOutlined,
@@ -30,6 +31,7 @@ import {
   Tag,
   Typography,
   message,
+  theme,
 } from "antd";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -39,6 +41,7 @@ import {
   batchUpdateNav,
   createPositionOperation,
   deletePositionOperation,
+  getPositionHistory,
   listAccounts,
   listFunds,
   listPositionOperations,
@@ -48,8 +51,10 @@ import {
 } from "../../lib/api";
 import { normalizeFundList, type Fund } from "../../lib/funds";
 import { pickDefaultChildAccountId } from "../../lib/positions";
+import { buildPositionHistoryChartOption } from "../../lib/positionHistoryChart";
 
 const { Text } = Typography;
+const ReactECharts = dynamic(() => import("echarts-for-react"), { ssr: false });
 
 type Account = Record<string, any> & { id: string; name?: string; parent: string | null; parent_name?: string };
 
@@ -129,6 +134,7 @@ export default function PositionsPage() {
 function PositionsInner() {
   const searchParams = useSearchParams();
   const preferredAccountId = searchParams?.get("account");
+  const { token } = theme.useToken();
 
   const [loading, setLoading] = useState(false);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -155,6 +161,12 @@ function PositionsInner() {
 
   const [opsLoading, setOpsLoading] = useState(false);
   const [operations, setOperations] = useState<Operation[]>([]);
+
+  const [historyDays, setHistoryDays] = useState<number>(30);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyPoints, setHistoryPoints] = useState<Array<{ date: string; value: number; cost: number }>>([]);
+  const [compactHistoryChart, setCompactHistoryChart] = useState(false);
 
   const [refreshingFundData, setRefreshingFundData] = useState(false);
 
@@ -311,6 +323,22 @@ function PositionsInner() {
     }
   };
 
+  const loadHistory = async (accountId: string, days: number) => {
+    setHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      const res = await getPositionHistory(accountId, days);
+      const list = Array.isArray(res.data) ? (res.data as Array<{ date: string; value: number; cost: number }>) : [];
+      setHistoryPoints(list);
+    } catch (error: any) {
+      const msg = error?.response?.data?.error || "加载历史市值失败";
+      setHistoryError(msg);
+      setHistoryPoints([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
   useEffect(() => {
     void loadAccounts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -322,6 +350,11 @@ function PositionsInner() {
     void loadOperations(selectedAccountId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAccountId]);
+
+  useEffect(() => {
+    if (!selectedAccountId) return;
+    void loadHistory(selectedAccountId, historyDays);
+  }, [selectedAccountId, historyDays]);
 
   useEffect(() => {
     if (!opModalOpen) return;
@@ -519,6 +552,43 @@ function PositionsInner() {
                   <Statistic title="今日盈亏(预估)" valueStyle={{ color: pnlColor(accountStats.today_pnl) }} value={money(accountStats.today_pnl)} />
                 </Col>
               </Row>
+            </Card>
+
+            <Card
+              size="small"
+              title="账户历史市值"
+              loading={historyLoading}
+              extra={
+                <Space wrap>
+                  {[7, 30, 90, 180].map((d) => (
+                    <Button
+                      key={d}
+                      size="small"
+                      type={historyDays === d ? "primary" : "default"}
+                      onClick={() => setHistoryDays(d)}
+                    >
+                      {d === 7 ? "近7天" : d === 30 ? "近30天" : d === 90 ? "近90天" : "近半年"}
+                    </Button>
+                  ))}
+                  <Checkbox checked={compactHistoryChart} onChange={(e) => setCompactHistoryChart(e.target.checked)}>
+                    紧凑
+                  </Checkbox>
+                </Space>
+              }
+            >
+              {historyError ? (
+                <Empty description={historyError} />
+              ) : historyPoints.length === 0 ? (
+                <Empty description="暂无历史数据（无操作流水时不会生成历史曲线）" />
+              ) : (
+                <ReactECharts
+                  option={buildPositionHistoryChartOption(historyPoints, {
+                    compact: compactHistoryChart,
+                    colorValue: token.colorPrimary,
+                  })}
+                  style={{ height: compactHistoryChart ? 300 : 380 }}
+                />
+              )}
             </Card>
 
             <Space wrap>

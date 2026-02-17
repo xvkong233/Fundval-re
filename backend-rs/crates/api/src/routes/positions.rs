@@ -1,13 +1,15 @@
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
 use axum::{body::Bytes, extract::Query, http::StatusCode, response::IntoResponse, Json};
-use chrono::{DateTime, NaiveDate, SecondsFormat, Utc};
-use rust_decimal::{Decimal, RoundingStrategy};
+use chrono::{DateTime, Duration, NaiveDate, SecondsFormat, Utc};
+use rust_decimal::{prelude::ToPrimitive, Decimal, RoundingStrategy};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::Row;
 use uuid::Uuid;
 
+use crate::position_history;
 use crate::routes::auth;
 use crate::state::AppState;
 
@@ -24,6 +26,12 @@ struct MessageResponse {
 #[derive(Debug, Deserialize)]
 pub struct PositionsListQuery {
     pub account: Option<Uuid>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct PositionHistoryQuery {
+    pub account_id: Option<String>,
+    pub days: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -52,6 +60,13 @@ pub struct PositionResponse {
     pub holding_nav: String,
     pub pnl: String,
     pub updated_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PositionHistoryPointResponse {
+    pub date: String,
+    pub value: f64,
+    pub cost: f64,
 }
 
 pub async fn list(
@@ -131,6 +146,236 @@ pub async fn list(
     for row in rows {
         out.push(position_from_row(row));
     }
+
+    (StatusCode::OK, Json(out)).into_response()
+}
+
+pub async fn history(
+    axum::extract::State(state): axum::extract::State<AppState>,
+    headers: axum::http::HeaderMap,
+    Query(q): Query<PositionHistoryQuery>,
+) -> axum::response::Response {
+    let user_id = match auth::authenticate(&state, &headers) {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+    let user_id_i64 = match user_id.parse::<i64>() {
+        Ok(v) => v,
+        Err(_) => return auth::invalid_token_response(),
+    };
+
+    let pool = match state.pool() {
+        None => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "database not configured".to_string(),
+                }),
+            )
+                .into_response();
+        }
+        Some(p) => p,
+    };
+
+    let Some(account_id_raw) = q
+        .account_id
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+    else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "缺少 account_id 参数".to_string(),
+            }),
+        )
+            .into_response();
+    };
+
+    let account_id = match Uuid::parse_str(&account_id_raw) {
+        Ok(v) => v,
+        Err(_) => {
+            return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
+        }
+    };
+
+    let days = q
+        .days
+        .as_ref()
+        .and_then(|s| s.trim().parse::<i64>().ok())
+        .unwrap_or(30)
+        .max(0);
+
+    // 验证账户归属 + 只支持子账户
+    let row = match sqlx::query("SELECT parent_id FROM account WHERE id = $1 AND user_id = $2")
+        .bind(account_id)
+        .bind(user_id_i64)
+        .fetch_optional(pool)
+        .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            )
+                .into_response();
+        }
+    };
+
+    let Some(row) = row else {
+        return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
+    };
+
+    let parent_id: Option<Uuid> = row.get("parent_id");
+    if parent_id.is_none() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "暂不支持父账户历史查询".to_string(),
+            }),
+        )
+            .into_response();
+    }
+
+    let end_date = Utc::now().date_naive();
+    let start_date = end_date - Duration::days(days);
+
+    // 获取所有操作流水（包含查询范围之前的操作）
+    let op_rows = match sqlx::query(
+        r#"
+        SELECT fund_id, operation_type, operation_date, amount::text as amount, share::text as share
+        FROM position_operation
+        WHERE account_id = $1 AND operation_date <= $2
+        ORDER BY operation_date ASC, created_at ASC
+        "#,
+    )
+    .bind(account_id)
+    .bind(end_date)
+    .fetch_all(pool)
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            )
+                .into_response();
+        }
+    };
+
+    if op_rows.is_empty() {
+        return (StatusCode::OK, Json(Vec::<PositionHistoryPointResponse>::new())).into_response();
+    }
+
+    let mut ops = Vec::with_capacity(op_rows.len());
+    let mut fund_ids_set: HashSet<Uuid> = HashSet::new();
+
+    for row in op_rows {
+        let fund_id: Uuid = row.get("fund_id");
+        fund_ids_set.insert(fund_id);
+
+        let op_type_raw: String = row.get("operation_type");
+        let operation_type = match op_type_raw.as_str() {
+            "BUY" => position_history::OperationType::Buy,
+            _ => position_history::OperationType::Sell,
+        };
+
+        ops.push(position_history::Operation {
+            fund_id,
+            operation_type,
+            operation_date: row.get::<NaiveDate, _>("operation_date"),
+            amount: parse_decimal(row.get::<String, _>("amount")),
+            share: parse_decimal(row.get::<String, _>("share")),
+        });
+    }
+
+    let fund_ids: Vec<Uuid> = fund_ids_set.into_iter().collect();
+
+    // 查询每日净值（范围内）
+    let nav_rows = match sqlx::query(
+        r#"
+        SELECT fund_id, nav_date, unit_nav::text as unit_nav
+        FROM fund_nav_history
+        WHERE fund_id = ANY($1) AND nav_date >= $2 AND nav_date <= $3
+        "#,
+    )
+    .bind(&fund_ids)
+    .bind(start_date)
+    .bind(end_date)
+    .fetch_all(pool)
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            )
+                .into_response();
+        }
+    };
+
+    let mut nav_records = Vec::with_capacity(nav_rows.len());
+    for row in nav_rows {
+        nav_records.push(position_history::NavRecord {
+            fund_id: row.get("fund_id"),
+            nav_date: row.get::<NaiveDate, _>("nav_date"),
+            unit_nav: parse_decimal(row.get::<String, _>("unit_nav")),
+        });
+    }
+
+    // Fund.latest_nav 作为 fallback（与 Django 服务一致）
+    let latest_rows = match sqlx::query(
+        r#"
+        SELECT id as fund_id, latest_nav::text as latest_nav
+        FROM fund
+        WHERE id = ANY($1)
+        "#,
+    )
+    .bind(&fund_ids)
+    .fetch_all(pool)
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            )
+                .into_response();
+        }
+    };
+
+    let mut latest_nav_by_fund: HashMap<Uuid, Decimal> = HashMap::new();
+    for row in latest_rows {
+        let fund_id: Uuid = row.get("fund_id");
+        let latest_nav_text: Option<String> = row.get("latest_nav");
+        let Some(latest_nav_text) = latest_nav_text else { continue };
+        let latest_nav_text = latest_nav_text.trim().to_string();
+        if latest_nav_text.is_empty() {
+            continue;
+        }
+        latest_nav_by_fund.insert(fund_id, parse_decimal(latest_nav_text));
+    }
+
+    let points = position_history::calculate_account_history(
+        &ops,
+        &nav_records,
+        &latest_nav_by_fund,
+        start_date,
+        end_date,
+    );
+
+    let out = points
+        .into_iter()
+        .map(|p| PositionHistoryPointResponse {
+            date: p.date.to_string(),
+            value: p.value.to_f64().unwrap_or(0.0),
+            cost: p.cost.to_f64().unwrap_or(0.0),
+        })
+        .collect::<Vec<_>>();
 
     (StatusCode::OK, Json(out)).into_response()
 }

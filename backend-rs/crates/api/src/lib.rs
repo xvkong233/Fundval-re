@@ -4,6 +4,7 @@ pub mod django_password;
 pub mod jwt;
 pub mod state;
 pub mod eastmoney;
+pub mod position_history;
 
 use axum::Router;
 

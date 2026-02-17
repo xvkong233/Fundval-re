@@ -103,6 +103,11 @@ export const deleteAccount = (accountId: string) =>
 // positions
 export const listPositions = (params?: { account?: string }) => api.get("/positions/", { params });
 
+export const getPositionHistory = (accountId: string, days?: number) =>
+  api.get("/positions/history/", {
+    params: { account_id: accountId, ...(typeof days === "number" ? { days } : {}) },
+  });
+
 export const listPositionOperations = (params?: { account?: string; fund_code?: string }) =>
   api.get("/positions/operations/", { params });
 

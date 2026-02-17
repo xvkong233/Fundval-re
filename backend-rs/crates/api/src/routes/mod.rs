@@ -116,6 +116,11 @@ pub fn router(state: AppState) -> Router<AppState> {
         )
         .route("/api/positions/", axum::routing::get(positions::list))
         .route("/api/positions", axum::routing::get(positions::list))
+        .route(
+            "/api/positions/history/",
+            axum::routing::get(positions::history),
+        )
+        .route("/api/positions/history", axum::routing::get(positions::history))
         .route("/api/positions/{id}/", axum::routing::get(positions::retrieve))
         .route("/api/positions/{id}", axum::routing::get(positions::retrieve))
         .route(

@@ -51,3 +51,11 @@ export const listNavHistory = (fundCode: string, params: Record<string, any> = {
 export const syncNavHistory = (fundCodes: string[], startDate: string, endDate: string) =>
   api.post("/nav-history/sync/", { fund_codes: fundCodes, start_date: startDate, end_date: endDate });
 
+// watchlists
+export const listWatchlists = () => api.get("/watchlists/");
+
+export const createWatchlist = (name: string) => api.post("/watchlists/", { name });
+
+export const addWatchlistItem = (watchlistId: string, fundCode: string) =>
+  api.post(`/watchlists/${encodeURIComponent(watchlistId)}/items/`, { fund_code: fundCode });
+

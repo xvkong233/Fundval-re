@@ -23,6 +23,7 @@ export function AuthedLayout({
   const selectedKeys = useMemo(() => {
     if (!pathname) return [];
     if (pathname.startsWith("/funds")) return ["funds"];
+    if (pathname.startsWith("/watchlists")) return ["watchlists"];
     if (pathname.startsWith("/dashboard")) return ["dashboard"];
     return [];
   }, [pathname]);
@@ -43,6 +44,10 @@ export function AuthedLayout({
             {
               key: "funds",
               label: <Link href="/funds">基金</Link>,
+            },
+            {
+              key: "watchlists",
+              label: <Link href="/watchlists">自选</Link>,
             },
           ]}
         />

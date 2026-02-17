@@ -1,18 +1,21 @@
 "use client";
 
-import { Button, Card, Input, Space, Table, Typography, message } from "antd";
+import { Button, Card, Input, Modal, Select, Space, Table, Typography, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ReloadOutlined, SearchOutlined } from "@ant-design/icons";
+import { ReloadOutlined, SearchOutlined, StarOutlined } from "@ant-design/icons";
+import { useRouter } from "next/navigation";
 import { AuthedLayout } from "../../components/AuthedLayout";
-import { batchEstimate, batchUpdateNav, listFunds } from "../../lib/api";
+import { addWatchlistItem, batchEstimate, batchUpdateNav, listFunds, listWatchlists } from "../../lib/api";
 import { mergeBatchEstimate, mergeBatchNav, normalizeFundList, type Fund } from "../../lib/funds";
+import { pickDefaultWatchlistId, type Watchlist } from "../../lib/watchlists";
 
 const { Text } = Typography;
 
 const PAGE_SIZE = 10;
 
 export default function FundsPage() {
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [funds, setFunds] = useState<Fund[]>([]);
@@ -20,6 +23,12 @@ export default function FundsPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [lastUpdateTime, setLastUpdateTime] = useState<Date | null>(null);
+
+  const [watchlistModalOpen, setWatchlistModalOpen] = useState(false);
+  const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
+  const [selectedWatchlistId, setSelectedWatchlistId] = useState<string | null>(null);
+  const [selectedFund, setSelectedFund] = useState<Fund | null>(null);
+  const [watchlistLoading, setWatchlistLoading] = useState(false);
 
   const fundCodes = useMemo(() => funds.map((f) => f.fund_code).filter(Boolean), [funds]);
 
@@ -65,6 +74,46 @@ export default function FundsPage() {
     void refreshEstimatesAndNavs(fundCodes);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [total, page, search]);
+
+  const openAddToWatchlist = async (fund: Fund) => {
+    setSelectedFund(fund);
+    setWatchlistLoading(true);
+    try {
+      const res = await listWatchlists();
+      const list = Array.isArray(res.data) ? (res.data as Watchlist[]) : [];
+      setWatchlists(list);
+
+      const defaultId = pickDefaultWatchlistId(list);
+      if (!defaultId) {
+        message.warning("请先创建自选列表");
+        router.push("/watchlists");
+        return;
+      }
+
+      setSelectedWatchlistId(defaultId);
+      setWatchlistModalOpen(true);
+    } catch (error: any) {
+      const msg = error?.response?.data?.error || "加载自选列表失败";
+      message.error(msg);
+    } finally {
+      setWatchlistLoading(false);
+    }
+  };
+
+  const confirmAddToWatchlist = async () => {
+    if (!selectedFund || !selectedWatchlistId) return;
+    setWatchlistLoading(true);
+    try {
+      await addWatchlistItem(selectedWatchlistId, selectedFund.fund_code);
+      message.success("添加成功");
+      setWatchlistModalOpen(false);
+    } catch (error: any) {
+      const msg = error?.response?.data?.error || "添加失败";
+      message.error(msg);
+    } finally {
+      setWatchlistLoading(false);
+    }
+  };
 
   return (
     <AuthedLayout
@@ -168,12 +217,46 @@ export default function FundsPage() {
               {
                 title: "操作",
                 key: "action",
-                width: 120,
-                render: (_, record) => <Link href={`/funds/${encodeURIComponent(record.fund_code)}`}>查看</Link>,
+                width: 160,
+                render: (_, record) => (
+                  <Space>
+                    <Link href={`/funds/${encodeURIComponent(record.fund_code)}`}>查看</Link>
+                    <Button
+                      size="small"
+                      icon={<StarOutlined />}
+                      loading={watchlistLoading && selectedFund?.fund_code === record.fund_code}
+                      onClick={() => void openAddToWatchlist(record)}
+                    >
+                      自选
+                    </Button>
+                  </Space>
+                ),
               },
             ]}
           />
         </div>
+
+        <Modal
+          title={selectedFund ? `添加到自选：${selectedFund.fund_name ?? selectedFund.fund_code}` : "添加到自选"}
+          open={watchlistModalOpen}
+          onOk={() => void confirmAddToWatchlist()}
+          confirmLoading={watchlistLoading}
+          onCancel={() => setWatchlistModalOpen(false)}
+          okText="添加"
+          cancelText="取消"
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div>
+              <Text type="secondary">选择自选列表</Text>
+            </div>
+            <Select
+              value={selectedWatchlistId ?? undefined}
+              onChange={(v) => setSelectedWatchlistId(v)}
+              placeholder="请选择自选列表"
+              options={watchlists.map((w) => ({ label: w.name ?? w.id, value: w.id }))}
+            />
+          </div>
+        </Modal>
       </Card>
     </AuthedLayout>
   );

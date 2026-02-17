@@ -1,14 +1,16 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { useState } from "react";
-import { Button, Card, Form, Input, Layout, message, theme, Typography } from "antd";
+import { useEffect, useState } from "react";
+import { Button, Card, Form, Input, Layout, message, theme, Typography, Result, Spin } from "antd";
 import { CloudServerOutlined, LockOutlined, LoginOutlined, UserOutlined } from "@ant-design/icons";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { login } from "../../lib/api";
 import { setToken } from "../../lib/auth";
 import { useAuth } from "../../contexts/AuthContext";
+import { isAuthenticated } from "../../lib/auth";
+import { shouldRedirectAuthedPublicPage } from "../../lib/entryRouting";
 
 const { Title, Text } = Typography;
 const { Content, Footer } = Layout;
@@ -18,8 +20,43 @@ type LoginValues = { username: string; password: string };
 export default function LoginPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [checking, setChecking] = useState(true);
+  const [healthError, setHealthError] = useState<string | null>(null);
+  const [checkNonce, setCheckNonce] = useState(0);
   const { token } = theme.useToken();
   const { login: authLogin } = useAuth();
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function run() {
+      const authed = isAuthenticated();
+      if (shouldRedirectAuthedPublicPage(authed)) {
+        router.replace("/dashboard");
+        return;
+      }
+
+      try {
+        const res = await fetch("/api/health/", { headers: { Accept: "application/json" } });
+        const data = (await res.json()) as any;
+        if (cancelled) return;
+        if (data?.system_initialized === false) {
+          router.replace("/initialize");
+          return;
+        }
+      } catch {
+        if (cancelled) return;
+        setHealthError("无法连接到服务器。请检查后端服务与 API_PROXY_TARGET 配置。");
+      } finally {
+        if (!cancelled) setChecking(false);
+      }
+    }
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [router, checkNonce]);
 
   const onFinish = async (values: LoginValues) => {
     setLoading(true);
@@ -90,37 +127,67 @@ export default function LoginPage() {
         </div>
 
         <Card style={cardStyle} styles={{ body: { padding: 40 } }}>
-          <Form name="login" onFinish={onFinish} autoComplete="off" layout="vertical" size="large">
-            <Form.Item name="username" rules={[{ required: true, message: "请输入用户名" }]}>
-              <Input prefix={<UserOutlined style={{ color: "rgba(0,0,0,.25)" }} />} placeholder="用户名" />
-            </Form.Item>
-
-            <Form.Item name="password" rules={[{ required: true, message: "请输入密码" }]}>
-              <Input.Password
-                prefix={<LockOutlined style={{ color: "rgba(0,0,0,.25)" }} />}
-                placeholder="密码"
-              />
-            </Form.Item>
-
-            <Form.Item style={{ marginBottom: 16 }}>
-              <Button
-                type="primary"
-                htmlType="submit"
-                loading={loading}
-                block
-                size="large"
-                icon={<LoginOutlined />}
-              >
-                登录
-              </Button>
-            </Form.Item>
-
-            <div style={{ textAlign: "center" }}>
-              <Text type="secondary">
-                还没有账号？ <Link href="/register">立即注册</Link>
-              </Text>
+          {checking ? (
+            <div style={{ textAlign: "center", padding: "32px 0" }}>
+              <Spin />
+              <div style={{ marginTop: 12 }}>
+                <Text type="secondary">正在检查系统状态...</Text>
+              </div>
             </div>
-          </Form>
+          ) : healthError ? (
+            <Result
+              status="warning"
+              title="服务器不可用"
+              subTitle={healthError}
+              extra={[
+                <Button type="primary" key="server-config" onClick={() => router.push("/server-config")}>
+                  查看服务器配置说明
+                </Button>,
+                <Button
+                  key="retry"
+                  onClick={() => {
+                    setChecking(true);
+                    setHealthError(null);
+                    setCheckNonce((v) => v + 1);
+                  }}
+                >
+                  重试
+                </Button>,
+              ]}
+            />
+          ) : (
+            <Form name="login" onFinish={onFinish} autoComplete="off" layout="vertical" size="large">
+              <Form.Item name="username" rules={[{ required: true, message: "请输入用户名" }]}>
+                <Input prefix={<UserOutlined style={{ color: "rgba(0,0,0,.25)" }} />} placeholder="用户名" />
+              </Form.Item>
+
+              <Form.Item name="password" rules={[{ required: true, message: "请输入密码" }]}>
+                <Input.Password
+                  prefix={<LockOutlined style={{ color: "rgba(0,0,0,.25)" }} />}
+                  placeholder="密码"
+                />
+              </Form.Item>
+
+              <Form.Item style={{ marginBottom: 16 }}>
+                <Button
+                  type="primary"
+                  htmlType="submit"
+                  loading={loading}
+                  block
+                  size="large"
+                  icon={<LoginOutlined />}
+                >
+                  登录
+                </Button>
+              </Form.Item>
+
+              <div style={{ textAlign: "center" }}>
+                <Text type="secondary">
+                  还没有账号？ <Link href="/register">立即注册</Link>
+                </Text>
+              </div>
+            </Form>
+          )}
         </Card>
       </Content>
 

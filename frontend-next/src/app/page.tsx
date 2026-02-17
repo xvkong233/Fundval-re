@@ -4,6 +4,7 @@ import { Spin, Typography } from "antd";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { isAuthenticated } from "../lib/auth";
+import { decideEntryRoute } from "../lib/entryRouting";
 
 const { Text } = Typography;
 
@@ -20,19 +21,7 @@ export default function HomePage() {
         const data = (await res.json()) as any;
 
         if (cancelled) return;
-
-        const initialized = data?.system_initialized;
-        if (initialized === false) {
-          router.replace("/initialize");
-          return;
-        }
-
-        if (initialized === true && isAuthenticated()) {
-          router.replace("/dashboard");
-          return;
-        }
-
-        router.replace("/login");
+        router.replace(decideEntryRoute(data, isAuthenticated()));
       } catch {
         if (cancelled) return;
         setTip("无法连接到服务器，正在跳转登录页...");

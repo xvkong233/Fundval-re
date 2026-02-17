@@ -71,3 +71,36 @@ export function assertSameShape(
   }
 }
 
+// 结构对比：只要求类型与对象键一致，不要求标量值一致。
+// 用于 DB 内容可能不同但 API schema 必须一致的端点（例如列表/只读资源）。
+export function assertSameSchema(golden: JsonValue, candidate: JsonValue, path: string): void {
+  const goldenType = jsonType(golden);
+  const candidateType = jsonType(candidate);
+  if (goldenType !== candidateType) {
+    throw new Error(`类型不一致 @ ${path}: golden=${goldenType}, candidate=${candidateType}`);
+  }
+
+  if (isPlainObject(golden) && isPlainObject(candidate)) {
+    const goldenKeys = Object.keys(golden).sort();
+    const candidateKeys = Object.keys(candidate).sort();
+    const goldenKeyStr = goldenKeys.join(",");
+    const candidateKeyStr = candidateKeys.join(",");
+    if (goldenKeyStr !== candidateKeyStr) {
+      throw new Error(
+        `对象键集合不一致 @ ${path}: golden=[${goldenKeyStr}] candidate=[${candidateKeyStr}]`
+      );
+    }
+    for (const key of goldenKeys) {
+      assertSameSchema(golden[key] as JsonValue, candidate[key] as JsonValue, `${path}.${key}`);
+    }
+    return;
+  }
+
+  if (Array.isArray(golden) && Array.isArray(candidate)) {
+    if (golden.length === 0 || candidate.length === 0) return;
+    assertSameSchema(golden[0] as JsonValue, candidate[0] as JsonValue, `${path}[0]`);
+    return;
+  }
+
+  // 标量：只比较类型，不比较值
+}

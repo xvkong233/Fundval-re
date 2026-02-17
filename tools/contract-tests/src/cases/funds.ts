@@ -1,4 +1,5 @@
-import { getJson } from "../http.js";
+import { assertSameSchema } from "../diff.js";
+import { getJson, postJson } from "../http.js";
 
 export async function runFunds(goldenBase: string, candidateBase: string): Promise<void> {
   if (process.env.ENABLE_DB_CASES !== "true") return;
@@ -13,11 +14,7 @@ export async function runFunds(goldenBase: string, candidateBase: string): Promi
     throw new Error(`funds.list 状态码非 200: ${golden.status}`);
   }
 
-  const goldenStr = JSON.stringify(golden.json);
-  const candidateStr = JSON.stringify(candidate.json);
-  if (goldenStr !== candidateStr) {
-    throw new Error("funds.list 响应不一致（JSON stringify 对比失败）");
-  }
+  assertSameSchema(golden.json as any, candidate.json as any, "$");
 
   const firstCode = (candidate.json as any)?.results?.[0]?.fund_code as string | undefined;
   if (!firstCode) return;
@@ -34,9 +31,100 @@ export async function runFunds(goldenBase: string, candidateBase: string): Promi
     throw new Error(`funds.retrieve 状态码非 200: ${goldenOne.status}`);
   }
 
-  const g1 = JSON.stringify(goldenOne.json);
-  const c1 = JSON.stringify(candidateOne.json);
-  if (g1 !== c1) {
-    throw new Error("funds.retrieve 响应不一致（JSON stringify 对比失败）");
+  assertSameSchema(goldenOne.json as any, candidateOne.json as any, "$");
+
+  // estimate: fund 不存在 -> 404 + {detail:"Not found."}
+  const missingFundCode = "999999";
+  const goldenEstimateMissing = await getJson(
+    `${goldenBase}/api/funds/${encodeURIComponent(missingFundCode)}/estimate/`
+  );
+  const candidateEstimateMissing = await getJson(
+    `${candidateBase}/api/funds/${encodeURIComponent(missingFundCode)}/estimate/`
+  );
+  if (goldenEstimateMissing.status !== candidateEstimateMissing.status) {
+    throw new Error(
+      `funds.estimate(404) 状态码不一致: golden=${goldenEstimateMissing.status} candidate=${candidateEstimateMissing.status}`
+    );
   }
+  assertSameSchema(goldenEstimateMissing.json as any, candidateEstimateMissing.json as any, "$");
+
+  // accuracy: fund 不存在 -> 404 + {detail:"Not found."}
+  const goldenAccMissing = await getJson(
+    `${goldenBase}/api/funds/${encodeURIComponent(missingFundCode)}/accuracy/`
+  );
+  const candidateAccMissing = await getJson(
+    `${candidateBase}/api/funds/${encodeURIComponent(missingFundCode)}/accuracy/`
+  );
+  if (goldenAccMissing.status !== candidateAccMissing.status) {
+    throw new Error(
+      `funds.accuracy(404) 状态码不一致: golden=${goldenAccMissing.status} candidate=${candidateAccMissing.status}`
+    );
+  }
+  assertSameSchema(goldenAccMissing.json as any, candidateAccMissing.json as any, "$");
+
+  // batch_estimate: 缺少 fund_codes -> 400 + {error:"缺少 fund_codes 参数"}
+  const goldenBatchEstimateBad = await postJson(`${goldenBase}/api/funds/batch_estimate/`, {});
+  const candidateBatchEstimateBad = await postJson(`${candidateBase}/api/funds/batch_estimate/`, {});
+  if (goldenBatchEstimateBad.status !== candidateBatchEstimateBad.status) {
+    throw new Error(
+      `funds.batch_estimate(bad) 状态码不一致: golden=${goldenBatchEstimateBad.status} candidate=${candidateBatchEstimateBad.status}`
+    );
+  }
+  assertSameSchema(goldenBatchEstimateBad.json as any, candidateBatchEstimateBad.json as any, "$");
+
+  // batch_estimate: 空库 + 不存在 fund -> {code:{error:"基金不存在"}}
+  const goldenBatchEstimateMissing = await postJson(`${goldenBase}/api/funds/batch_estimate/`, {
+    fund_codes: [missingFundCode],
+  });
+  const candidateBatchEstimateMissing = await postJson(`${candidateBase}/api/funds/batch_estimate/`, {
+    fund_codes: [missingFundCode],
+  });
+  if (goldenBatchEstimateMissing.status !== candidateBatchEstimateMissing.status) {
+    throw new Error(
+      `funds.batch_estimate(missing fund) 状态码不一致: golden=${goldenBatchEstimateMissing.status} candidate=${candidateBatchEstimateMissing.status}`
+    );
+  }
+  assertSameSchema(goldenBatchEstimateMissing.json as any, candidateBatchEstimateMissing.json as any, "$");
+
+  // batch_update_nav: 缺少 fund_codes -> 400
+  const goldenBatchNavBad = await postJson(`${goldenBase}/api/funds/batch_update_nav/`, {});
+  const candidateBatchNavBad = await postJson(`${candidateBase}/api/funds/batch_update_nav/`, {});
+  if (goldenBatchNavBad.status !== candidateBatchNavBad.status) {
+    throw new Error(
+      `funds.batch_update_nav(bad) 状态码不一致: golden=${goldenBatchNavBad.status} candidate=${candidateBatchNavBad.status}`
+    );
+  }
+  assertSameSchema(goldenBatchNavBad.json as any, candidateBatchNavBad.json as any, "$");
+
+  // batch_update_nav: 空库 + 不存在 fund -> 返回空对象（Python 仅对存在的 fund 发起并发获取）
+  const goldenBatchNavMissing = await postJson(`${goldenBase}/api/funds/batch_update_nav/`, {
+    fund_codes: [missingFundCode],
+  });
+  const candidateBatchNavMissing = await postJson(`${candidateBase}/api/funds/batch_update_nav/`, {
+    fund_codes: [missingFundCode],
+  });
+  if (goldenBatchNavMissing.status !== candidateBatchNavMissing.status) {
+    throw new Error(
+      `funds.batch_update_nav(missing fund) 状态码不一致: golden=${goldenBatchNavMissing.status} candidate=${candidateBatchNavMissing.status}`
+    );
+  }
+  assertSameSchema(goldenBatchNavMissing.json as any, candidateBatchNavMissing.json as any, "$");
+
+  // query_nav: fund 不存在 -> 404
+  const goldenQueryNavMissing = await postJson(`${goldenBase}/api/funds/query_nav/`, {
+    fund_code: missingFundCode,
+    operation_date: "2024-01-15",
+    before_15: true,
+  });
+  const candidateQueryNavMissing = await postJson(`${candidateBase}/api/funds/query_nav/`, {
+    fund_code: missingFundCode,
+    operation_date: "2024-01-15",
+    before_15: true,
+  });
+  if (goldenQueryNavMissing.status !== candidateQueryNavMissing.status) {
+    throw new Error(
+      `funds.query_nav(404) 状态码不一致: golden=${goldenQueryNavMissing.status} candidate=${candidateQueryNavMissing.status}`
+    );
+  }
+  assertSameSchema(goldenQueryNavMissing.json as any, candidateQueryNavMissing.json as any, "$");
 }

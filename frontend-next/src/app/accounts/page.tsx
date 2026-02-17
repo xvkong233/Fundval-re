@@ -19,6 +19,7 @@ import {
   Typography,
   message,
 } from "antd";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { AuthedLayout } from "../../components/AuthedLayout";
 import { createAccount, deleteAccount, listAccounts, patchAccount } from "../../lib/api";
@@ -51,6 +52,7 @@ function pnlColor(v: any): string | undefined {
 }
 
 export default function AccountsPage() {
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [accounts, setAccounts] = useState<Account[]>([]);
 
@@ -232,9 +234,18 @@ export default function AccountsPage() {
     {
       title: "操作",
       key: "action",
-      width: 120,
+      width: 160,
       render: (_: any, record: Account) => (
         <Space size="small">
+          {record.parent ? (
+            <Button
+              type="link"
+              size="small"
+              onClick={() => router.push(`/positions?account=${encodeURIComponent(record.id)}`)}
+            >
+              持仓
+            </Button>
+          ) : null}
           <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(record)} />
           <Popconfirm
             title="确定要删除账户吗？"

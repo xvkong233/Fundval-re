@@ -87,3 +87,29 @@ export const patchAccount = (
 export const deleteAccount = (accountId: string) =>
   api.delete(`/accounts/${encodeURIComponent(accountId)}/`);
 
+// positions
+export const listPositions = (params?: { account?: string }) => api.get("/positions/", { params });
+
+export const listPositionOperations = (params?: { account?: string; fund_code?: string }) =>
+  api.get("/positions/operations/", { params });
+
+export const createPositionOperation = (data: {
+  account: string;
+  fund_code: string;
+  operation_type: "BUY" | "SELL";
+  operation_date: string;
+  before_15: boolean;
+  amount: string | number;
+  share: string | number;
+  nav: string | number;
+}) => api.post("/positions/operations/", data);
+
+export const deletePositionOperation = (operationId: string) =>
+  api.delete(`/positions/operations/${encodeURIComponent(operationId)}/`);
+
+export const recalculatePositions = (accountId?: string) =>
+  api.post("/positions/recalculate/", accountId ? { account_id: accountId } : {});
+
+export const queryFundNav = (data: { fund_code: string; operation_date: string; before_15: boolean }) =>
+  api.post("/funds/query_nav/", data);
+

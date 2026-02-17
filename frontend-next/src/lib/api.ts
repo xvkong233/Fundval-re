@@ -25,6 +25,9 @@ export const refreshToken = (refreshTokenValue: string) =>
 
 export const getCurrentUser = () => api.get("/auth/me");
 
+export const changePassword = (oldPassword: string, newPassword: string) =>
+  api.put("/auth/password", { old_password: oldPassword, new_password: newPassword });
+
 // funds
 export const listFunds = (params: {
   page?: number;

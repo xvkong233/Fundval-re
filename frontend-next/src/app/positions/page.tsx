@@ -100,20 +100,10 @@ function fixed4(v: any): string {
   return n.toFixed(4);
 }
 
-function pct(v: any): string {
-  const n = toNumber(v);
-  if (n === null) return "-";
-  return `${n.toFixed(2)}%`;
-}
-
 function pnlColor(v: any): string | undefined {
   const n = toNumber(v);
   if (n === null) return undefined;
   return n >= 0 ? "#cf1322" : "#3f8600";
-}
-
-function opTag(type: "BUY" | "SELL") {
-  return type === "BUY" ? <Tag color="red">买入</Tag> : <Tag color="green">卖出</Tag>;
 }
 
 function asYmd(dateValue: any): string | null {

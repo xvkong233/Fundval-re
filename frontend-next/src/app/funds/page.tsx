@@ -42,7 +42,7 @@ export default function FundsPage() {
       const normalized = normalizeFundList(res.data);
       setFunds(normalized.results);
       setTotal(normalized.total);
-    } catch (e) {
+    } catch {
       message.error("加载基金列表失败");
     } finally {
       setLoading(false);

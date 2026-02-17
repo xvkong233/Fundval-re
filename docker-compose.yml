@@ -50,7 +50,8 @@ services:
 
   backend:
     image: jasamine/fundval-backend:latest
-    command: gunicorn fundval.wsgi:application --bind 0.0.0.0:8000 --workers 4 --access-logfile - --error-logfile -
+    # contract-tests 需要稳定的“进程内配置状态”，避免多 worker 导致 bootstrap 状态对照波动
+    command: gunicorn fundval.wsgi:application --bind 0.0.0.0:8000 --workers 1 --access-logfile - --error-logfile -
     ports:
       - "8000:8000"
     volumes:

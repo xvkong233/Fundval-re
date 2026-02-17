@@ -16,6 +16,38 @@
 
 ---
 
+## Rust + Next.js 移植版（candidate）
+
+本仓库当前采用“对照迁移”方式推进 100% 移植：
+
+- **golden**：`backend/`（Django/DRF）+ `frontend/`（原前端镜像）
+- **candidate**：`backend-rs/`（Rust axum/sqlx）+ `frontend-next/`（Next.js）
+- **一致性验证**：`tools/contract-tests/` 同时请求两套后端并做差分
+
+### Docker 运行（推荐）
+
+在本仓库 worktree：`.worktrees/port-rust-nextjs/`
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+访问：
+
+- golden 前端（原项目）：`http://localhost:21345`
+- golden API（Django）：`http://localhost:8000`
+- candidate Next.js：`http://localhost:3000`
+- candidate API（Rust）：`http://localhost:8001`
+
+### 合同测试（对照 golden vs candidate）
+
+```bash
+# 如需重跑 bootstrap 相关用例，先清理 volume（会清空数据库与配置）
+# docker compose down -v
+docker compose --profile contract up --build --abort-on-container-exit contract-tests
+```
+
 ## 加入讨论群组
 
 [issue - 讨论群组](https://github.com/Ye-Yu-Mo/FundVal-Live/issues/41)

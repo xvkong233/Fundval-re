@@ -1,15 +1,34 @@
 services:
-  db:
+  db-golden:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-fundval}
+      POSTGRES_DB: ${POSTGRES_DB_GOLDEN:-fundval_golden}
       POSTGRES_USER: ${POSTGRES_USER:-fundval}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fundval}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data_golden:/var/lib/postgresql/data
     # 不暴露端口到宿主机，仅容器内通信（如需调试可取消注释）
     # ports:
     #   - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fundval}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      fundval:
+        aliases:
+          # Python 镜像内 entrypoint.sh 使用固定主机名 "db"
+          - db
+
+  db-candidate:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB_CANDIDATE:-fundval_candidate}
+      POSTGRES_USER: ${POSTGRES_USER:-fundval}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fundval}
+    volumes:
+      - postgres_data_candidate:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fundval}"]
       interval: 5s
@@ -32,6 +51,8 @@ services:
   backend:
     image: jasamine/fundval-backend:latest
     command: gunicorn fundval.wsgi:application --bind 0.0.0.0:8000 --workers 4 --access-logfile - --error-logfile -
+    ports:
+      - "8000:8000"
     volumes:
       # 生产环境：只挂载配置目录，不挂载代码
       # 开发环境：取消注释下面这行以挂载本地代码
@@ -39,17 +60,17 @@ services:
       - config_data_py:/app/config
     environment:
       - DB_TYPE=postgresql
-      - POSTGRES_DB=${POSTGRES_DB:-fundval}
+      - POSTGRES_DB=${POSTGRES_DB_GOLDEN:-fundval_golden}
       - POSTGRES_USER=${POSTGRES_USER:-fundval}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-fundval}
-      - POSTGRES_HOST=db
+      - POSTGRES_HOST=db-golden
       - POSTGRES_PORT=5432
       - REDIS_URL=redis://redis:6379/0
       - SECRET_KEY=${SECRET_KEY:-django-insecure-dev-only}
       - DEBUG=${DEBUG:-false}
       - ALLOWED_HOSTS=${ALLOWED_HOSTS:-*}
     depends_on:
-      db:
+      db-golden:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -72,16 +93,16 @@ services:
       - config_data_py:/app/config
     environment:
       - DB_TYPE=postgresql
-      - POSTGRES_DB=${POSTGRES_DB:-fundval}
+      - POSTGRES_DB=${POSTGRES_DB_GOLDEN:-fundval_golden}
       - POSTGRES_USER=${POSTGRES_USER:-fundval}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-fundval}
-      - POSTGRES_HOST=db
+      - POSTGRES_HOST=db-golden
       - POSTGRES_PORT=5432
       - REDIS_URL=redis://redis:6379/0
       - SECRET_KEY=${SECRET_KEY:-django-insecure-dev-only}
       - DEBUG=${DEBUG:-false}
     depends_on:
-      db:
+      db-golden:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -98,16 +119,16 @@ services:
       - config_data_py:/app/config
     environment:
       - DB_TYPE=postgresql
-      - POSTGRES_DB=${POSTGRES_DB:-fundval}
+      - POSTGRES_DB=${POSTGRES_DB_GOLDEN:-fundval_golden}
       - POSTGRES_USER=${POSTGRES_USER:-fundval}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-fundval}
-      - POSTGRES_HOST=db
+      - POSTGRES_HOST=db-golden
       - POSTGRES_PORT=5432
       - REDIS_URL=redis://redis:6379/0
       - SECRET_KEY=${SECRET_KEY:-django-insecure-dev-only}
       - DEBUG=${DEBUG:-false}
     depends_on:
-      db:
+      db-golden:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -129,10 +150,10 @@ services:
       context: ./backend-rs
     environment:
       - PORT=8001
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-fundval}:${POSTGRES_PASSWORD:-fundval}@db:5432/${POSTGRES_DB:-fundval}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-fundval}:${POSTGRES_PASSWORD:-fundval}@db-candidate:5432/${POSTGRES_DB_CANDIDATE:-fundval_candidate}
       - SECRET_KEY=${SECRET_KEY:-django-insecure-dev-only}
     depends_on:
-      db:
+      db-candidate:
         condition: service_healthy
     volumes:
       - config_data_rs:/app/config
@@ -150,6 +171,9 @@ services:
   frontend-next:
     build:
       context: ./frontend-next
+      args:
+        # Next.js rewrites 在 build 时固化，需在构建阶段注入该值
+        API_PROXY_TARGET: http://backend-rs:8001
     environment:
       # Next.js rewrites 会将 /api/* 代理到该地址（不包含 /api 前缀）
       - API_PROXY_TARGET=http://backend-rs:8001
@@ -166,6 +190,8 @@ services:
     working_dir: /tests
     volumes:
       - ./tools/contract-tests:/tests
+      # 避免在 Windows 宿主机写入 Linux 风格 node_modules（会破坏本地 npm 脚本执行）
+      - contract_tests_node_modules:/tests/node_modules
       - config_data_py:/configs/golden
       - config_data_rs:/configs/candidate
     environment:
@@ -186,9 +212,11 @@ services:
       - fundval
 
 volumes:
-  postgres_data:
+  postgres_data_golden:
+  postgres_data_candidate:
   config_data_py:
   config_data_rs:
+  contract_tests_node_modules:
 
 networks:
   fundval:

@@ -21,10 +21,16 @@ import { getFundDetail, getFundEstimate, listNavHistory, listPositionOperations,
 import { getDateRange, type TimeRange } from "../../../lib/dateRange";
 import { buildNavChartOption } from "../../../lib/navChart";
 import { buildFundPositionRows, sortOperationsDesc, type FundPositionRow } from "../../../lib/fundDetail";
+import { normalizeNavHistoryRows } from "../../../lib/navHistoryNormalize";
 
 const { Text } = Typography;
 
-type NavRow = Record<string, any> & { nav_date?: string; unit_nav?: string; accum_nav?: string };
+type NavRow = Record<string, any> & {
+  nav_date?: string;
+  unit_nav?: string | number;
+  accumulated_nav?: string | number | null;
+  daily_growth?: string | number | null;
+};
 type OperationRow = Record<string, any> & {
   id?: string;
   account_name?: string;
@@ -129,11 +135,12 @@ export default function FundDetailPage() {
         // ignore
       }
 
-      const params = range === "ALL" ? {} : { start_date: startDate };
+      const params = { start_date: startDate, end_date: endDate };
       const res = await listNavHistory(fundCode, params);
       const rows = Array.isArray(res.data) ? (res.data as NavRow[]) : [];
-      rows.sort((a, b) => String(a.nav_date).localeCompare(String(b.nav_date)));
-      setNavHistory(rows);
+      const normalized = normalizeNavHistoryRows(rows);
+      normalized.sort((a, b) => String(a.nav_date).localeCompare(String(b.nav_date)));
+      setNavHistory(normalized as NavRow[]);
     } catch {
       message.error("加载历史净值失败");
       setNavHistory([]);
@@ -273,7 +280,23 @@ export default function FundDetailPage() {
             columns={[
               { title: "日期", dataIndex: "nav_date", width: 140 },
               { title: "单位净值", dataIndex: "unit_nav", render: (v: any) => (v ? Number(v).toFixed(4) : "-") },
-              { title: "累计净值", dataIndex: "accum_nav", render: (v: any) => (v ? Number(v).toFixed(4) : "-") },
+              {
+                title: "累计净值",
+                dataIndex: "accumulated_nav",
+                render: (v: any) => (v ? Number(v).toFixed(4) : "-"),
+              },
+              {
+                title: "日涨跌(%)",
+                dataIndex: "daily_growth",
+                render: (v: any) => {
+                  if (v === null || v === undefined || v === "") return "-";
+                  const n = Number(v);
+                  if (!Number.isFinite(n)) return String(v);
+                  const positive = n >= 0;
+                  const text = `${positive ? "+" : ""}${n.toFixed(2)}`;
+                  return <span style={{ color: positive ? "#cf1322" : "#3f8600" }}>{text}</span>;
+                },
+              },
             ]}
           />
         </Card>

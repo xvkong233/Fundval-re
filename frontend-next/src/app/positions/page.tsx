@@ -18,6 +18,7 @@ import {
   Divider,
   Empty,
   Form,
+  Input,
   InputNumber,
   Modal,
   Popconfirm,
@@ -142,11 +143,25 @@ function PositionsInner() {
   const [loading, setLoading] = useState(false);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const childAccounts = useMemo(() => accounts.filter((a) => !!a?.parent), [accounts]);
+  const accountById = useMemo(() => new Map(accounts.map((a) => [a.id, a])), [accounts]);
+
+  const childAccountOptions = useMemo(() => {
+    return childAccounts.map((a) => {
+      const parentName =
+        a.parent_name ??
+        (typeof a.parent === "string" ? (accountById.get(a.parent)?.name as string | undefined) : undefined);
+      return {
+        label: parentName ? `${parentName} / ${a.name ?? a.id}` : a.name ?? a.id,
+        value: a.id,
+      };
+    });
+  }, [accountById, childAccounts]);
 
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
 
   const [positionsLoading, setPositionsLoading] = useState(false);
   const [positions, setPositions] = useState<Position[]>([]);
+  const [fundTypeFilter, setFundTypeFilter] = useState<string>("all");
 
   const [opsLoading, setOpsLoading] = useState(false);
   const [operations, setOperations] = useState<Operation[]>([]);
@@ -190,6 +205,38 @@ function PositionsInner() {
       today_pnl_rate: selectedAccount.today_pnl_rate,
     };
   }, [selectedAccount]);
+
+  const fundTypeOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of positions) {
+      const t = (p.fund_type ?? p.fund?.fund_type) as string | undefined;
+      if (typeof t === "string" && t.trim()) set.add(t.trim());
+    }
+    return ["all", ...Array.from(set).sort((a, b) => a.localeCompare(b, "zh-CN"))];
+  }, [positions]);
+
+  const filteredPositions = useMemo(() => {
+    if (fundTypeFilter === "all") return positions;
+    return positions.filter((p) => {
+      const t = (p.fund_type ?? p.fund?.fund_type) as string | undefined;
+      return typeof t === "string" && t.includes(fundTypeFilter);
+    });
+  }, [fundTypeFilter, positions]);
+
+  const getOperationTypeTag = (record: Operation) => {
+    if (record.operation_type === "SELL") return <Tag color="green">减仓</Tag>;
+
+    const fundOps = operations
+      .filter((op) => op.fund_code === record.fund_code)
+      .sort((a, b) => {
+        const d = new Date(a.operation_date).getTime() - new Date(b.operation_date).getTime();
+        if (d !== 0) return d;
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      });
+
+    const isBuild = fundOps.length > 0 && fundOps[0]?.id === record.id;
+    return <Tag color="red">{isBuild ? "建仓" : "加仓"}</Tag>;
+  };
 
   const loadAccounts = async () => {
     setLoading(true);
@@ -460,10 +507,7 @@ function PositionsInner() {
               value={selectedAccountId ?? undefined}
               onChange={(v) => setSelectedAccountId(v)}
               placeholder="选择子账户"
-              options={childAccounts.map((a) => ({
-                label: a.parent_name ? `${a.parent_name} / ${a.name}` : a.name ?? a.id,
-                value: a.id,
-              }))}
+              options={childAccountOptions}
             />
 
             <Card size="small" title={selectedAccount ? `账户：${selectedAccount.name}` : "账户汇总"}>
@@ -496,12 +540,18 @@ function PositionsInner() {
               >
                 刷新估值/净值
               </Button>
+              <Select
+                style={{ width: 220 }}
+                value={fundTypeFilter}
+                onChange={(v) => setFundTypeFilter(v)}
+                options={fundTypeOptions.map((t) => ({ value: t, label: t === "all" ? "全部类型" : t }))}
+              />
             </Space>
 
             <Table<Position>
               rowKey={(r) => r.id}
               loading={positionsLoading}
-              dataSource={positions}
+              dataSource={filteredPositions}
               pagination={false}
               size="middle"
               columns={[
@@ -583,21 +633,21 @@ function PositionsInner() {
       </Card>
 
       <Card title="操作流水" style={{ marginTop: 16 }}>
-        <Table<Operation>
-          rowKey={(r) => r.id}
-          loading={opsLoading}
-          dataSource={operations}
-          pagination={false}
-          size="small"
-          locale={{ emptyText: selectedAccountId ? "暂无操作流水" : "请选择子账户" }}
-          columns={[
-            { title: "日期", dataIndex: "operation_date", width: 120 },
-            {
-              title: "类型",
-              dataIndex: "operation_type",
-              width: 90,
-              render: (t: any) => opTag(t),
-            },
+            <Table<Operation>
+              rowKey={(r) => r.id}
+              loading={opsLoading}
+              dataSource={operations}
+              pagination={false}
+              size="small"
+              locale={{ emptyText: selectedAccountId ? "暂无操作流水" : "请选择子账户" }}
+              columns={[
+                { title: "日期", dataIndex: "operation_date", width: 120 },
+                {
+                  title: "类型",
+                  dataIndex: "operation_type",
+                  width: 90,
+                  render: (_: any, record) => getOperationTypeTag(record),
+                },
             { title: "基金", key: "fund", render: (_, r) => `${r.fund_code}${r.fund_name ? ` ${r.fund_name}` : ""}` },
             { title: "金额", dataIndex: "amount", width: 110, render: money },
             { title: "份额", dataIndex: "share", width: 110, render: (v) => (v ? String(v) : "-") },
@@ -638,7 +688,15 @@ function PositionsInner() {
         cancelText="取消"
         confirmLoading={loading}
       >
-        <Form form={opForm} layout="vertical" preserve={false} initialValues={{ before_15: true, operation_type: "BUY" }}>
+        <Form
+          form={opForm}
+          layout="vertical"
+          preserve={false}
+          initialValues={{ before_15: true, operation_type: "BUY" }}
+        >
+          <Form.Item name="operation_type" hidden>
+            <Input />
+          </Form.Item>
           <Form.Item label="基金" name="fund_code" rules={[{ required: true, message: "请选择基金" }]}>
             <AutoComplete
               options={fundOptions}

@@ -1,10 +1,11 @@
 "use client";
 
-import { Button, Layout, Menu, Typography } from "antd";
+import { Button, Layout, Menu, Spin, Typography } from "antd";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo } from "react";
 import { useAuth } from "../contexts/AuthContext";
+import { isAuthenticated } from "../lib/auth";
 
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
@@ -18,7 +19,14 @@ export function AuthedLayout({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { user, logout } = useAuth();
+  const { user, logout, loading } = useAuth();
+
+  useEffect(() => {
+    if (loading) return;
+    if (!isAuthenticated()) {
+      router.replace("/login");
+    }
+  }, [loading, router]);
 
   const selectedKeys = useMemo(() => {
     if (!pathname) return [];
@@ -95,7 +103,15 @@ export function AuthedLayout({
           </div>
         </Header>
 
-        <Content style={{ padding: 16, background: "#f0f2f5" }}>{children}</Content>
+        <Content style={{ padding: 16, background: "#f0f2f5" }}>
+          {loading ? (
+            <div style={{ padding: 24, display: "flex", justifyContent: "center" }}>
+              <Spin />
+            </div>
+          ) : (
+            children
+          )}
+        </Content>
       </Layout>
     </Layout>
   );

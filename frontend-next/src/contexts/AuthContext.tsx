@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { getUser, logout as clearAuthStorage, setUser as persistUser } from "../lib/auth";
+import { getUser, isAuthenticated, logout as clearAuthStorage, setUser as persistUser } from "../lib/auth";
 
 type AuthContextValue = {
   user: any | null;
@@ -17,10 +17,12 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authed, setAuthed] = useState(false);
 
   useEffect(() => {
     const storedUser = getUser();
     if (storedUser) setUser(storedUser);
+    setAuthed(isAuthenticated());
     setLoading(false);
   }, []);
 
@@ -31,18 +33,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       login: (userData) => {
         setUser(userData);
         persistUser(userData);
+        setAuthed(true);
       },
       logout: () => {
         setUser(null);
+        setAuthed(false);
         clearAuthStorage();
       },
       updateUser: (userData) => {
         setUser(userData);
         persistUser(userData);
       },
-      isAuthenticated: !!user,
+      isAuthenticated: authed,
     };
-  }, [user, loading]);
+  }, [user, loading, authed]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

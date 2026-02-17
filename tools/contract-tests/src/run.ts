@@ -9,6 +9,7 @@ import { runPositions } from "./cases/positions.js";
 import { runWatchlists } from "./cases/watchlists.js";
 import { runNavHistory } from "./cases/nav_history.js";
 import { runSourcesAccuracy } from "./cases/sources_accuracy.js";
+import { seedDatabases } from "./seed.js";
 
 type Case = {
   name: string;
@@ -53,6 +54,8 @@ function parseRequestedCases(): Set<string> {
 async function main() {
   const failures: { name: string; error: unknown }[] = [];
   const requested = parseRequestedCases();
+
+  await seedDatabases();
 
   if (process.argv.slice(2).includes("list")) {
     for (const c of cases) process.stdout.write(`${c.name}\n`);

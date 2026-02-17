@@ -53,7 +53,7 @@ services:
     # contract-tests 需要稳定的“进程内配置状态”，避免多 worker 导致 bootstrap 状态对照波动
     command: gunicorn fundval.wsgi:application --bind 0.0.0.0:8000 --workers 1 --access-logfile - --error-logfile -
     ports:
-      - "8000:8000"
+      - "${BACKEND_HOST_PORT:-8000}:8000"
     volumes:
       # 生产环境：只挂载配置目录，不挂载代码
       # 开发环境：取消注释下面这行以挂载本地代码
@@ -139,7 +139,7 @@ services:
   frontend:
     image: jasamine/fundval-frontend:latest
     ports:
-      - "21345:80"
+      - "${FRONTEND_HOST_PORT:-21345}:80"
     depends_on:
       backend:
         condition: service_healthy
@@ -159,7 +159,7 @@ services:
     volumes:
       - config_data_rs:/app/config
     ports:
-      - "8001:8001"
+      - "${BACKEND_RS_HOST_PORT:-8001}:8001"
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8001/api/health/ >/dev/null || exit 1"]
       interval: 10s
@@ -179,7 +179,7 @@ services:
       # Next.js rewrites 会将 /api/* 代理到该地址（不包含 /api 前缀）
       - API_PROXY_TARGET=http://backend-rs:8001
     ports:
-      - "3000:3000"
+      - "${FRONTEND_NEXT_HOST_PORT:-3000}:3000"
     depends_on:
       backend-rs:
         condition: service_healthy
@@ -201,6 +201,9 @@ services:
       - GOLDEN_CONFIG_PATH=/configs/golden/config.json
       - CANDIDATE_CONFIG_PATH=/configs/candidate/config.json
       - ENABLE_DB_CASES=true
+      - ENABLE_DB_SEED=true
+      - GOLDEN_DB_URL=postgresql://${POSTGRES_USER:-fundval}:${POSTGRES_PASSWORD:-fundval}@db-golden:5432/${POSTGRES_DB_GOLDEN:-fundval_golden}
+      - CANDIDATE_DB_URL=postgresql://${POSTGRES_USER:-fundval}:${POSTGRES_PASSWORD:-fundval}@db-candidate:5432/${POSTGRES_DB_CANDIDATE:-fundval_candidate}
     command: sh -c "npm ci && npm run test:contract"
     depends_on:
       backend:

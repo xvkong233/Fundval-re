@@ -352,7 +352,10 @@ pub async fn change_password(
     (StatusCode::OK, Json(MessageResponse { message: "密码修改成功" })).into_response()
 }
 
-fn authenticate(state: &AppState, headers: &axum::http::HeaderMap) -> Result<String, axum::response::Response> {
+pub(crate) fn authenticate(
+    state: &AppState,
+    headers: &axum::http::HeaderMap,
+) -> Result<String, axum::response::Response> {
     let Some(auth) = headers.get(axum::http::header::AUTHORIZATION) else {
         return Err(
             (
@@ -382,7 +385,7 @@ fn authenticate(state: &AppState, headers: &axum::http::HeaderMap) -> Result<Str
     Ok(decoded.claims.sub)
 }
 
-fn invalid_token_response() -> axum::response::Response {
+pub(crate) fn invalid_token_response() -> axum::response::Response {
     (
         StatusCode::UNAUTHORIZED,
         Json(TokenNotValidResponse {

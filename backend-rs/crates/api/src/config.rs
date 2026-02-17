@@ -69,6 +69,22 @@ impl ConfigStore {
         }
     }
 
+    pub fn get_i64(&self, key: &str, default: i64) -> i64 {
+        let guard = self.data.read().expect("config read lock");
+        match guard.get(key) {
+            Some(Value::Number(n)) => n.as_i64().unwrap_or(default),
+            Some(Value::String(s)) => s.parse::<i64>().unwrap_or(default),
+            Some(Value::Bool(b)) => {
+                if *b {
+                    1
+                } else {
+                    0
+                }
+            }
+            _ => default,
+        }
+    }
+
     pub fn set_bool(&self, key: &str, value: bool) {
         let mut guard = self.data.write().expect("config write lock");
         guard.insert(key.to_string(), Value::Bool(value));

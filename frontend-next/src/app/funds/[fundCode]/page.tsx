@@ -1,15 +1,31 @@
 "use client";
 
-import { Button, Card, Descriptions, Empty, Space, Spin, Statistic, Table, Typography, message } from "antd";
+import dynamic from "next/dynamic";
+import {
+  Button,
+  Card,
+  Descriptions,
+  Empty,
+  Space,
+  Spin,
+  Statistic,
+  Table,
+  Typography,
+  message,
+  theme,
+} from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { AuthedLayout } from "../../../components/AuthedLayout";
 import { getFundDetail, getFundEstimate, listNavHistory, syncNavHistory } from "../../../lib/api";
 import { getDateRange, type TimeRange } from "../../../lib/dateRange";
+import { buildNavChartOption } from "../../../lib/navChart";
 
 const { Text } = Typography;
 
 type NavRow = Record<string, any> & { nav_date?: string; unit_nav?: string; accum_nav?: string };
+
+const ReactECharts = dynamic(() => import("echarts-for-react"), { ssr: false });
 
 export default function FundDetailPage() {
   const params = useParams<{ fundCode: string }>();
@@ -22,6 +38,9 @@ export default function FundDetailPage() {
   const [navLoading, setNavLoading] = useState(false);
   const [navHistory, setNavHistory] = useState<NavRow[]>([]);
   const [timeRange, setTimeRange] = useState<TimeRange>("1M");
+  const [compactChart, setCompactChart] = useState(false);
+
+  const { token } = theme.useToken();
 
   const title = useMemo(() => {
     if (!fund) return "基金详情";
@@ -85,6 +104,13 @@ export default function FundDetailPage() {
     void loadBase();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fundCode]);
+
+  useEffect(() => {
+    const update = () => setCompactChart(window.innerWidth < 768);
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
 
   if (loading) {
     return (
@@ -175,6 +201,14 @@ export default function FundDetailPage() {
             </Space>
           }
         >
+          {navHistory.length > 0 ? (
+            <div style={{ marginBottom: 16 }}>
+              <ReactECharts
+                option={buildNavChartOption(navHistory, { compact: compactChart, color: token.colorPrimary })}
+                style={{ height: compactChart ? 300 : 400 }}
+              />
+            </div>
+          ) : null}
           <Table<NavRow>
             rowKey={(r) => `${r.nav_date ?? ""}`}
             loading={navLoading}

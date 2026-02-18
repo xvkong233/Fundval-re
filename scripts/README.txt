@@ -36,3 +36,5 @@ Docker（Windows PowerShell 推荐）
   .\scripts\compose-contract.ps1 logs
   .\scripts\compose-contract.ps1 down
 
+说明：`compose-contract.ps1` 默认会删除 `config_data_py/config_data_rs` 两个 volume（不删除 DB volume），以满足合同测试 `bootstrap` 用例要求（起始必须“未初始化”）。
+

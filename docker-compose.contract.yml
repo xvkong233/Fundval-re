@@ -1,0 +1,23 @@
+services:
+  # 合同测试专用覆盖：
+  # - 跳过 backend 的首次启动 fund 同步（网络不稳定且耗时，且合同测试会在后续 seed 中写入 fund/accuracy 数据）
+  backend:
+    entrypoint: []
+    command: >
+      sh -c "
+        set -e;
+        echo '==========================================';
+        echo '  Fundval Backend Starting (contract)';
+        echo '==========================================';
+        echo 'Waiting for database...';
+        while ! pg_isready -h db -U ${POSTGRES_USER:-fundval} >/dev/null 2>&1; do sleep 1; done;
+        echo '✓ Database ready';
+        echo 'Running migrations...';
+        python manage.py migrate --noinput;
+        echo '✓ Migrations complete';
+        echo 'Collecting static files...';
+        python manage.py collectstatic --noinput;
+        echo '✓ Static files collected';
+        exec gunicorn fundval.wsgi:application --bind 0.0.0.0:8000 --workers 1 --access-logfile - --error-logfile -;
+      "
+

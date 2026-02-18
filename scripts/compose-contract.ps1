@@ -4,14 +4,16 @@ param(
   [string]$Command = "run",
 
   [string]$ProjectName = "fundval-contract",
-  [switch]$Build
+  [switch]$Build,
+  # 合同测试依赖 bootstrap 用例，要求两端初始均未初始化；因此需要重置 config volume（不影响 DB volume）
+  [switch]$ResetConfig = $true
 )
 
 $ErrorActionPreference = "Stop"
 
 function Invoke-Compose([string[]]$ComposeArgs) {
   $projectDir = Resolve-Path (Join-Path $PSScriptRoot "..")
-  docker compose --project-directory $projectDir -p $ProjectName --profile contract @ComposeArgs
+  docker compose --project-directory $projectDir -p $ProjectName --profile contract -f docker-compose.yml -f docker-compose.contract.yml @ComposeArgs
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
@@ -39,6 +41,13 @@ try {
   # ignore: 项目不存在时 down 可能返回非 0（不同版本/环境行为不一致）
 }
 
+if ($ResetConfig) {
+  # 只删除 config volume（不删 DB volume），确保 bootstrap 用例起始为未初始化
+  foreach ($v in @("${ProjectName}_config_data_py", "${ProjectName}_config_data_rs")) {
+    try { docker volume rm -f $v | Out-Null } catch { }
+  }
+}
+
 try {
   $args = @("up", "--abort-on-container-exit", "--exit-code-from", "contract-tests")
   if ($Build) { $args += "--build" }
@@ -52,4 +61,3 @@ try {
     # ignore
   }
 }
-

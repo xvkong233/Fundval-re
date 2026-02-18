@@ -13,6 +13,74 @@ use crate::routes::auth;
 use crate::sources;
 use crate::state::AppState;
 
+async fn upsert_basic_fund(
+    pool: &sqlx::PgPool,
+    fund_code: &str,
+    fund_name: &str,
+    fund_type: Option<&str>,
+) -> Result<(), String> {
+    let code = fund_code.trim();
+    let name = fund_name.trim();
+    if code.is_empty() || name.is_empty() {
+        return Err("invalid fund_code/fund_name".to_string());
+    }
+
+    sqlx::query(
+        r#"
+        INSERT INTO fund (id, fund_code, fund_name, fund_type, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, NOW(), NOW())
+        ON CONFLICT (fund_code) DO UPDATE
+          SET fund_name = EXCLUDED.fund_name,
+              fund_type = COALESCE(EXCLUDED.fund_type, fund.fund_type),
+              updated_at = NOW()
+        "#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(code)
+    .bind(name)
+    .bind(fund_type)
+    .execute(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+async fn ensure_fund_exists(
+    pool: &sqlx::PgPool,
+    client: &reqwest::Client,
+    fund_code: &str,
+) -> Result<bool, String> {
+    let code = fund_code.trim();
+    if code.is_empty() {
+        return Ok(false);
+    }
+
+    let exists = sqlx::query("SELECT 1 FROM fund WHERE fund_code = $1")
+        .bind(code)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| e.to_string())?
+        .is_some();
+    if exists {
+        return Ok(true);
+    }
+
+    // 优先用天天基金估值接口拿到基金名称（更轻量），失败再回退 fund list。
+    if let Ok(Some(est)) = eastmoney::fetch_estimate(client, code).await {
+        let _ = upsert_basic_fund(pool, code, &est.fund_name, None).await;
+        return Ok(true);
+    }
+
+    let list = eastmoney::fetch_fund_list(client).await?;
+    if let Some(item) = list.into_iter().find(|it| it.fund_code.trim() == code) {
+        let _ = upsert_basic_fund(pool, code, &item.fund_name, Some(&item.fund_type)).await;
+        return Ok(true);
+    }
+
+    Ok(false)
+}
+
 #[derive(Debug, Deserialize)]
 pub struct FundListQuery {
     pub page: Option<i64>,
@@ -140,6 +208,119 @@ pub async fn list(
         }
     };
 
+    // 开箱即用：当 DB 中搜索不到任何基金时，回退到上游基金列表做匹配（无需先手动 sync）。
+    let search_keyword = q
+        .search
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    if count == 0 && rows.is_empty() && search_keyword.is_some() {
+        let keyword = search_keyword.unwrap();
+        let keyword_lc = keyword.to_lowercase();
+
+        let client = match eastmoney::build_client() {
+            Ok(c) => c,
+            Err(e) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": format!("创建 HTTP 客户端失败: {e}") })),
+                )
+                    .into_response();
+            }
+        };
+
+        let list = match eastmoney::fetch_fund_list(&client).await {
+            Ok(v) => v,
+            Err(e) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": e })),
+                )
+                    .into_response();
+            }
+        };
+
+        let mut matched: Vec<eastmoney::FundListItem> = Vec::new();
+        for it in list {
+            let code = it.fund_code.trim();
+            let name = it.fund_name.trim();
+            if code.is_empty() || name.is_empty() {
+                continue;
+            }
+            if code.contains(&keyword)
+                || name.contains(&keyword)
+                || code.to_lowercase().contains(&keyword_lc)
+                || name.to_lowercase().contains(&keyword_lc)
+            {
+                matched.push(it);
+            }
+        }
+
+        let remote_count = matched.len() as i64;
+        let slice = matched
+            .into_iter()
+            .skip(offset as usize)
+            .take(page_size as usize)
+            .collect::<Vec<_>>();
+
+        // 写入 DB 作为缓存（仅插入本页命中的结果）
+        for it in &slice {
+            let _ = upsert_basic_fund(pool, &it.fund_code, &it.fund_name, Some(&it.fund_type)).await;
+        }
+
+        // 从 DB 回读（补齐 id/时间字段）
+        let codes: Vec<String> = slice.iter().map(|it| it.fund_code.trim().to_string()).collect();
+        let mut by_code: std::collections::HashMap<String, FundItem> = std::collections::HashMap::new();
+        if !codes.is_empty() {
+            if let Ok(db_rows) = sqlx::query(
+                r#"
+                SELECT
+                  id::text as id,
+                  fund_code,
+                  fund_name,
+                  fund_type,
+                  latest_nav::text as latest_nav,
+                  latest_nav_date::text as latest_nav_date,
+                  created_at,
+                  updated_at
+                FROM fund
+                WHERE fund_code = ANY($1)
+                "#,
+            )
+            .bind(&codes)
+            .fetch_all(pool)
+            .await
+            {
+                for row in db_rows {
+                    let code = row.get::<String, _>("fund_code");
+                    by_code.insert(
+                        code.clone(),
+                        FundItem {
+                            id: row.get::<String, _>("id"),
+                            fund_code: code,
+                            fund_name: row.get::<String, _>("fund_name"),
+                            fund_type: row.get::<Option<String>, _>("fund_type"),
+                            latest_nav: row.get::<Option<String>, _>("latest_nav"),
+                            latest_nav_date: row.get::<Option<String>, _>("latest_nav_date"),
+                            created_at: format_dt(row.get::<DateTime<Utc>, _>("created_at")),
+                            updated_at: format_dt(row.get::<DateTime<Utc>, _>("updated_at")),
+                        },
+                    );
+                }
+            }
+        }
+
+        let mut results: Vec<FundItem> = Vec::with_capacity(codes.len());
+        for code in codes {
+            if let Some(item) = by_code.remove(&code) {
+                results.push(item);
+            }
+        }
+
+        return (StatusCode::OK, Json(FundListResponse { count: remote_count, results })).into_response();
+    }
+
     let results = rows
         .into_iter()
         .map(|row| FundItem {
@@ -202,6 +383,45 @@ pub async fn retrieve(
         }
     };
 
+    let row = match row {
+        Some(v) => Some(v),
+        None => {
+            // 开箱即用：fund 表里没有时，尝试从上游补齐后再查一次。
+            let client = match eastmoney::build_client() {
+                Ok(c) => c,
+                Err(e) => {
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({ "error": format!("创建 HTTP 客户端失败: {e}") })),
+                    )
+                        .into_response();
+                }
+            };
+
+            let _ = ensure_fund_exists(pool, &client, &fund_code).await;
+            sqlx::query(
+                r#"
+                SELECT
+                  id::text as id,
+                  fund_code,
+                  fund_name,
+                  fund_type,
+                  latest_nav::text as latest_nav,
+                  latest_nav_date::text as latest_nav_date,
+                  created_at,
+                  updated_at
+                FROM fund
+                WHERE fund_code = $1
+                "#,
+            )
+            .bind(&fund_code)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten()
+        }
+    };
+
     let Some(row) = row else {
         // 对齐 DRF 默认 404 响应格式
         return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
@@ -250,6 +470,30 @@ pub async fn estimate(
                 Json(json!({ "error": e.to_string() })),
             )
                 .into_response();
+        }
+    };
+
+    let row = match row {
+        Some(v) => Some(v),
+        None => {
+            // 开箱即用：fund 表里没有时，尝试从上游补齐后再继续估值。
+            let client = match eastmoney::build_client() {
+                Ok(c) => c,
+                Err(e) => {
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({ "error": format!("创建 HTTP 客户端失败: {e}") })),
+                    )
+                        .into_response();
+                }
+            };
+            let _ = ensure_fund_exists(pool, &client, &fund_code).await;
+            sqlx::query("SELECT id, fund_name FROM fund WHERE fund_code = $1")
+                .bind(&fund_code)
+                .fetch_optional(pool)
+                .await
+                .ok()
+                .flatten()
         }
     };
 

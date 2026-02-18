@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import { AuthedLayout } from "../../components/AuthedLayout";
 import { addWatchlistItem, batchEstimate, batchUpdateNav, listFunds, listSources, listWatchlists } from "../../lib/api";
 import { mergeBatchEstimate, mergeBatchNav, normalizeFundList, type Fund } from "../../lib/funds";
-import type { SourceItem } from "../../lib/sources";
+import { sourceDisplayName, type SourceItem } from "../../lib/sources";
 import { pickDefaultWatchlistId, type Watchlist } from "../../lib/watchlists";
 
 const { Text } = Typography;
@@ -184,9 +184,12 @@ export default function FundsPage() {
               loading={sourcesLoading}
               value={source}
               onChange={(v) => setSource(String(v))}
-              options={(sources.length ? sources : [{ name: "tiantian" }]).map((s) => ({ label: s.name, value: s.name }))}
+              options={(sources.length ? sources : [{ name: "tiantian" }]).map((s) => ({
+                label: `${sourceDisplayName(s.name)} (${s.name})`,
+                value: s.name,
+              }))}
             />
-            <Tag color="blue">{source}</Tag>
+            <Tag color="blue">{sourceDisplayName(source)}</Tag>
             <Button icon={<ReloadOutlined />} loading={refreshing} onClick={() => void refreshEstimatesAndNavs(fundCodes)}>
               刷新估值/净值
             </Button>

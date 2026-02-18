@@ -10,6 +10,7 @@ import {
   formatErrorRatePercent,
   normalizeSourceAccuracy,
   normalizeSourceHealth,
+  sourceDisplayName,
   type SourceHealthLike,
   type SourceItem,
 } from "../../lib/sources";
@@ -179,7 +180,19 @@ export default function SourcesPage() {
               dataSource={sources}
               pagination={false}
               columns={[
-                { title: "数据源", dataIndex: "name", width: 180 },
+                {
+                  title: "数据源",
+                  dataIndex: "name",
+                  width: 220,
+                  render: (v: any) => (
+                    <Space direction="vertical" size={0}>
+                      <span>{sourceDisplayName(String(v ?? ""))}</span>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        {String(v ?? "")}
+                      </Text>
+                    </Space>
+                  ),
+                },
                 {
                   title: "健康度",
                   key: "health",

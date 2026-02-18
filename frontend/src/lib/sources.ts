@@ -53,3 +53,17 @@ export const formatErrorRatePercent = (avgErrorRate: number): string => {
   return `${(avgErrorRate * 100).toFixed(2)}%`;
 };
 
+export const sourceDisplayName = (sourceName: string): string => {
+  const name = String(sourceName ?? "").trim();
+  switch (name) {
+    case "tiantian":
+      return "天天基金";
+    case "danjuan":
+      return "蛋卷";
+    case "ths":
+      return "同花顺";
+    default:
+      return name || "-";
+  }
+};
+

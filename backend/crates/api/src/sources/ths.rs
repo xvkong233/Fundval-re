@@ -32,8 +32,10 @@ pub fn latest_nav(rows: &[NavRow]) -> Option<RealtimeNavData> {
 
 pub async fn fetch_nav_series(client: &reqwest::Client, fund_code: &str) -> Result<Vec<NavRow>, String> {
     let url = dwjz_url(fund_code);
+    let referer = format!("https://fund.10jqka.com.cn/{}/", fund_code.trim());
     let text = client
         .get(url)
+        .header(reqwest::header::REFERER, referer)
         .send()
         .await
         .map_err(|e| e.to_string())?
@@ -59,18 +61,33 @@ pub async fn fetch_realtime_nav(
 }
 
 pub fn parse_nav_series_js(text: &str) -> Result<Vec<NavRow>, String> {
-    // e.g. var dwjz_000001=[["2026-02-13","1.2345"],["2026-02-12","1.2000"]];
-    let start = text.find('[').ok_or_else(|| "无法定位数组开始".to_string())?;
-    let end = text.rfind(']').ok_or_else(|| "无法定位数组结束".to_string())?;
-    if end <= start {
-        return Err("数组范围无效".to_string());
-    }
-    let json_part = &text[start..=end];
+    // 兼容多种返回：
+    // - var dwjz_000001=[["2026-02-13","1.2345"], ...];
+    // - [["2026-02-13","1.2345"], ...]
+    // - {"data":[["2026-02-13","1.2345"], ...]}
+    let trimmed = text.trim();
+    let value: serde_json::Value = match serde_json::from_str(trimmed) {
+        Ok(v) => v,
+        Err(_) => {
+            let start = text.find('[').ok_or_else(|| "无法定位数组开始".to_string())?;
+            let end = text.rfind(']').ok_or_else(|| "无法定位数组结束".to_string())?;
+            if end <= start {
+                return Err("数组范围无效".to_string());
+            }
+            let json_part = &text[start..=end];
+            serde_json::from_str(json_part).map_err(|e| format!("JSON 解析失败: {e}"))?
+        }
+    };
 
-    let arr: serde_json::Value =
-        serde_json::from_str(json_part).map_err(|e| format!("JSON 解析失败: {e}"))?;
-    let Some(items) = arr.as_array() else {
-        return Err("数组不是 list".to_string());
+    let items = if let Some(arr) = value.as_array() {
+        arr
+    } else if let Some(obj) = value.as_object() {
+        obj.get("data")
+            .and_then(|v| v.as_array())
+            .or_else(|| obj.get("dwjz").and_then(|v| v.as_array()))
+            .ok_or_else(|| "无法从对象中提取数组".to_string())?
+    } else {
+        return Err("返回值不是数组/对象".to_string());
     };
 
     let mut out: Vec<NavRow> = Vec::with_capacity(items.len());

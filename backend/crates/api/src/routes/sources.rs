@@ -117,8 +117,8 @@ pub async fn health(State(state): State<AppState>) -> impl IntoResponse {
             let start = Instant::now();
             let check = async {
                 let client = eastmoney::build_client()?;
-                let fund_code = "000001";
-                match eastmoney::fetch_estimate(&client, fund_code).await? {
+                let fund_code = "161725";
+                match eastmoney::fetch_realtime_nav(&client, fund_code).await? {
                     Some(_) => Ok::<(), String>(()),
                     None => Err("上游返回为空或解析失败".to_string()),
                 }
@@ -169,7 +169,7 @@ pub async fn health(State(state): State<AppState>) -> impl IntoResponse {
             let start = Instant::now();
             let check = async {
                 let client = eastmoney::build_client()?;
-                let fund_code = "000001";
+                let fund_code = "161725";
                 match sources::ths::fetch_realtime_nav(&client, fund_code).await? {
                     Some(_) => Ok::<(), String>(()),
                     None => Err("上游返回为空或解析失败".to_string()),

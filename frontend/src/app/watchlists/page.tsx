@@ -41,7 +41,7 @@
     reorderWatchlist,
   } from "../../lib/api";
   import { mergeBatchEstimate, mergeBatchNav, normalizeFundList, type Fund } from "../../lib/funds";
-  import type { SourceItem } from "../../lib/sources";
+  import { sourceDisplayName, type SourceItem } from "../../lib/sources";
   import { getFundCodes, moveInArray, pickDefaultWatchlistId, type Watchlist } from "../../lib/watchlists";
 
  const { Title, Text } = Typography;
@@ -372,11 +372,11 @@
                     value={source}
                     onChange={(v) => setSource(String(v))}
                     options={(sources.length ? sources : [{ name: "tiantian" }]).map((s) => ({
-                      label: s.name,
+                      label: `${sourceDisplayName(s.name)} (${s.name})`,
                       value: s.name,
                     }))}
                   />
-                  <Tag color="blue">{source}</Tag>
+                  <Tag color="blue">{sourceDisplayName(source)}</Tag>
                   <Button icon={<ReloadOutlined />} loading={refreshing} onClick={() => void refreshEstimatesAndNavs()}>
                     刷新估值/净值
                   </Button>

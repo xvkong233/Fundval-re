@@ -3,6 +3,7 @@ use regex::Regex;
 use rust_decimal::Decimal;
 use serde_json::Value;
 use std::collections::HashMap;
+use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, ACCEPT_LANGUAGE, REFERER};
 
 #[derive(Debug, Clone)]
 pub struct EstimateData {
@@ -36,15 +37,22 @@ pub struct NavRow {
 }
 
 pub fn build_client() -> Result<reqwest::Client, String> {
+    let mut headers = HeaderMap::new();
+    headers.insert(ACCEPT, HeaderValue::from_static("*/*"));
+    headers.insert(ACCEPT_LANGUAGE, HeaderValue::from_static("zh-CN,zh;q=0.9,en;q=0.8"));
+    headers.insert(REFERER, HeaderValue::from_static("https://fund.eastmoney.com/"));
+
     reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
-        .user_agent("FundVal-Rust/1.0")
+        // 使用接近浏览器的 UA，降低被上游拦截概率
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+        .default_headers(headers)
         .build()
         .map_err(|e| e.to_string())
 }
 
 pub async fn fetch_estimate(client: &reqwest::Client, fund_code: &str) -> Result<Option<EstimateData>, String> {
-    let url = format!("http://fundgz.1234567.com.cn/js/{fund_code}.js");
+    let url = format!("https://fundgz.1234567.com.cn/js/{fund_code}.js");
     let text = client
         .get(url)
         .send()
@@ -56,7 +64,7 @@ pub async fn fetch_estimate(client: &reqwest::Client, fund_code: &str) -> Result
         .await
         .map_err(|e| e.to_string())?;
 
-    let re = Regex::new(r"jsonpgz\\((.*)\\);?").map_err(|e| e.to_string())?;
+    let re = Regex::new(r"(?s)jsonpgz\\((.*?)\\);?").map_err(|e| e.to_string())?;
     let Some(caps) = re.captures(&text) else {
         return Ok(None);
     };
@@ -99,7 +107,7 @@ pub async fn fetch_realtime_nav(
     client: &reqwest::Client,
     fund_code: &str,
 ) -> Result<Option<RealtimeNavData>, String> {
-    let url = format!("http://fundgz.1234567.com.cn/js/{fund_code}.js");
+    let url = format!("https://fundgz.1234567.com.cn/js/{fund_code}.js");
     let text = client
         .get(url)
         .send()
@@ -111,7 +119,7 @@ pub async fn fetch_realtime_nav(
         .await
         .map_err(|e| e.to_string())?;
 
-    let re = Regex::new(r"jsonpgz\\((.*)\\);?").map_err(|e| e.to_string())?;
+    let re = Regex::new(r"(?s)jsonpgz\\((.*?)\\);?").map_err(|e| e.to_string())?;
     let Some(caps) = re.captures(&text) else {
         return Ok(None);
     };
@@ -145,7 +153,7 @@ pub async fn fetch_realtime_nav(
 }
 
 pub async fn fetch_fund_list(client: &reqwest::Client) -> Result<Vec<FundListItem>, String> {
-    let url = "http://fund.eastmoney.com/js/fundcode_search.js";
+    let url = "https://fund.eastmoney.com/js/fundcode_search.js";
     let text = client
         .get(url)
         .send()
@@ -157,7 +165,7 @@ pub async fn fetch_fund_list(client: &reqwest::Client) -> Result<Vec<FundListIte
         .await
         .map_err(|e| e.to_string())?;
 
-    let re = Regex::new(r"(?s)var\\s+r\\s*=\\s*(\\[.*\\]);?").map_err(|e| e.to_string())?;
+    let re = Regex::new(r"(?s)var\\s+r\\s*=\\s*(\\[.*?\\]);?").map_err(|e| e.to_string())?;
     let Some(caps) = re.captures(&text) else {
         return Ok(vec![]);
     };
@@ -196,7 +204,7 @@ pub async fn fetch_nav_history(
     start_date: Option<NaiveDate>,
     end_date: Option<NaiveDate>,
 ) -> Result<Vec<NavRow>, String> {
-    let url = format!("http://fund.eastmoney.com/pingzhongdata/{fund_code}.js");
+    let url = format!("https://fund.eastmoney.com/pingzhongdata/{fund_code}.js");
     let text = client
         .get(url)
         .send()

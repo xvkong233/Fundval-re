@@ -6,6 +6,7 @@ import {
   Card,
   Descriptions,
   Empty,
+  Result,
   Select,
   Space,
   Spin,
@@ -32,7 +33,7 @@ import { getDateRange, type TimeRange } from "../../../lib/dateRange";
 import { buildNavChartOption } from "../../../lib/navChart";
 import { buildFundPositionRows, sortOperationsDesc, type FundPositionRow } from "../../../lib/fundDetail";
 import { normalizeNavHistoryRows } from "../../../lib/navHistoryNormalize";
-import type { SourceItem } from "../../../lib/sources";
+import { sourceDisplayName, type SourceItem } from "../../../lib/sources";
 
 const { Text } = Typography;
 
@@ -62,6 +63,8 @@ export default function FundDetailPage() {
 
   const [loading, setLoading] = useState(true);
   const [fund, setFund] = useState<any | null>(null);
+  const [fundNotFound, setFundNotFound] = useState(false);
+  const [fundLoadError, setFundLoadError] = useState<string | null>(null);
   const [estimate, setEstimate] = useState<any | null>(null);
 
   const [sourcesLoading, setSourcesLoading] = useState(false);
@@ -110,11 +113,20 @@ export default function FundDetailPage() {
 
   const loadFund = async () => {
     setLoading(true);
+    setFundLoadError(null);
+    setFundNotFound(false);
     try {
       const detailRes = await getFundDetail(fundCode);
       setFund(detailRes.data);
-    } catch {
-      message.error("加载基金详情失败");
+    } catch (e: any) {
+      const status = e?.response?.status as number | undefined;
+      if (status === 404) {
+        setFundNotFound(true);
+      } else {
+        const msg = e?.response?.data?.error || e?.response?.data?.detail || "加载基金详情失败";
+        setFundLoadError(String(msg));
+        message.error(String(msg));
+      }
       setFund(null);
     } finally {
       setLoading(false);
@@ -253,7 +265,20 @@ export default function FundDetailPage() {
     return (
       <AuthedLayout title="基金详情">
         <Card>
-          <Empty description="基金不存在" />
+          {fundLoadError ? (
+            <Result
+              status="error"
+              title="加载失败"
+              subTitle={fundLoadError}
+              extra={
+                <Button type="primary" onClick={() => void loadFund()}>
+                  重试
+                </Button>
+              }
+            />
+          ) : (
+            <Empty description={fundNotFound ? "基金不存在" : "暂无数据"} />
+          )}
         </Card>
       </AuthedLayout>
     );
@@ -279,11 +304,11 @@ export default function FundDetailPage() {
                   value={source}
                   onChange={(v) => setSource(String(v))}
                   options={(sources.length ? sources : [{ name: "tiantian" }]).map((s) => ({
-                    label: s.name,
+                    label: `${sourceDisplayName(s.name)} (${s.name})`,
                     value: s.name,
                   }))}
                 />
-                <Tag color="blue">{source}</Tag>
+                <Tag color="blue">{sourceDisplayName(source)}</Tag>
               </Space>
             </Descriptions.Item>
           </Descriptions>

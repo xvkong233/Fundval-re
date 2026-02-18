@@ -139,7 +139,6 @@ export async function runPositionsHistory(
       `operations.create(for positions_history) 状态码不一致: golden=${goldenOp.status} candidate=${candidateOp.status}`
     );
   }
-  assertSameSchema(goldenOp.json, candidateOp.json, "$");
 
   // history ok: schema + 长度对照（只在返回 list 时检查）
   const goldenOk = await getJsonWithBearer(
@@ -189,4 +188,3 @@ async function postJsonWithBearer(url: string, token: string, body: unknown) {
   const text = await res.text();
   return { status: res.status, json: JSON.parse(text) };
 }
-

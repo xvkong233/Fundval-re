@@ -25,3 +25,14 @@ Docker（Windows PowerShell 推荐）
 
   .\scripts\compose-dev.ps1 up -ProjectName fundval-dev -FrontendNextPort 19700 -BackendRsPort 19701
 
+合同测试（profile=contract）
+--------------------------
+
+  # 执行合同测试（会先 down --remove-orphans，再 up 并阻塞；结束后自动 down）
+  .\scripts\compose-contract.ps1 run -Build
+
+  # 查看状态 / 跟随日志 / 手动清理
+  .\scripts\compose-contract.ps1 status
+  .\scripts\compose-contract.ps1 logs
+  .\scripts\compose-contract.ps1 down
+

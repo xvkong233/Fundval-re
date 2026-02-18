@@ -6,6 +6,7 @@ import { runSources } from "./cases/sources.js";
 import { runFunds } from "./cases/funds.js";
 import { runAccounts } from "./cases/accounts.js";
 import { runPositions } from "./cases/positions.js";
+import { runPositionsHistory } from "./cases/positions_history.js";
 import { runWatchlists } from "./cases/watchlists.js";
 import { runNavHistory } from "./cases/nav_history.js";
 import { runSourcesAccuracy } from "./cases/sources_accuracy.js";
@@ -29,6 +30,7 @@ const cases: Case[] = [
   { name: "accounts", run: runAccounts },
   { name: "funds", run: runFunds },
   { name: "positions", run: runPositions },
+  { name: "positions_history", run: runPositionsHistory },
   { name: "watchlists", run: runWatchlists },
   { name: "nav_history", run: runNavHistory },
 ];

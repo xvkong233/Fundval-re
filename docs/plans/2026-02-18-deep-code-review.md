@@ -44,10 +44,10 @@
   - `GET /api/funds/`（分页结构）
   - `GET /api/funds/{fund_code}/`
   - `GET /api/funds/{fund_code}/estimate/`（404 分支已对齐）
-  - `GET /api/funds/{fund_code}/accuracy/`（404 分支已对齐）
+  - `GET /api/funds/{fund_code}/accuracy/`（404 + success(seed) 分支已对齐）
   - `POST /api/funds/batch_estimate/`
   - `POST /api/funds/batch_update_nav/`
-  - `POST /api/funds/query_nav/`（404 分支已对齐）
+  - `POST /api/funds/query_nav/`（404 + success(history) 分支已对齐）
 - Accounts / Positions / Operations / Watchlists
   - `GET|POST /api/accounts/`
   - `GET|PUT|PATCH|DELETE /api/accounts/{id}/`
@@ -65,7 +65,7 @@
 - Nav history
   - `GET /api/nav-history/`
   - `GET /api/nav-history/{id}/`
-  - `POST /api/nav-history/batch_query/`
+  - `POST /api/nav-history/batch_query/`（success(seed) 分支已对齐）
   - `POST /api/nav-history/sync/`（分级权限逻辑存在；成功分支未合同测试覆盖）
 
 ### 2) 已实现但“成功分支”缺乏合同测试覆盖（中置信）
@@ -73,9 +73,6 @@
 这些端点在合同测试里多为“缺失/404/空库”分支对照，真实数据场景仍存在潜在偏差：
 
 - `GET /api/funds/{fund_code}/estimate/`（成功结构与字段精度）
-- `GET /api/funds/{fund_code}/accuracy/`（成功结构：Python 是按 source 分组，带 records）
-- `POST /api/funds/query_nav/`（成功结构：history/synced/latest 分支）
-- `POST /api/nav-history/batch_query/`（成功结构与返回记录排序/字段）
 - `POST /api/nav-history/sync/`（成功结构 + >15 的鉴权边界）
 - `POST /api/funds/sync/`（管理员同步基金列表；通常依赖外网数据源）
 
@@ -155,9 +152,7 @@
      - `fund_nav_history`（多日）
      - `estimate_accuracy`（多源多日）
    - 新增 contract case：
-     - `funds.estimate(success)`、`funds.accuracy(success)`
-     - `funds.query_nav(success history/latest)`
-     - `nav_history.batch_query(success)`
+     - `funds.estimate(success)`
      - `nav_history.sync(<=15 与 >15 的权限边界)`
 
 2) **统一错误响应策略（可选但建议）**
@@ -173,5 +168,4 @@
 ## 结论
 
 - 移植的“主路径能力”与页面功能已基本对齐，合同测试覆盖的端点一致性已建立并可重复运行。
-- 深层风险主要集中在“成功分支缺少契约覆盖”（真实数据场景）与“错误响应/部署默认值”的生产化差距。
-
+- 剩余风险主要集中在 `funds.estimate(success)`、`nav-history.sync(success)` 等“真实数据成功分支”的契约覆盖，以及“错误响应/部署默认值”的生产化差距。

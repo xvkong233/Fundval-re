@@ -801,10 +801,7 @@ pub async fn reorder(
             .bind(code)
             .fetch_optional(pool)
             .await;
-        let fund_row = match fund_row {
-            Ok(v) => v,
-            Err(_) => None,
-        };
+        let fund_row: Option<sqlx::postgres::PgRow> = fund_row.unwrap_or_default();
         let Some(fund_row) = fund_row else {
             continue;
         };

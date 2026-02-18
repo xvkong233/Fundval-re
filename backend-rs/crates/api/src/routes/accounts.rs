@@ -109,10 +109,8 @@ struct Summary {
 
 #[derive(Clone, Debug)]
 struct PositionAggRow {
-    account_id: Uuid,
     holding_share: Decimal,
     holding_cost: Decimal,
-    holding_nav: Decimal,
     latest_nav: Option<Decimal>,
     estimate_nav: Option<Decimal>,
 }
@@ -355,18 +353,17 @@ pub async fn create(
         }
     };
 
-    if is_default {
-        if let Err(e) = sqlx::query("UPDATE account SET is_default = FALSE WHERE user_id = $1 AND is_default = TRUE")
+    if is_default
+        && let Err(e) = sqlx::query("UPDATE account SET is_default = FALSE WHERE user_id = $1 AND is_default = TRUE")
             .bind(user_id_i64)
             .execute(&mut *tx)
             .await
-        {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
-            )
-                .into_response();
-        }
+    {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )
+            .into_response();
     }
 
     if let Err(e) = sqlx::query(
@@ -739,21 +736,20 @@ async fn update_internal(
         }
     };
 
-    if next_is_default {
-        if let Err(e) = sqlx::query(
+    if next_is_default
+        && let Err(e) = sqlx::query(
             "UPDATE account SET is_default = FALSE WHERE user_id = $1 AND is_default = TRUE AND id <> $2",
         )
         .bind(user_id_i64)
         .bind(existing_row.id)
         .execute(&mut *tx)
         .await
-        {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
-            )
-                .into_response();
-        }
+    {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )
+            .into_response();
     }
 
     if let Err(e) = sqlx::query(
@@ -994,7 +990,6 @@ async fn load_positions(
           p.account_id,
           p.holding_share::text as holding_share,
           p.holding_cost::text as holding_cost,
-          p.holding_nav::text as holding_nav,
           f.latest_nav::text as latest_nav,
           f.estimate_nav::text as estimate_nav
         FROM position p
@@ -1024,17 +1019,14 @@ async fn load_positions(
         let account_id = row.get::<Uuid, _>("account_id");
         let holding_share = parse_decimal(row.get::<String, _>("holding_share"));
         let holding_cost = parse_decimal(row.get::<String, _>("holding_cost"));
-        let holding_nav = parse_decimal(row.get::<String, _>("holding_nav"));
         let latest_nav = row.get::<Option<String>, _>("latest_nav").map(parse_decimal);
         let estimate_nav = row.get::<Option<String>, _>("estimate_nav").map(parse_decimal);
 
         map.entry(account_id)
             .or_default()
             .push(PositionAggRow {
-                account_id,
                 holding_share,
                 holding_cost,
-                holding_nav,
                 latest_nav,
                 estimate_nav,
             });

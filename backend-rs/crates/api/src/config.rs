@@ -19,13 +19,12 @@ impl ConfigStore {
         let path = detect_config_path();
         let mut data = default_config();
 
-        if path.exists() {
-            if let Ok(bytes) = fs::read(&path) {
-                if let Ok(Value::Object(map)) = serde_json::from_slice::<Value>(&bytes) {
-                    for (k, v) in map {
-                        data.insert(k, v);
-                    }
-                }
+        if path.exists()
+            && let Ok(bytes) = fs::read(&path)
+            && let Ok(Value::Object(map)) = serde_json::from_slice::<Value>(&bytes)
+        {
+            for (k, v) in map {
+                data.insert(k, v);
             }
         }
 

@@ -386,7 +386,7 @@ async fn maybe_is_staff(
     }
 
     // Bearer 但 token 无效时：应与 DRF 行为一致，直接返回 401（而不是降级为 403）。
-    let user_id = auth::authenticate(state, headers).map_err(|resp| resp)?;
+    let user_id = auth::authenticate(state, headers)?;
     let user_id_i64 = user_id
         .parse::<i64>()
         .map_err(|_| auth::invalid_token_response())?;

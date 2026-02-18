@@ -39,10 +39,10 @@ async fn main() {
     let secret = std::env::var("SECRET_KEY").unwrap_or_else(|_| "django-insecure-dev-only".to_string());
     let jwt = api::jwt::JwtService::from_secret(&secret);
 
-    if let Some(ref pool) = pool {
-        if let Err(e) = MIGRATOR.run(pool).await {
-            tracing::warn!(error=%e, "failed to run migrations");
-        }
+    if let Some(ref pool) = pool
+        && let Err(e) = MIGRATOR.run(pool).await
+    {
+        tracing::warn!(error=%e, "failed to run migrations");
     }
 
     let state = AppState::new(pool, config, jwt);

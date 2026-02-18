@@ -712,6 +712,7 @@ pub async fn operations_create(
         (StatusCode::BAD_REQUEST, Json(json!({ field: [message.into()] }))).into_response()
     }
 
+    #[allow(clippy::result_large_err)]
     fn parse_decimal_input(field: &'static str, value: &Value) -> Result<Decimal, axum::response::Response> {
         let raw = match value {
             Value::String(s) => s.trim().to_string(),

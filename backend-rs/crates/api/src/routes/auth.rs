@@ -352,6 +352,7 @@ pub async fn change_password(
     (StatusCode::OK, Json(MessageResponse { message: "密码修改成功" })).into_response()
 }
 
+#[allow(clippy::result_large_err)]
 pub(crate) fn authenticate(
     state: &AppState,
     headers: &axum::http::HeaderMap,

@@ -236,13 +236,13 @@ pub async fn fetch_nav_history(
             }
             continue;
         }
-        if let Some(arr) = item.as_array() {
-            if arr.len() >= 2 {
-                let x = arr[0].as_i64();
-                let y = arr[1].as_f64();
-                if let (Some(x), Some(y)) = (x, y) {
-                    acc_map.insert(x, Decimal::from_f64_retain(y).unwrap_or(Decimal::ZERO));
-                }
+        if let Some(arr) = item.as_array()
+            && arr.len() >= 2
+        {
+            let x = arr[0].as_i64();
+            let y = arr[1].as_f64();
+            if let (Some(x), Some(y)) = (x, y) {
+                acc_map.insert(x, Decimal::from_f64_retain(y).unwrap_or(Decimal::ZERO));
             }
         }
     }
@@ -268,15 +268,15 @@ pub async fn fetch_nav_history(
         };
         let nav_date = ts.date_naive();
 
-        if let Some(sd) = start_date {
-            if nav_date < sd {
-                continue;
-            }
+        if let Some(sd) = start_date
+            && nav_date < sd
+        {
+            continue;
         }
-        if let Some(ed) = end_date {
-            if nav_date > ed {
-                continue;
-            }
+        if let Some(ed) = end_date
+            && nav_date > ed
+        {
+            continue;
         }
 
         let unit_nav = if let Some(s) = y.as_str() {

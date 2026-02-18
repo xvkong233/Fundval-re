@@ -43,7 +43,7 @@ pub async fn accuracy(
     };
 
     let days = q.days.unwrap_or(100).max(0);
-    let limit = days as i64;
+    let limit = days;
 
     let rows: Vec<(Decimal,)> = match sqlx::query_as(
         r#"

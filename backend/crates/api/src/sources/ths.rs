@@ -104,7 +104,15 @@ pub fn parse_nav_series_js(text: &str) -> Result<Vec<NavRow>, String> {
             continue;
         }
 
-        let nav_date = NaiveDate::parse_from_str(date_str, "%Y-%m-%d").map_err(|e| e.to_string())?;
+        let nav_date = if date_str.len() == 8 && date_str.chars().all(|c| c.is_ascii_digit()) {
+            NaiveDate::parse_from_str(date_str, "%Y%m%d").map_err(|e| e.to_string())?
+        } else if date_str.contains('-') {
+            NaiveDate::parse_from_str(date_str, "%Y-%m-%d").map_err(|e| e.to_string())?
+        } else if date_str.contains('/') {
+            NaiveDate::parse_from_str(date_str, "%Y/%m/%d").map_err(|e| e.to_string())?
+        } else {
+            return Err(format!("无法解析日期: {date_str}"));
+        };
         let unit_nav = Decimal::from_str_exact(nav_str).map_err(|e| e.to_string())?;
 
         out.push(NavRow {

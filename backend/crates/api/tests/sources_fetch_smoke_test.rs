@@ -22,6 +22,16 @@ fn ths_parses_js_var_array() {
 }
 
 #[test]
+fn ths_parses_yyyymmdd_date() {
+    let sample = r#"var dwjz_161725=[["20150527","1.0000"],["20150529","0.9950"]];"#;
+
+    let rows = sources::ths::parse_nav_series_js(sample).expect("parse");
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].nav_date.to_string(), "2015-05-27");
+    assert_eq!(rows[0].unit_nav.to_string(), "1.0000");
+}
+
+#[test]
 fn danjuan_builds_nav_history_url() {
     let url = sources::danjuan::nav_history_url("161725", 1, 5);
     assert!(url.contains("danjuanapp.com"));

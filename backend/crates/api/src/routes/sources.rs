@@ -118,6 +118,11 @@ pub async fn health(State(state): State<AppState>) -> impl IntoResponse {
             let check = async {
                 let client = eastmoney::build_client()?;
                 let fund_code = "161725";
+
+                // 真实环境下某些时间段 dwjz/jzrq 可能为空，但 gsz/gztime 仍可用；这里任一可用即判定健康。
+                if let Ok(Some(_)) = eastmoney::fetch_estimate(&client, fund_code).await {
+                    return Ok::<(), String>(());
+                }
                 match eastmoney::fetch_realtime_nav(&client, fund_code).await? {
                     Some(_) => Ok::<(), String>(()),
                     None => Err("上游返回为空或解析失败".to_string()),

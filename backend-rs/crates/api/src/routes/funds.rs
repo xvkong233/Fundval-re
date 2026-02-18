@@ -1,6 +1,6 @@
 use axum::{extract::Query, http::StatusCode, response::IntoResponse, Json};
 use chrono::{DateTime, Datelike, Duration, NaiveDate, SecondsFormat, Utc};
-use rust_decimal::Decimal;
+use rust_decimal::{prelude::ToPrimitive, Decimal};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::Row;
@@ -382,7 +382,7 @@ pub async fn accuracy(
         entry.count += 1;
         entry.records.push(json!({
           "date": estimate_date.to_string(),
-          "error_rate": error_rate.to_string()
+          "error_rate": error_rate.to_f64().unwrap_or(0.0)
         }));
     }
 
@@ -396,7 +396,7 @@ pub async fn accuracy(
         out.insert(
             source_name,
             json!({
-              "avg_error_rate": avg.to_string(),
+              "avg_error_rate": avg.to_f64().unwrap_or(0.0),
               "record_count": acc.count,
               "records": acc.records
             }),

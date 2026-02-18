@@ -62,6 +62,26 @@ export async function runFunds(goldenBase: string, candidateBase: string): Promi
   }
   assertSameSchema(goldenAccMissing.json as any, candidateAccMissing.json as any, "$");
 
+  // accuracy(success): 需要 seed 的 estimate_accuracy 数据；并且至少包含两个数据源，防止只覆盖“单一 key”情况
+  const goldenAccOk = await getJson(`${goldenBase}/api/funds/${encodeURIComponent(firstCode)}/accuracy/?days=100`);
+  const candidateAccOk = await getJson(`${candidateBase}/api/funds/${encodeURIComponent(firstCode)}/accuracy/?days=100`);
+  if (goldenAccOk.status !== candidateAccOk.status) {
+    throw new Error(
+      `funds.accuracy(ok) 状态码不一致: golden=${goldenAccOk.status} candidate=${candidateAccOk.status}`
+    );
+  }
+  if (goldenAccOk.status !== 200) {
+    throw new Error(`funds.accuracy(ok) 状态码非 200: ${goldenAccOk.status}`);
+  }
+  assertSameSchema(goldenAccOk.json as any, candidateAccOk.json as any, "$");
+  const goldenSources = Object.keys((goldenAccOk.json as any) ?? {});
+  if (goldenSources.length < 2) {
+    throw new Error(`funds.accuracy(ok) 期望至少 2 个 source，但得到 ${goldenSources.length}`);
+  }
+  if (!goldenSources.includes("eastmoney")) {
+    throw new Error(`funds.accuracy(ok) 期望包含 source=eastmoney，但 sources=[${goldenSources.join(",")}]`);
+  }
+
   // batch_estimate: 缺少 fund_codes -> 400 + {error:"缺少 fund_codes 参数"}
   const goldenBatchEstimateBad = await postJson(`${goldenBase}/api/funds/batch_estimate/`, {});
   const candidateBatchEstimateBad = await postJson(`${candidateBase}/api/funds/batch_estimate/`, {});

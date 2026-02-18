@@ -56,12 +56,14 @@ pub async fn list(
         .start_date
         .as_ref()
         .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
+        .filter(|s| !s.is_empty())
+        .and_then(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok());
     let end_date = q
         .end_date
         .as_ref()
         .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
+        .filter(|s| !s.is_empty())
+        .and_then(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok());
 
     let mut sql = String::from(
         r#"
@@ -210,9 +212,24 @@ pub async fn batch_query(
         Some(p) => p,
     };
 
-    let start_date = body.start_date.as_ref().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
-    let end_date = body.end_date.as_ref().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
-    let nav_date = body.nav_date.as_ref().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    let start_date = body
+        .start_date
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .and_then(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok());
+    let end_date = body
+        .end_date
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .and_then(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok());
+    let nav_date = body
+        .nav_date
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .and_then(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok());
 
     let mut sql = String::from(
         r#"

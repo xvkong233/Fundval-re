@@ -4,6 +4,7 @@ const SEED_FUND_ID = "11111111-1111-1111-1111-111111111111";
 const SEED_FUND_CODE = "000001";
 const SEED_FUND_TYPE = "SEED";
 const SEED_SOURCE_NAME = "eastmoney";
+const SEED_SOURCE_NAME_2 = "seed-source-2";
 
 type DbTarget = { label: string; url: string };
 
@@ -40,8 +41,9 @@ async function seedOne(target: DbTarget): Promise<void> {
     const fundId = await upsertSeedFund(client);
 
     const rows = [
-      { id: "22222222-2222-2222-2222-222222222222", date: "2026-02-10", errorRate: "0.018066" },
-      { id: "33333333-3333-3333-3333-333333333333", date: "2026-02-11", errorRate: "0.018067" },
+      { id: "22222222-2222-2222-2222-222222222222", sourceName: SEED_SOURCE_NAME, date: "2026-02-10", errorRate: "0.018066" },
+      { id: "33333333-3333-3333-3333-333333333333", sourceName: SEED_SOURCE_NAME, date: "2026-02-11", errorRate: "0.018067" },
+      { id: "44444444-4444-4444-4444-444444444444", sourceName: SEED_SOURCE_NAME_2, date: "2026-02-11", errorRate: "0.028067" },
     ] as const;
 
     for (const r of rows) {
@@ -56,7 +58,29 @@ async function seedOne(target: DbTarget): Promise<void> {
           actual_nav = EXCLUDED.actual_nav,
           error_rate = EXCLUDED.error_rate
         `,
-        [r.id, SEED_SOURCE_NAME, fundId, r.date, "1.0000", "1.0000", r.errorRate]
+        [r.id, r.sourceName, fundId, r.date, "1.0000", "1.0000", r.errorRate]
+      );
+    }
+
+    const navRows = [
+      { id: "55555555-5555-5555-5555-555555555555", navDate: "2026-03-10", unitNav: "1.1000", accNav: "1.1000", dailyGrowth: "0.0100" },
+      { id: "66666666-6666-6666-6666-666666666666", navDate: "2026-03-11", unitNav: "1.1200", accNav: "1.1200", dailyGrowth: "0.0182" },
+    ] as const;
+
+    for (const r of navRows) {
+      await client.query(
+        `
+        INSERT INTO fund_nav_history
+          (id, fund_id, nav_date, unit_nav, accumulated_nav, daily_growth, created_at, updated_at)
+        VALUES
+          ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+        ON CONFLICT (fund_id, nav_date) DO UPDATE SET
+          unit_nav = EXCLUDED.unit_nav,
+          accumulated_nav = EXCLUDED.accumulated_nav,
+          daily_growth = EXCLUDED.daily_growth,
+          updated_at = NOW()
+        `,
+        [r.id, fundId, r.navDate, r.unitNav, r.accNav, r.dailyGrowth]
       );
     }
 

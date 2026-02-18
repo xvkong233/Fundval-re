@@ -12,6 +12,60 @@ export async function runNavHistory(goldenBase: string, candidateBase: string): 
   }
   assertSameSchema(golden.json, candidate.json, "$");
 
+  // list/batch_query(success): 需要 DB seed 的 fund_nav_history 数据；否则空数组会导致 schema 检查不深入
+  if (process.env.ENABLE_DB_CASES === "true") {
+    const fundCode = "000001";
+    const startDate = "2026-03-10";
+    const endDate = "2026-03-11";
+
+    const goldenSeedList = await getJson(
+      `${goldenBase}/api/nav-history/?fund_code=${encodeURIComponent(fundCode)}&start_date=${encodeURIComponent(
+        startDate
+      )}&end_date=${encodeURIComponent(endDate)}`
+    );
+    const candidateSeedList = await getJson(
+      `${candidateBase}/api/nav-history/?fund_code=${encodeURIComponent(fundCode)}&start_date=${encodeURIComponent(
+        startDate
+      )}&end_date=${encodeURIComponent(endDate)}`
+    );
+    if (goldenSeedList.status !== candidateSeedList.status) {
+      throw new Error(
+        `nav-history.list(seed filter) 状态码不一致: golden=${goldenSeedList.status} candidate=${candidateSeedList.status}`
+      );
+    }
+    if (goldenSeedList.status !== 200) {
+      throw new Error(`nav-history.list(seed filter) 状态码非 200: ${goldenSeedList.status}`);
+    }
+    if (!Array.isArray(goldenSeedList.json) || goldenSeedList.json.length === 0) {
+      throw new Error(`nav-history.list(seed filter) 期望非空数组，但得到 length=${(goldenSeedList.json as any)?.length}`);
+    }
+    assertSameSchema(goldenSeedList.json, candidateSeedList.json, "$");
+
+    const goldenBatchSeed = await postJson(`${goldenBase}/api/nav-history/batch_query/`, {
+      fund_codes: [fundCode],
+      start_date: startDate,
+      end_date: endDate,
+    });
+    const candidateBatchSeed = await postJson(`${candidateBase}/api/nav-history/batch_query/`, {
+      fund_codes: [fundCode],
+      start_date: startDate,
+      end_date: endDate,
+    });
+    if (goldenBatchSeed.status !== candidateBatchSeed.status) {
+      throw new Error(
+        `nav-history.batch_query(seed ok) 状态码不一致: golden=${goldenBatchSeed.status} candidate=${candidateBatchSeed.status}`
+      );
+    }
+    if (goldenBatchSeed.status !== 200) {
+      throw new Error(`nav-history.batch_query(seed ok) 状态码非 200: ${goldenBatchSeed.status}`);
+    }
+    const goldenArr = (goldenBatchSeed.json as any)?.[fundCode];
+    if (!Array.isArray(goldenArr) || goldenArr.length === 0) {
+      throw new Error(`nav-history.batch_query(seed ok) 期望 ${fundCode} 对应非空数组`);
+    }
+    assertSameSchema(goldenBatchSeed.json, candidateBatchSeed.json, "$");
+  }
+
   // retrieve missing
   const missingId = "00000000-0000-0000-0000-000000000000";
   const goldenMissing = await getJson(`${goldenBase}/api/nav-history/${missingId}/`);

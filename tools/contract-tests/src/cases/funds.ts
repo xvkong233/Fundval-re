@@ -147,4 +147,30 @@ export async function runFunds(goldenBase: string, candidateBase: string): Promi
     );
   }
   assertSameSchema(goldenQueryNavMissing.json as any, candidateQueryNavMissing.json as any, "$");
+
+  // query_nav(success history): 用 seed 的 nav_history 命中 history 分支，避免触发外网同步
+  const seedFundCode = "000001";
+  const goldenQueryNavOk = await postJson(`${goldenBase}/api/funds/query_nav/`, {
+    fund_code: seedFundCode,
+    operation_date: "2026-02-12",
+    before_15: true,
+  });
+  const candidateQueryNavOk = await postJson(`${candidateBase}/api/funds/query_nav/`, {
+    fund_code: seedFundCode,
+    operation_date: "2026-02-12",
+    before_15: true,
+  });
+  if (goldenQueryNavOk.status !== candidateQueryNavOk.status) {
+    throw new Error(
+      `funds.query_nav(ok) 状态码不一致: golden=${goldenQueryNavOk.status} candidate=${candidateQueryNavOk.status}`
+    );
+  }
+  if (goldenQueryNavOk.status !== 200) {
+    throw new Error(`funds.query_nav(ok) 状态码非 200: ${goldenQueryNavOk.status}`);
+  }
+  assertSameSchema(goldenQueryNavOk.json as any, candidateQueryNavOk.json as any, "$");
+  const navDate = (goldenQueryNavOk.json as any)?.nav_date as string | undefined;
+  if (navDate !== "2026-02-11") {
+    throw new Error(`funds.query_nav(ok) 期望 nav_date=2026-02-11，但得到 ${String(navDate)}`);
+  }
 }

@@ -63,6 +63,8 @@ async function seedOne(target: DbTarget): Promise<void> {
     }
 
     const navRows = [
+      { id: "77777777-7777-7777-7777-777777777777", navDate: "2026-02-10", unitNav: "1.0800", accNav: "1.0800", dailyGrowth: "0.0100" },
+      { id: "88888888-8888-8888-8888-888888888888", navDate: "2026-02-11", unitNav: "1.1000", accNav: "1.1000", dailyGrowth: "0.0185" },
       { id: "55555555-5555-5555-5555-555555555555", navDate: "2026-03-10", unitNav: "1.1000", accNav: "1.1000", dailyGrowth: "0.0100" },
       { id: "66666666-6666-6666-6666-666666666666", navDate: "2026-03-11", unitNav: "1.1200", accNav: "1.1200", dailyGrowth: "0.0182" },
     ] as const;

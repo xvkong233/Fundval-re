@@ -5,7 +5,7 @@ use axum::{body::Bytes, extract::Query, http::StatusCode, response::IntoResponse
 use chrono::{DateTime, Duration, NaiveDate, SecondsFormat, Utc};
 use rust_decimal::{prelude::ToPrimitive, Decimal, RoundingStrategy};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Value};
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -543,9 +543,9 @@ pub struct OperationCreateRequest {
     pub operation_type: String,
     pub operation_date: String,
     pub before_15: bool,
-    pub amount: String,
-    pub share: String,
-    pub nav: String,
+    pub amount: Value,
+    pub share: Value,
+    pub nav: Value,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -708,7 +708,22 @@ pub async fn operations_create(
         Some(p) => p,
     };
 
-    // TODO: 后续对齐 Django 更严格的校验/错误形状；当前最小实现以通过空库契约
+    fn field_error(field: &'static str, message: impl Into<String>) -> axum::response::Response {
+        (StatusCode::BAD_REQUEST, Json(json!({ field: [message.into()] }))).into_response()
+    }
+
+    fn parse_decimal_input(field: &'static str, value: &Value) -> Result<Decimal, axum::response::Response> {
+        let raw = match value {
+            Value::String(s) => s.trim().to_string(),
+            Value::Number(n) => n.to_string(),
+            _ => return Err(field_error(field, "A valid number is required.")),
+        };
+        if raw.trim().is_empty() {
+            return Err(field_error(field, "A valid number is required."));
+        }
+        Decimal::from_str(&raw).map_err(|_| field_error(field, "A valid number is required."))
+    }
+
     let fund_code = body.fund_code.trim().to_string();
     if fund_code.is_empty() {
         return (
@@ -792,6 +807,12 @@ pub async fn operations_create(
     let fund_name: String = fund_row.get("fund_name");
 
     let operation_type = body.operation_type.trim().to_string();
+    if operation_type != "BUY" && operation_type != "SELL" {
+        return field_error(
+            "operation_type",
+            format!("\"{operation_type}\" is not a valid choice."),
+        );
+    }
     let operation_date = match NaiveDate::parse_from_str(body.operation_date.trim(), "%Y-%m-%d") {
         Ok(v) => v,
         Err(_) => {
@@ -803,9 +824,18 @@ pub async fn operations_create(
         }
     };
 
-    let amount = rescale(parse_decimal(body.amount.clone()), 2);
-    let share = rescale(parse_decimal(body.share.clone()), 4);
-    let nav = rescale(parse_decimal(body.nav.clone()), 4);
+    let amount = match parse_decimal_input("amount", &body.amount) {
+        Ok(v) => rescale(v, 2),
+        Err(resp) => return resp,
+    };
+    let share = match parse_decimal_input("share", &body.share) {
+        Ok(v) => rescale(v, 4),
+        Err(resp) => return resp,
+    };
+    let nav = match parse_decimal_input("nav", &body.nav) {
+        Ok(v) => rescale(v, 4),
+        Err(resp) => return resp,
+    };
 
     let id = Uuid::new_v4();
     let mut tx = match pool.begin().await {

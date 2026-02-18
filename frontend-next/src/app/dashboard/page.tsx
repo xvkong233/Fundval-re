@@ -159,7 +159,7 @@ export default function DashboardPage() {
     {
       title: "基金",
       key: "fund",
-      render: (_: any, r) => r.fund_name ?? r.fund ?? "-",
+      render: (_: any, r) => r.fund_name ?? "-",
     },
     { title: "金额", dataIndex: "amount", key: "amount", width: 120, render: money },
     { title: "份额", dataIndex: "share", key: "share", width: 120, render: (v: any) => (v ? String(v) : "-") },

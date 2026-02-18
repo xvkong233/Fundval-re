@@ -83,7 +83,7 @@ type Operation = Record<string, any> & {
   id: string;
   account: string;
   account_name?: string;
-  fund_code: string;
+  fund: string;
   fund_name?: string;
   operation_type: "BUY" | "SELL";
   operation_date: string;
@@ -122,6 +122,22 @@ function asYmd(dateValue: any): string | null {
   if (!dateValue) return null;
   if (typeof dateValue.format === "function") return dateValue.format("YYYY-MM-DD");
   return null;
+}
+
+function apiErrorMessage(error: any, fallback: string): string {
+  const data = error?.response?.data;
+  if (!data) return fallback;
+  if (typeof data === "string") return data;
+  if (typeof data?.error === "string") return data.error;
+  if (typeof data?.detail === "string") return data.detail;
+  if (typeof data?.message === "string") return data.message;
+  if (typeof data === "object" && data) {
+    for (const v of Object.values(data)) {
+      if (typeof v === "string" && v.trim()) return v;
+      if (Array.isArray(v) && v.length > 0) return String(v[0]);
+    }
+  }
+  return fallback;
 }
 
 export default function PositionsPage() {
@@ -260,8 +276,7 @@ function PositionsInner() {
       const nextSelected = pickDefaultChildAccountId(list as any, preferredAccountId);
       setSelectedAccountId(nextSelected);
     } catch (error: any) {
-      const msg = error?.response?.data?.error || "加载账户失败";
-      message.error(msg);
+      message.error(apiErrorMessage(error, "加载账户失败"));
     } finally {
       setLoading(false);
     }
@@ -307,8 +322,7 @@ function PositionsInner() {
       setPositions(list);
       await refreshFundData(list);
     } catch (error: any) {
-      const msg = error?.response?.data?.error || "加载持仓失败";
-      message.error(msg);
+      message.error(apiErrorMessage(error, "加载持仓失败"));
     } finally {
       setPositionsLoading(false);
     }
@@ -326,8 +340,7 @@ function PositionsInner() {
       });
       setOperations(sorted);
     } catch (error: any) {
-      const msg = error?.response?.data?.error || "加载操作流水失败";
-      message.error(msg);
+      message.error(apiErrorMessage(error, "加载操作流水失败"));
     } finally {
       setOpsLoading(false);
     }
@@ -341,8 +354,7 @@ function PositionsInner() {
       const list = Array.isArray(res.data) ? (res.data as Array<{ date: string; value: number; cost: number }>) : [];
       setHistoryPoints(list);
     } catch (error: any) {
-      const msg = error?.response?.data?.error || "加载历史市值失败";
-      setHistoryError(msg);
+      setHistoryError(apiErrorMessage(error, "加载历史市值失败"));
       setHistoryPoints([]);
     } finally {
       setHistoryLoading(false);
@@ -466,8 +478,7 @@ function PositionsInner() {
       await loadPositions(selectedAccountId);
       await loadOperations(selectedAccountId);
     } catch (error: any) {
-      const msg = error?.response?.data?.error || "创建操作失败";
-      message.error(msg);
+      message.error(apiErrorMessage(error, "创建操作失败"));
     } finally {
       setLoading(false);
     }
@@ -486,8 +497,7 @@ function PositionsInner() {
         message.error("无权限：仅管理员可回滚操作");
         return;
       }
-      const msg = error?.response?.data?.error || "回滚失败";
-      message.error(msg);
+      message.error(apiErrorMessage(error, "回滚失败"));
     } finally {
       setLoading(false);
     }
@@ -506,8 +516,7 @@ function PositionsInner() {
         message.error("无权限：仅管理员可重算");
         return;
       }
-      const msg = error?.response?.data?.error || "重算失败";
-      message.error(msg);
+      message.error(apiErrorMessage(error, "重算失败"));
     } finally {
       setLoading(false);
     }
@@ -756,7 +765,7 @@ function PositionsInner() {
               width: 90,
               render: (_: any, record) => getOperationTypeTag(record),
             },
-            { title: "基金", key: "fund", render: (_, r) => r.fund_name ?? r.fund ?? "-" },
+            { title: "基金", key: "fund", render: (_, r) => r.fund_name ?? "-" },
             { title: "金额", dataIndex: "amount", width: 110, render: money },
             { title: "份额", dataIndex: "share", width: 110, render: (v) => (v ? String(v) : "-") },
             { title: "净值", dataIndex: "nav", width: 110, render: fixed4 },

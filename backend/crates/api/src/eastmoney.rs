@@ -52,7 +52,8 @@ pub fn build_client() -> Result<reqwest::Client, String> {
 }
 
 pub async fn fetch_estimate(client: &reqwest::Client, fund_code: &str) -> Result<Option<EstimateData>, String> {
-    let url = format!("https://fundgz.1234567.com.cn/js/{fund_code}.js");
+    // 与原项目（Python requests）保持一致：使用 fundgz 的 jsonpgz JSONP
+    let url = format!("http://fundgz.1234567.com.cn/js/{fund_code}.js");
     let text = client
         .get(url)
         .send()
@@ -64,7 +65,7 @@ pub async fn fetch_estimate(client: &reqwest::Client, fund_code: &str) -> Result
         .await
         .map_err(|e| e.to_string())?;
 
-    let re = Regex::new(r"(?s)jsonpgz\\((.*?)\\);?").map_err(|e| e.to_string())?;
+    let re = Regex::new(r"(?s)jsonpgz\((.*?)\);?").map_err(|e| e.to_string())?;
     let Some(caps) = re.captures(&text) else {
         return Ok(None);
     };
@@ -107,7 +108,7 @@ pub async fn fetch_realtime_nav(
     client: &reqwest::Client,
     fund_code: &str,
 ) -> Result<Option<RealtimeNavData>, String> {
-    let url = format!("https://fundgz.1234567.com.cn/js/{fund_code}.js");
+    let url = format!("http://fundgz.1234567.com.cn/js/{fund_code}.js");
     let text = client
         .get(url)
         .send()
@@ -119,7 +120,7 @@ pub async fn fetch_realtime_nav(
         .await
         .map_err(|e| e.to_string())?;
 
-    let re = Regex::new(r"(?s)jsonpgz\\((.*?)\\);?").map_err(|e| e.to_string())?;
+    let re = Regex::new(r"(?s)jsonpgz\((.*?)\);?").map_err(|e| e.to_string())?;
     let Some(caps) = re.captures(&text) else {
         return Ok(None);
     };
@@ -153,7 +154,7 @@ pub async fn fetch_realtime_nav(
 }
 
 pub async fn fetch_fund_list(client: &reqwest::Client) -> Result<Vec<FundListItem>, String> {
-    let url = "https://fund.eastmoney.com/js/fundcode_search.js";
+    let url = "http://fund.eastmoney.com/js/fundcode_search.js";
     let text = client
         .get(url)
         .send()
@@ -165,7 +166,7 @@ pub async fn fetch_fund_list(client: &reqwest::Client) -> Result<Vec<FundListIte
         .await
         .map_err(|e| e.to_string())?;
 
-    let re = Regex::new(r"(?s)var\\s+r\\s*=\\s*(\\[.*?\\]);?").map_err(|e| e.to_string())?;
+    let re = Regex::new(r"(?s)var\s+r\s*=\s*(\[.*\]);?").map_err(|e| e.to_string())?;
     let Some(caps) = re.captures(&text) else {
         return Ok(vec![]);
     };
@@ -204,7 +205,7 @@ pub async fn fetch_nav_history(
     start_date: Option<NaiveDate>,
     end_date: Option<NaiveDate>,
 ) -> Result<Vec<NavRow>, String> {
-    let url = format!("https://fund.eastmoney.com/pingzhongdata/{fund_code}.js");
+    let url = format!("http://fund.eastmoney.com/pingzhongdata/{fund_code}.js");
     let text = client
         .get(url)
         .send()
@@ -217,7 +218,7 @@ pub async fn fetch_nav_history(
         .map_err(|e| e.to_string())?;
 
     let unit_re =
-        Regex::new(r"(?s)var\\s+Data_netWorthTrend\\s*=\\s*(\\[.*?\\]);").map_err(|e| e.to_string())?;
+        Regex::new(r"(?s)var\s+Data_netWorthTrend\s*=\s*(\[.*?\]);").map_err(|e| e.to_string())?;
     let Some(unit_caps) = unit_re.captures(&text) else {
         return Ok(vec![]);
     };
@@ -226,7 +227,7 @@ pub async fn fetch_nav_history(
     let unit_arr = unit_data.as_array().ok_or("unit nav data is not array")?;
 
     let acc_re =
-        Regex::new(r"(?s)var\\s+Data_ACWorthTrend\\s*=\\s*(\\[.*?\\]);").map_err(|e| e.to_string())?;
+        Regex::new(r"(?s)var\s+Data_ACWorthTrend\s*=\s*(\[.*?\]);").map_err(|e| e.to_string())?;
     let acc_arr = acc_re
         .captures(&text)
         .and_then(|c| c.get(1))

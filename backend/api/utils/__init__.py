@@ -1,3 +1,0 @@
-"""
-API utils package
-"""

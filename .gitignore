@@ -38,9 +38,9 @@ db.sqlite3-journal
 /backend/media/
 /backend/db.sqlite3.backup.*
 
-# Allow Next.js sources under frontend-next/
-!frontend-next/src/lib/
-!frontend-next/src/lib/**
+# Allow Next.js sources under frontend/
+!frontend/src/lib/
+!frontend/src/lib/**
 
 # Node
 node_modules/
@@ -60,7 +60,7 @@ lerna-debug.log*
 /frontend/src-tauri/Cargo.lock
 
 # Rust backend
-/backend-rs/target/
+/backend/target/
 
 # Capacitor
 /frontend/android/
@@ -86,7 +86,7 @@ lerna-debug.log*
 .env.local
 .env.*.local
 /backend/config.json
-/backend-rs/config.json
+/backend/config.json
 
 # Logs
 logs/

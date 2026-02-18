@@ -4,10 +4,10 @@ param(
   [string]$Command = "up",
 
   [string]$ProjectName = "fundval-dev",
-  [string]$FrontendNextPort = "3000",
-  [string]$BackendRsPort = "8001",
+  [string]$FrontendPort = "3000",
+  [string]$BackendPort = "8001",
   [switch]$Build,
-  [string[]]$Services = @("db-candidate", "backend-rs", "frontend-next")
+  [string[]]$Services = @("db-candidate", "backend", "frontend")
 )
 
 $ErrorActionPreference = "Stop"
@@ -19,8 +19,8 @@ function Invoke-Compose([string[]]$ComposeArgs) {
 }
 
 $env:COMPOSE_PROJECT_NAME = $ProjectName
-$env:FRONTEND_NEXT_HOST_PORT = $FrontendNextPort
-$env:BACKEND_RS_HOST_PORT = $BackendRsPort
+$env:FRONTEND_HOST_PORT = $FrontendPort
+$env:BACKEND_HOST_PORT = $BackendPort
 
 if ($Command -eq "down") {
   Invoke-Compose @("down", "--remove-orphans")
@@ -50,7 +50,7 @@ $upArgs += $Services
 
 Invoke-Compose $upArgs
 
-Write-Host ""
-Write-Host "✅ 已启动 (project=$ProjectName)"
-Write-Host "   - candidate API (Rust): http://localhost:$BackendRsPort/api/health/"
-Write-Host "   - candidate Next.js   : http://localhost:$FrontendNextPort/"
+  Write-Host ""
+  Write-Host "✅ 已启动 (project=$ProjectName)"
+  Write-Host "   - Backend API: http://localhost:$BackendPort/api/health/"
+  Write-Host "   - Frontend  : http://localhost:$FrontendPort/"

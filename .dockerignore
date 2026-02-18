@@ -1,0 +1,23 @@
+.git/
+.github/
+.worktrees/
+.codex/
+
+# Rust
+backend/target/
+**/target/
+
+# Node / Next.js
+frontend/node_modules/
+frontend/.next/
+**/node_modules/
+**/.next/
+**/.turbo/
+
+# Logs / temp
+logs/
+pids/
+**/*.log
+**/*.tmp
+**/*.swp
+**/*.swo

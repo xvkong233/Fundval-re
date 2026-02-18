@@ -1,0 +1,14 @@
+target/
+**/target/
+.git/
+.github/
+.worktrees/
+.codex/
+logs/
+pids/
+config.json
+config/
+**/*.log
+**/*.tmp
+**/*.swp
+**/*.swo

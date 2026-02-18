@@ -1,0 +1,14 @@
+node_modules/
+.next/
+.turbo/
+coverage/
+.git/
+.github/
+.worktrees/
+.codex/
+logs/
+pids/
+**/*.log
+**/*.tmp
+**/*.swp
+**/*.swo

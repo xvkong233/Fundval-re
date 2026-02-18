@@ -1,32 +1,15 @@
-# Fundval
+# Fundval（Rust + Next.js 移植版）
 
-![GitHub stars](https://img.shields.io/github/stars/Ye-Yu-Mo/FundVal-Live?style=social)
-![GitHub views](https://komarev.com/ghpvc/?username=Ye-Yu-Mo&repo=FundVal-Live&color=blue&style=flat-square&label=views)
+盘中基金实时估值与逻辑审计系统：基于持仓穿透与实时行情加权计算，提供估值、净值、历史净值与运维可观测能力。
 
-**盘中基金实时估值与逻辑审计系统**
+本仓库主分支仅保留移植后的实现：
 
-拒绝黑箱，拒绝情绪化叙事。基于透明的持仓穿透 + 实时行情加权计算 + 硬核数学模型，让基金估值回归数学事实。
+- `backend/`：Rust（axum/sqlx）
+- `frontend/`：Next.js
 
+对照参考代码保留在分支 `reference/golden`（用于对比验证/回溯）。
 
-试用网址：https://fund.jasxu.dpdns.org/
-
-**警告**：试用环境请勿使用真实持仓数据和 API Key
-
-服务器内存和 CPU 性能较低，仅做使用演示
-
----
-
-## Rust + Next.js 移植版（candidate）
-
-本仓库当前采用“对照迁移”方式推进 100% 移植：
-
-- **golden**：`backend/`（Django/DRF）+ `frontend/`（原前端镜像）
-- **candidate**：`backend-rs/`（Rust axum/sqlx）+ `frontend-next/`（Next.js）
-- **一致性验证**：`tools/contract-tests/` 同时请求两套后端并做差分
-
-### Docker 运行（推荐）
-
-在本仓库 worktree：`.worktrees/port-rust-nextjs/`
+## 快速开始（Docker，推荐）
 
 ```bash
 cp .env.example .env
@@ -35,195 +18,88 @@ docker compose up --build
 
 访问：
 
-- golden 前端（原项目）：`http://localhost:21345`
-- golden API（Django）：`http://localhost:8000`
-- candidate Next.js：`http://localhost:3000`
-- candidate API（Rust）：`http://localhost:8001`
+- 前端：`http://localhost:3000`
+- 后端（health）：`http://localhost:8001/api/health/`
 
-### 合同测试（对照 golden vs candidate）
+如端口冲突，可在 `.env` 中调整 `FRONTEND_HOST_PORT / BACKEND_HOST_PORT`。
 
-```bash
-# 如需重跑 bootstrap 相关用例，先清理 volume（会清空数据库与配置）
-# docker compose down -v
-docker compose --profile contract up --build --abort-on-container-exit contract-tests
-```
+## 初始化（Bootstrap Key）
 
-## 加入讨论群组
-
-[issue - 讨论群组](https://github.com/Ye-Yu-Mo/FundVal-Live/issues/41)
-
-## 快速开始
-
-整个项目分为服务端 客户端两部分
-
-服务端可以使用 Docker 或手动部署
-
-### 最快方式（Docker）
+首次启动后，如果系统未初始化，`backend` 会在日志里输出 `BOOTSTRAP KEY`：
 
 ```bash
-curl -O https://raw.githubusercontent.com/Ye-Yu-Mo/FundVal-Live/main/docker-compose.yml
-docker-compose up
+docker compose logs backend | grep "BOOTSTRAP KEY"
 ```
 
-访问 http://localhost
+然后访问 `http://localhost:3000/initialize` 完成初始化。
 
-**首次启动**：系统会自动同步基金数据，需要等待几分钟。
+## 数据源（估值/净值）
 
-如果需要修改前端端口号，请修改 `docker-compose.yml`
+内置支持以下数据源（用于基金估值、净值与历史净值同步）：
 
-```yaml
-  frontend:
-    image: jasamine/fundval-frontend:latest
-    ports:
-      - "80:80"
-    depends_on:
-      - backend
-    networks:
-      - fundval
-```
+- `tiantian`：天天基金（兼容别名：`eastmoney`）
+- `danjuan`：蛋卷
+- `ths`：同花顺（兼容别名：`tonghuashun` / `10jqka`）
 
-### 手动部署
+前端页面支持选择数据源（基金详情 / 基金列表 / 自选），选择后会把 `source` 透传给后端 API。
 
-#### 必需组件
-- **Python**: 3.13+
-- **Node.js**: 20+
-- **npm**: 9+
-- **uv**: Python 包管理器
-- **数据库**: SQLite 3.x 或 PostgreSQL 16+
+## 运维（健康度/准确率）
 
-#### 可选组件
-- **Redis**: 用于 Celery 任务队列（可选）
-- **Nginx**: 生产环境反向代理（推荐）
+访问 `http://localhost:3000/sources`：展示所有数据源的健康度（含名称）与估值准确率统计。
 
-#### 开始部署
+## 数据库（开箱即用）
 
-```bash
-git clone https://github.com/Ye-Yu-Mo/FundVal-Live.git
-cd FundVal-Live
-```
+默认使用 Docker Postgres。
 
-运行构建脚本
-
-```bash
-chmod +x build.sh
-./build.sh
-```
-
-依次选择 构建前端，端口号设定，数据库初始化，静态文件收集
-
-```bash
-chmod +x start.sh stop.sh
-./start.sh
-```
-
-### 管理员设置（必读）
-
-启动之后，需要在日志中获取 Bootstrap Key
-
-- Docker 用户：`docker-compose logs backend | grep 'BOOTSTRAP KEY'`
-- 手动部署用户：运行 `./start.sh` 即可看到
-
-然后访问 `http://localhost/initialize`（需要换成你自己的 IP + 端口）进行初始化
-
-填入 BOOTSTRAP KEY，配置管理员账户和密码，是否开通注册功能
-
-如果开启注册功能，需要**重新启动后端**
+若后端检测到 `DATABASE_URL` 指向的数据库不存在，会尝试自动创建并执行 migrations。
 
 ## 技术栈
 
-- **Frontend**: React 19 + Vite + Ant Design + ECharts
-- **Backend**: Django 6 + DRF + Celery
-- **Database**: PostgreSQL 16
-- **Cache**: Redis 7
-- **Platform**: Web + Desktop (Tauri) + Android (Capacitor)
-
-### 客户端
-
-可以通过Web页面直接访问使用，无需客户端
-
-其他版本客户端，需前往 [Releases](https://github.com/Ye-Yu-Mo/FundVal-Live/releases/latest) 下载最新版本：
-
-目前支持
-
-* 安卓客户端
-* macOS (ARM64)
-* macOS (x86_64)
-* Windows
-* Linux
+- **Frontend**：React 19 + Next.js + Ant Design + ECharts
+- **Backend**：Rust + axum + sqlx
+- **Database**：PostgreSQL 16
 
 ## 架构
 
 ```
-frontend (Nginx)
+frontend (Next.js)
+    ↓ /api
+backend (axum)
     ↓
-backend (Django + Gunicorn)
-    ↓
-PostgreSQL + Redis
-    ↓
-Celery Worker + Beat
+PostgreSQL
 ```
 
-前端通过 Nginx 反向代理 `/api/` 到后端。
+## CI（打 Tag 自动发布镜像）
 
-### 容器启动流程
+本仓库已配置 GitHub Actions：当你推送版本 tag（例如 `v1.2.3`）时，会自动完成：
 
-Docker 容器启动时，`backend/entrypoint.sh` 会自动执行：
+- 后端 `cargo test -p api`
+- 前端 `npm test` + `npm run build`
+- 构建并推送 Docker 镜像到 GHCR（`ghcr.io`）
 
-1. 等待数据库就绪
-2. 运行数据库迁移 (`migrate`)
-3. 收集静态文件 (`collectstatic`)
-4. 检查系统初始化状态 (`check_bootstrap`)
-5. **自动同步基金数据**（仅在数据库为空时，`sync_funds --if-empty`）
-6. 启动应用
+镜像命名规则：
 
-如需手动同步基金数据：
+- 后端：`ghcr.io/<owner>/<repo>-backend:<tag>` 与 `:latest`
+- 前端：`ghcr.io/<owner>/<repo>-frontend:<tag>` 与 `:latest`
 
-```bash
-# Docker 环境
-docker-compose exec backend python manage.py sync_funds
+需要你在 GitHub 仓库里确认：
 
-# 手动部署
-cd backend && uv run python manage.py sync_funds
-```
+- Actions 允许工作流使用 `GITHUB_TOKEN` 写入 Packages（GHCR）。
+- 若你的仓库/组织策略禁止默认 token 推送镜像，可自行改用 PAT，并写入 Secrets。
 
-## 项目结构
+如需推送到 Docker Hub/私有 Registry，请在仓库 Secrets 中配置并相应修改工作流：
 
-```
-fundval/
-├── frontend/          # React 前端
-├── backend/           # Django 后端
-├── docker-compose.yml # Docker 编排
-└── .github/workflows/ # CI/CD
-```
-
-
----
+- `DOCKER_USERNAME`
+- `DOCKER_PASSWORD`（建议用 Token）
 
 ## 开源协议
 
-本项目采用 **GNU Affero General Public License v3.0 (AGPL-3.0)** 开源协议。
-
-**这意味着**：
-- 你可以自由使用、修改、分发本软件
-- 个人使用无需开源你的修改
-- 如果你用本项目代码提供网络服务（SaaS），必须开源你的修改
-- 衍生作品必须使用相同协议
-
-**为什么选择 AGPL-3.0？**
-- 金融工具需要透明度，用户有权知道估值逻辑
-- 防止闭源商业化，确保改进回流社区
-- 保护开源生态，避免"拿来主义"
-
-详见 [LICENSE](LICENSE) 文件。
-
----
+本项目采用 **GNU Affero General Public License v3.0 (AGPL-3.0)** 开源协议。详见 `LICENSE`。
 
 ## 免责声明
 
-本项目提供的数据与分析仅供技术研究使用，不构成任何投资建议。市场有风险，代码无绝对，交易需谨慎。
+本项目提供的数据与分析仅供技术研究使用，不构成任何投资建议。市场有风险，交易需谨慎。
 
----
+## 致谢
 
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=Ye-Yu-Mo/FundVal-Live&type=date&legend=top-left)](https://www.star-history.com/#Ye-Yu-Mo/FundVal-Live&type=date&legend=top-left)
+本项目移植自开源项目 **FundVal-Live**，原作者 **Ye-Yu-Mo**。感谢原作者与所有贡献者的工作与分享。

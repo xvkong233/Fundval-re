@@ -21,20 +21,16 @@ Docker（Windows PowerShell 推荐）
   # 停止并删除容器/网络（保留 volume 数据）
   .\scripts\compose-dev.ps1 down
 
-常用覆盖：
+ 常用覆盖：
 
-  .\scripts\compose-dev.ps1 up -ProjectName fundval-dev -FrontendNextPort 19700 -BackendRsPort 19701
+  .\scripts\compose-dev.ps1 up -ProjectName fundval-dev -FrontendPort 19700 -BackendPort 19701
 
-合同测试（profile=contract）
---------------------------
+基金接口检查（smoke）
+-------------------
 
-  # 执行合同测试（会先 down --remove-orphans，再 up 并阻塞；结束后自动 down）
-  .\scripts\compose-contract.ps1 run -Build
+  # 启动并检查 /api/funds/（不要求已 sync，返回空列表也算正常）
+  .\scripts\check-funds.ps1 -Build
 
-  # 查看状态 / 跟随日志 / 手动清理
-  .\scripts\compose-contract.ps1 status
-  .\scripts\compose-contract.ps1 logs
-  .\scripts\compose-contract.ps1 down
-
-说明：`compose-contract.ps1` 默认会删除 `config_data_py/config_data_rs` 两个 volume（不删除 DB volume），以满足合同测试 `bootstrap` 用例要求（起始必须“未初始化”）。
+  # 可选：指定 fund_code（若未 sync 可能返回 404）
+  .\scripts\check-funds.ps1 -FundCode 000001
 

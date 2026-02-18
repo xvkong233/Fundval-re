@@ -1,33 +1,28 @@
-FROM python:3.13-slim
+FROM rust:1.93-bookworm AS builder
 
 WORKDIR /app
 
-# 安装系统依赖
-RUN apt-get update && apt-get install -y \
-    postgresql-client \
+COPY Cargo.toml Cargo.lock ./
+COPY crates ./crates
+COPY migrations ./migrations
+
+ENV RUSTFLAGS="-C strip=symbols"
+RUN cargo build -p api --release
+
+FROM debian:bookworm-slim AS runtime
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl tzdata \
     && rm -rf /var/lib/apt/lists/*
 
-# 复制依赖文件
-COPY requirements.txt .
+WORKDIR /app
 
-# 安装 Python 依赖
-RUN pip install --no-cache-dir -r requirements.txt
+COPY --from=builder /app/target/release/api /usr/local/bin/fundval-backend
 
-# 复制项目文件
-COPY . .
+ENV TZ=Asia/Shanghai
+RUN ln -snf "/usr/share/zoneinfo/${TZ}" /etc/localtime && echo "${TZ}" > /etc/timezone
 
-# 复制并设置 entrypoint
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+ENV PORT=8001
+EXPOSE 8001
 
-# 创建配置目录（用于挂载 volume）
-RUN mkdir -p /app/config
-
-# 暴露端口
-EXPOSE 8000
-
-# 入口脚本
-ENTRYPOINT ["/entrypoint.sh"]
-
-# 默认启动命令
-CMD ["gunicorn", "fundval.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "4", "--access-logfile", "-", "--error-logfile", "-"]
+CMD ["fundval-backend"]

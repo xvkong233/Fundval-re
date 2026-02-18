@@ -140,6 +140,22 @@ export async function runPositionsHistory(
     );
   }
 
+  // operations.list(after create): 用于捕获“非空数组”情况下的 schema 差异
+  const goldenOpsAfter = await getJsonWithBearer(
+    `${goldenBase}/api/positions/operations/?account=${encodeURIComponent(goldenChildId)}`,
+    goldenAccessToken
+  );
+  const candidateOpsAfter = await getJsonWithBearer(
+    `${candidateBase}/api/positions/operations/?account=${encodeURIComponent(candidateChildId)}`,
+    candidateAccessToken
+  );
+  if (goldenOpsAfter.status !== candidateOpsAfter.status) {
+    throw new Error(
+      `operations.list(after create) 状态码不一致: golden=${goldenOpsAfter.status} candidate=${candidateOpsAfter.status}`
+    );
+  }
+  assertSameSchema(goldenOpsAfter.json, candidateOpsAfter.json, "$");
+
   // history ok: schema + 长度对照（只在返回 list 时检查）
   const goldenOk = await getJsonWithBearer(
     `${goldenBase}/api/positions/history/?account_id=${encodeURIComponent(goldenChildId)}&days=7`,

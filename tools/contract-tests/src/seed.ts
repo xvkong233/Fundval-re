@@ -31,7 +31,10 @@ async function seedOne(target: DbTarget): Promise<void> {
   try {
     await client.query("BEGIN");
 
-    // 让合同测试具备可重复性：清空 fund 相关表（CASCADE 会同时清空 estimate_accuracy 等依赖表）
+    // 让合同测试具备可重复性：清空关键业务表
+    // - auth_user：避免 bootstrap.initialize 因 admin 重复而失败（DB volume 可复用但每次测试必须回到“未初始化”状态）
+    // - fund：CASCADE 会同时清空 estimate_accuracy 等依赖表
+    await client.query(`TRUNCATE TABLE auth_user CASCADE`);
     await client.query(`TRUNCATE TABLE fund CASCADE`);
 
     const fundId = await upsertSeedFund(client);

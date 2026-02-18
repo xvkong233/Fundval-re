@@ -239,7 +239,7 @@ function PositionsInner() {
     if (record.operation_type === "SELL") return <Tag color="green">减仓</Tag>;
 
     const fundOps = operations
-      .filter((op) => op.fund_code === record.fund_code)
+      .filter((op) => op.fund === record.fund)
       .sort((a, b) => {
         const d = new Date(a.operation_date).getTime() - new Date(b.operation_date).getTime();
         if (d !== 0) return d;
@@ -750,13 +750,13 @@ function PositionsInner() {
               locale={{ emptyText: selectedAccountId ? "暂无操作流水" : "请选择子账户" }}
               columns={[
                 { title: "日期", dataIndex: "operation_date", width: 120 },
-                {
-                  title: "类型",
-                  dataIndex: "operation_type",
-                  width: 90,
-                  render: (_: any, record) => getOperationTypeTag(record),
-                },
-            { title: "基金", key: "fund", render: (_, r) => `${r.fund_code}${r.fund_name ? ` ${r.fund_name}` : ""}` },
+            {
+              title: "类型",
+              dataIndex: "operation_type",
+              width: 90,
+              render: (_: any, record) => getOperationTypeTag(record),
+            },
+            { title: "基金", key: "fund", render: (_, r) => r.fund_name ?? r.fund ?? "-" },
             { title: "金额", dataIndex: "amount", width: 110, render: money },
             { title: "份额", dataIndex: "share", width: 110, render: (v) => (v ? String(v) : "-") },
             { title: "净值", dataIndex: "nav", width: 110, render: fixed4 },

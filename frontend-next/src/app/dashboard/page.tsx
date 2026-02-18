@@ -14,7 +14,7 @@ type Account = Record<string, any> & { id: string; name?: string; parent: string
 type Position = Record<string, any> & { id: string; fund_code: string; fund_name?: string; pnl?: string; holding_cost?: string; holding_share?: string };
 type Operation = Record<string, any> & {
   id: string;
-  fund_code: string;
+  fund: string;
   fund_name?: string;
   operation_type: "BUY" | "SELL";
   operation_date: string;
@@ -159,7 +159,7 @@ export default function DashboardPage() {
     {
       title: "基金",
       key: "fund",
-      render: (_: any, r) => `${r.fund_code}${r.fund_name ? ` ${r.fund_name}` : ""}`,
+      render: (_: any, r) => r.fund_name ?? r.fund ?? "-",
     },
     { title: "金额", dataIndex: "amount", key: "amount", width: 120, render: money },
     { title: "份额", dataIndex: "share", key: "share", width: 120, render: (v: any) => (v ? String(v) : "-") },

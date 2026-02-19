@@ -1,14 +1,122 @@
 use std::net::SocketAddr;
 
 use api::{app, state::AppState};
-use axum::http::HeaderValue;
+use axum::http::{HeaderValue, Method};
+use axum::http::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE};
 use sqlx::Error as SqlxError;
 use sqlx::postgres::PgPoolOptions;
-use tower_http::{cors::CorsLayer, trace::TraceLayer};
+use tower_http::cors::{AllowOrigin, Any, CorsLayer};
+use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 use sqlx::migrate::Migrator;
 
 static MIGRATOR: Migrator = sqlx::migrate!("../../migrations");
+
+fn env_truthy(key: &str) -> bool {
+    std::env::var(key)
+        .ok()
+        .map(|v| v.trim().to_ascii_lowercase())
+        .is_some_and(|v| matches!(v.as_str(), "1" | "true" | "yes" | "y" | "on"))
+}
+
+fn is_default_insecure_secret(secret: &str) -> bool {
+    secret.trim() == "django-insecure-dev-only"
+}
+
+fn is_placeholder_secret(secret: &str) -> bool {
+    let s = secret.trim();
+    if s.is_empty() {
+        return true;
+    }
+    if s.len() < 32 {
+        return true;
+    }
+    let lower = s.to_ascii_lowercase();
+    lower.contains("change_me") || lower.contains("dev_only") || lower.contains("insecure")
+}
+
+fn validate_secret_key(secret: &str, debug: bool) {
+    if debug {
+        if is_default_insecure_secret(secret) || is_placeholder_secret(secret) {
+            tracing::warn!(
+                "DEBUG=true 且 SECRET_KEY 看起来不安全；仅建议本地开发使用"
+            );
+        }
+        return;
+    }
+
+    if is_default_insecure_secret(secret) {
+        tracing::error!(
+            "SECRET_KEY 未配置（仍为默认值 django-insecure-dev-only）。请设置环境变量 SECRET_KEY 后再启动。"
+        );
+        std::process::exit(1);
+    }
+
+    // 生产默认不强制中断，避免破坏 quickstart；但提供开关以便部署时硬性要求。
+    if env_truthy("REQUIRE_SECURE_SECRET") && is_placeholder_secret(secret) {
+        tracing::error!(
+            "REQUIRE_SECURE_SECRET=true 且 SECRET_KEY 看起来是占位符/过短。请使用高熵随机字符串（建议 >= 32 字符）。"
+        );
+        std::process::exit(1);
+    }
+
+    if is_placeholder_secret(secret) {
+        tracing::warn!(
+            "SECRET_KEY 看起来是占位符或长度过短；如用于生产部署，建议更换为高熵随机字符串（建议 >= 32 字符）。可设置 REQUIRE_SECURE_SECRET=true 强制校验。"
+        );
+    }
+}
+
+fn build_cors_layer(debug: bool) -> CorsLayer {
+    let raw = std::env::var("CORS_ALLOW_ORIGINS").unwrap_or_default();
+    let raw = raw.trim();
+
+    // 默认策略：
+    // - 生产：不主动开启跨域（依赖 Next.js /api 反代即可）
+    // - 开发：如果未配置则放开，便于直接从浏览器请求后端
+    let allow_origin = if raw.is_empty() {
+        if debug {
+            tracing::warn!("未设置 CORS_ALLOW_ORIGINS 且 DEBUG=true：将使用宽松 CORS（仅建议本地开发）");
+            Any.into()
+        } else {
+            AllowOrigin::predicate(|_, _| false)
+        }
+    } else if raw == "*" {
+        tracing::warn!("CORS_ALLOW_ORIGINS='*'：将允许任意来源跨域访问（不建议生产环境）");
+        Any.into()
+    } else {
+        let origins: Vec<HeaderValue> = raw
+            .split(',')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .filter_map(|s| match HeaderValue::from_str(s) {
+                Ok(v) => Some(v),
+                Err(_) => {
+                    tracing::warn!(origin = s, "忽略无效的 CORS origin");
+                    None
+                }
+            })
+            .collect();
+
+        if origins.is_empty() {
+            AllowOrigin::predicate(|_, _| false)
+        } else {
+            AllowOrigin::list(origins)
+        }
+    };
+
+    CorsLayer::new()
+        .allow_origin(allow_origin)
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::PATCH,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
+        .allow_headers([AUTHORIZATION, CONTENT_TYPE, ACCEPT])
+}
 
 fn is_missing_database_error(err: &SqlxError) -> bool {
     match err {
@@ -118,7 +226,9 @@ async fn main() {
     // 初始化配置（文件 + env 覆盖）
     let config = api::config::ConfigStore::load();
 
-    let secret = std::env::var("SECRET_KEY").unwrap_or_else(|_| "django-insecure-dev-only".to_string());
+    let secret =
+        std::env::var("SECRET_KEY").unwrap_or_else(|_| "django-insecure-dev-only".to_string());
+    validate_secret_key(&secret, config.get_bool("debug", false));
     let jwt = api::jwt::JwtService::from_secret(&secret);
 
     if !config.system_initialized() {
@@ -135,10 +245,7 @@ async fn main() {
 
     let state = AppState::new(pool, config, jwt);
 
-    let cors = CorsLayer::new()
-        .allow_origin(HeaderValue::from_static("*"))
-        .allow_headers(tower_http::cors::Any)
-        .allow_methods(tower_http::cors::Any);
+    let cors = build_cors_layer(state.config().get_bool("debug", false));
 
     let app = app(state).layer(TraceLayer::new_for_http()).layer(cors);
 

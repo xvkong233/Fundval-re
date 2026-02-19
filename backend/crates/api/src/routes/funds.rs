@@ -10,6 +10,7 @@ use uuid::Uuid;
 
 use crate::eastmoney;
 use crate::routes::auth;
+use crate::routes::errors;
 use crate::sources;
 use crate::state::AppState;
 
@@ -166,7 +167,7 @@ pub async fn list(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -202,7 +203,7 @@ pub async fn list(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -377,7 +378,7 @@ pub async fn retrieve(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -467,7 +468,7 @@ pub async fn estimate(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -679,7 +680,7 @@ pub async fn accuracy(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -714,7 +715,7 @@ pub async fn accuracy(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -836,7 +837,7 @@ pub async fn batch_estimate(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -1165,7 +1166,7 @@ pub async fn batch_update_nav(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -1190,6 +1191,7 @@ pub async fn batch_update_nav(
                 .into_response();
         }
     };
+    let tushare_token = state.config().get_string("tushare_token").unwrap_or_default();
 
     let sem = Arc::new(Semaphore::new(5));
     let mut set: JoinSet<(String, serde_json::Value)> = JoinSet::new();
@@ -1198,6 +1200,7 @@ pub async fn batch_update_nav(
         let sem = sem.clone();
         let pool = pool.clone();
         let source_name = source_name;
+        let tushare_token = tushare_token.clone();
         set.spawn(async move {
             let _permit = sem.acquire_owned().await.expect("semaphore");
             let fetched = match source_name {
@@ -1212,6 +1215,13 @@ pub async fn batch_update_nav(
                     Err(e) => Err(e),
                 },
                 sources::SOURCE_THS => sources::ths::fetch_realtime_nav(&client, &code).await,
+                sources::SOURCE_TUSHARE => {
+                    if tushare_token.trim().is_empty() {
+                        Err("tushare token 未配置（请在“设置”页面填写）".to_string())
+                    } else {
+                        sources::tushare::fetch_realtime_nav(&client, &tushare_token, &code).await
+                    }
+                }
                 _ => Err(format!("数据源 {source_name} 不存在")),
             };
 
@@ -1333,7 +1343,7 @@ pub async fn query_nav(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -1401,14 +1411,23 @@ pub async fn query_nav(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
     }
 
     // 尝试同步单日净值（对齐 Python：缺失时同步后再查）
-    let _ = sync_nav_history_for_date(pool, source_name, fund_id, body.fund_code.trim(), query_date).await;
+    let tushare_token = state.config().get_string("tushare_token").unwrap_or_default();
+    let _ = sync_nav_history_for_date(
+        pool,
+        source_name,
+        fund_id,
+        body.fund_code.trim(),
+        query_date,
+        &tushare_token,
+    )
+    .await;
     let history_row = sqlx::query(
         r#"
         SELECT unit_nav::text as unit_nav, nav_date::text as nav_date
@@ -1441,7 +1460,7 @@ pub async fn query_nav(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -1606,6 +1625,7 @@ async fn sync_nav_history_for_date(
     fund_id: Uuid,
     fund_code: &str,
     nav_date: NaiveDate,
+    tushare_token: &str,
 ) -> Result<i64, String> {
     let client = eastmoney::build_client()?;
     let data = match source_name {
@@ -1618,6 +1638,12 @@ async fn sync_nav_history_for_date(
         sources::SOURCE_THS => {
             let all = sources::ths::fetch_nav_series(&client, fund_code).await?;
             all.into_iter().filter(|r| r.nav_date == nav_date).collect::<Vec<_>>()
+        }
+        sources::SOURCE_TUSHARE => {
+            if tushare_token.trim().is_empty() {
+                return Err("tushare token 未配置（请在“设置”页面填写）".to_string());
+            }
+            sources::tushare::fetch_nav_history(&client, tushare_token, fund_code, Some(nav_date), Some(nav_date)).await?
         }
         _ => return Err(format!("数据源 {source_name} 不存在")),
     };

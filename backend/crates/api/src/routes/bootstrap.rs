@@ -1,6 +1,7 @@
 use axum::{http::StatusCode, response::IntoResponse, Json};
 use serde::{Deserialize, Serialize};
 
+use crate::routes::errors;
 use crate::state::AppState;
 use crate::django_password;
 
@@ -154,7 +155,7 @@ pub async fn initialize(
             return (
                 StatusCode::BAD_REQUEST,
                 Json(ErrorResponse {
-                    error: format!("创建管理员失败: {e}"),
+                    error: errors::masked_message(&state, "创建管理员失败", e),
                 }),
             )
                 .into_response();

@@ -12,6 +12,8 @@ pub mod positions;
 pub mod watchlists;
 pub mod nav_history;
 pub mod health;
+pub mod errors;
+pub mod settings;
 
 pub fn router(state: AppState) -> Router<AppState> {
     Router::new()
@@ -30,6 +32,14 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/api/auth/refresh", axum::routing::post(auth::refresh))
         .route("/api/auth/me", axum::routing::get(auth::me))
         .route("/api/auth/password", axum::routing::put(auth::change_password))
+        .route(
+            "/api/settings/tushare_token/",
+            axum::routing::get(settings::get_tushare_token_status).put(settings::set_tushare_token),
+        )
+        .route(
+            "/api/settings/tushare_token",
+            axum::routing::get(settings::get_tushare_token_status).put(settings::set_tushare_token),
+        )
         .route("/api/users/register/", axum::routing::post(users::register))
         .route("/api/users/register", axum::routing::post(users::register))
         .route("/api/users/me/summary/", axum::routing::get(users::me_summary))

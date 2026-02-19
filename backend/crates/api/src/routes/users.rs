@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::state::AppState;
 use crate::django_password;
 use crate::routes::auth;
+use crate::routes::errors;
 
 #[derive(Debug, Deserialize)]
 pub struct RegisterRequest {
@@ -181,7 +182,9 @@ pub async fn register(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse { error: e.to_string() }),
+                Json(ErrorResponse {
+                    error: errors::internal_message(&state, e),
+                }),
             )
                 .into_response();
         }
@@ -222,7 +225,9 @@ pub async fn register(
             }
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse { error: msg }),
+                Json(ErrorResponse {
+                    error: errors::internal_message(&state, msg),
+                }),
             )
                 .into_response();
         }
@@ -350,7 +355,7 @@ pub async fn me_summary(
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
-                    error: e.to_string(),
+                    error: errors::internal_message(&state, e),
                 }),
             )
                 .into_response();

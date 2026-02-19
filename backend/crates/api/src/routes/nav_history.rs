@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use crate::eastmoney;
 use crate::routes::auth;
+use crate::routes::errors;
 use crate::sources;
 use crate::state::AppState;
 
@@ -127,7 +128,7 @@ pub async fn list(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -180,7 +181,7 @@ pub async fn retrieve(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -305,7 +306,7 @@ pub async fn batch_query(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -404,10 +405,11 @@ pub async fn sync(
                 .into_response();
         }
     };
+    let tushare_token = state.config().get_string("tushare_token").unwrap_or_default();
 
     let mut results: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     for code in fund_codes {
-        match sync_one(pool, &client, source_name, &code, start_date, end_date).await {
+        match sync_one(pool, &client, source_name, &code, start_date, end_date, &tushare_token).await {
             Ok(count) => {
                 results.insert(code, json!({ "success": true, "count": count }));
             }
@@ -470,6 +472,7 @@ async fn sync_one(
     fund_code: &str,
     start_date: Option<NaiveDate>,
     end_date: Option<NaiveDate>,
+    tushare_token: &str,
 ) -> Result<i64, String> {
     let fund_row = sqlx::query("SELECT id FROM fund WHERE fund_code = $1")
         .bind(fund_code)
@@ -521,6 +524,12 @@ async fn sync_one(
                     true
                 })
                 .collect::<Vec<_>>()
+        }
+        sources::SOURCE_TUSHARE => {
+            if tushare_token.trim().is_empty() {
+                return Err("tushare token 未配置（请在“设置”页面填写）".to_string());
+            }
+            sources::tushare::fetch_nav_history(client, tushare_token, fund_code, effective_start, Some(effective_end)).await?
         }
         _ => return Err(format!("数据源 {source_name} 不存在")),
     };

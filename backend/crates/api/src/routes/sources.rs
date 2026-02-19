@@ -196,6 +196,36 @@ pub async fn health(State(state): State<AppState>) -> impl IntoResponse {
                     error: Some(e),
                 }),
             }
+        } else if name == "tushare" {
+            let start = Instant::now();
+            let check = async {
+                let token = state.config().get_string("tushare_token").unwrap_or_default();
+                if token.trim().is_empty() {
+                    return Err("tushare token 未配置（请在“设置”页面填写）".to_string());
+                }
+                let client = eastmoney::build_client()?;
+                let fund_code = "161725";
+                match sources::tushare::fetch_realtime_nav(&client, &token, fund_code).await? {
+                    Some(_) => Ok::<(), String>(()),
+                    None => Err("上游返回为空或解析失败".to_string()),
+                }
+            }
+            .await;
+
+            match check {
+                Ok(()) => result.push(SourceHealthItem {
+                    name,
+                    ok: true,
+                    latency_ms: Some(start.elapsed().as_millis()),
+                    error: None,
+                }),
+                Err(e) => result.push(SourceHealthItem {
+                    name,
+                    ok: false,
+                    latency_ms: Some(start.elapsed().as_millis()),
+                    error: Some(e),
+                }),
+            }
         } else {
             result.push(SourceHealthItem {
                 name,
@@ -406,6 +436,7 @@ pub async fn calculate_accuracy(
                 .into_response();
         }
     };
+    let tushare_token = state.config().get_string("tushare_token").unwrap_or_default();
 
     #[derive(Clone)]
     struct WorkItem {
@@ -429,6 +460,7 @@ pub async fn calculate_accuracy(
         let sem = sem.clone();
         let pool = pool.clone();
         let client = client.clone();
+        let tushare_token = tushare_token.clone();
         set.spawn(async move {
             let _permit = sem.acquire_owned().await.expect("semaphore");
 
@@ -455,6 +487,16 @@ pub async fn calculate_accuracy(
                 }
                 sources::SOURCE_THS => {
                     let rows = sources::ths::fetch_nav_series(&client, &item.fund_code).await?;
+                    let Some(r) = rows.into_iter().find(|r| r.nav_date == target_date) else {
+                        return Err("未找到该日期的净值".to_string());
+                    };
+                    r.unit_nav
+                }
+                sources::SOURCE_TUSHARE => {
+                    if tushare_token.trim().is_empty() {
+                        return Err("tushare token 未配置（请在“设置”页面填写）".to_string());
+                    }
+                    let rows = sources::tushare::fetch_nav_history(&client, &tushare_token, &item.fund_code, Some(target_date), Some(target_date)).await?;
                     let Some(r) = rows.into_iter().find(|r| r.nav_date == target_date) else {
                         return Err("未找到该日期的净值".to_string());
                     };

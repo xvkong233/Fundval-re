@@ -10,6 +10,7 @@ use sqlx::Row;
 use uuid::Uuid;
 
 use crate::routes::auth;
+use crate::routes::errors;
 use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
@@ -157,7 +158,7 @@ pub async fn list(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -187,7 +188,7 @@ pub async fn list(
         .filter_map(|a| a.parent_id.map(|_| a.id))
         .collect::<Vec<_>>();
 
-    let positions_by_account = match load_positions(pool, &child_ids).await {
+    let positions_by_account = match load_positions(&state, pool, &child_ids).await {
         Ok(v) => v,
         Err(resp) => return resp,
     };
@@ -311,7 +312,7 @@ pub async fn create(
             Err(e) => {
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({ "error": e.to_string() })),
+                    errors::internal_json(&state, e),
                 )
                     .into_response();
             }
@@ -328,7 +329,7 @@ pub async fn create(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -347,7 +348,7 @@ pub async fn create(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -361,7 +362,7 @@ pub async fn create(
     {
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": e.to_string() })),
+            errors::internal_json(&state, e),
         )
             .into_response();
     }
@@ -383,7 +384,7 @@ pub async fn create(
         let _ = tx.rollback().await;
         return (
             StatusCode::BAD_REQUEST,
-            Json(json!({ "error": format!("创建账户失败: {e}") })),
+            errors::masked_json(&state, "创建账户失败", e),
         )
             .into_response();
     }
@@ -457,7 +458,7 @@ pub async fn retrieve(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -477,7 +478,7 @@ pub async fn retrieve(
     };
 
     if account.parent_id.is_some() {
-        let positions_by_account = match load_positions(pool, &[account.id]).await {
+        let positions_by_account = match load_positions(&state, pool, &[account.id]).await {
             Ok(v) => v,
             Err(resp) => return resp,
         };
@@ -502,7 +503,7 @@ pub async fn retrieve(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -521,7 +522,7 @@ pub async fn retrieve(
     }
 
     let child_ids = children.iter().map(|c| c.id).collect::<Vec<_>>();
-    let positions_by_account = match load_positions(pool, &child_ids).await {
+    let positions_by_account = match load_positions(&state, pool, &child_ids).await {
         Ok(v) => v,
         Err(resp) => return resp,
     };
@@ -619,7 +620,7 @@ async fn update_internal(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -692,7 +693,7 @@ async fn update_internal(
             Err(e) => {
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({ "error": e.to_string() })),
+                    errors::internal_json(&state, e),
                 )
                     .into_response();
             }
@@ -712,7 +713,7 @@ async fn update_internal(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -730,7 +731,7 @@ async fn update_internal(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -747,7 +748,7 @@ async fn update_internal(
     {
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": e.to_string() })),
+            errors::internal_json(&state, e),
         )
             .into_response();
     }
@@ -770,7 +771,7 @@ async fn update_internal(
         let _ = tx.rollback().await;
         return (
             StatusCode::BAD_REQUEST,
-            Json(json!({ "error": e.to_string() })),
+            errors::masked_json(&state, "更新账户失败", e),
         )
             .into_response();
     }
@@ -828,7 +829,7 @@ pub async fn destroy(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -878,7 +879,7 @@ pub async fn positions(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -919,7 +920,7 @@ pub async fn positions(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -977,6 +978,7 @@ pub async fn positions(
 }
 
 async fn load_positions(
+    state: &AppState,
     pool: &sqlx::PgPool,
     account_ids: &[Uuid],
 ) -> Result<HashMap<Uuid, Vec<PositionAggRow>>, axum::response::Response> {
@@ -1007,7 +1009,7 @@ async fn load_positions(
             return Err(
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({ "error": e.to_string() })),
+                    errors::internal_json(state, e),
                 )
                     .into_response(),
             );

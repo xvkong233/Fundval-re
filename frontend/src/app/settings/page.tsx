@@ -4,7 +4,7 @@ import { Button, Card, Descriptions, Form, Input, Result, Space, Spin, Statistic
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AuthedLayout } from "../../components/AuthedLayout";
-import { changePassword, getCurrentUser, getMySummary } from "../../lib/api";
+import { changePassword, getCurrentUser, getMySummary, getTushareTokenStatus, setTushareToken } from "../../lib/api";
 import { getChangePasswordErrorMessage } from "../../lib/changePassword";
 import { useAuth } from "../../contexts/AuthContext";
 import { normalizeUserSummary } from "../../lib/userSummary";
@@ -17,17 +17,28 @@ type ChangePasswordValues = {
   confirm_password: string;
 };
 
+type TushareTokenStatus = {
+  configured?: boolean;
+  token_hint?: string | null;
+};
+
 export default function SettingsPage() {
   const { logout, user, updateUser } = useAuth();
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
   const [form] = Form.useForm<ChangePasswordValues>();
+  const [tushareForm] = Form.useForm<{ token: string }>();
 
   const [profileLoading, setProfileLoading] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [me, setMe] = useState<any | null>(null);
   const [summary, setSummary] = useState<any | null>(null);
   const [profileNonce, setProfileNonce] = useState(0);
+
+  const [tushareLoading, setTushareLoading] = useState(true);
+  const [tushareError, setTushareError] = useState<string | null>(null);
+  const [tushareStatus, setTushareStatus] = useState<TushareTokenStatus | null>(null);
+  const [tushareSaving, setTushareSaving] = useState(false);
 
   const { token } = theme.useToken();
 
@@ -63,6 +74,38 @@ export default function SettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileNonce]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function run() {
+      setTushareLoading(true);
+      setTushareError(null);
+      try {
+        const res = await getTushareTokenStatus();
+        if (cancelled) return;
+        setTushareStatus((res.data ?? {}) as TushareTokenStatus);
+      } catch (error: any) {
+        if (cancelled) return;
+        // 403：非管理员正常现象，不作为“设置页错误”处理
+        if (error?.response?.status === 403) {
+          setTushareStatus(null);
+          setTushareError("需要管理员权限");
+        } else {
+          const msg = error?.response?.data?.error || "加载 Tushare Token 状态失败";
+          setTushareStatus(null);
+          setTushareError(msg);
+        }
+      } finally {
+        if (!cancelled) setTushareLoading(false);
+      }
+    }
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const normalizedSummary = useMemo(() => {
     if (!summary) return null;
     return normalizeUserSummary(summary);
@@ -79,6 +122,23 @@ export default function SettingsPage() {
       message.error(getChangePasswordErrorMessage(error));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const onSaveTushareToken = async (values: { token: string }) => {
+    setTushareSaving(true);
+    try {
+      const t = String(values?.token ?? "").trim();
+      await setTushareToken(t.length ? t : null);
+      const res = await getTushareTokenStatus();
+      setTushareStatus((res.data ?? {}) as TushareTokenStatus);
+      message.success("Tushare Token 已保存");
+      tushareForm.resetFields();
+    } catch (error: any) {
+      const msg = error?.response?.data?.error || "保存 Tushare Token 失败";
+      message.error(msg);
+    } finally {
+      setTushareSaving(false);
     }
   };
 
@@ -102,8 +162,70 @@ export default function SettingsPage() {
           <Link href="/sources" prefetch={false}>
             <Button>查看数据源状态</Button>
           </Link>
-        </Space>
-      </Card>
+          </Space>
+        </Card>
+
+        <Card style={{ marginBottom: 16 }}>
+          <Title level={3} style={{ marginTop: 0 }}>
+            数据源 Token
+          </Title>
+          <Paragraph type="secondary" style={{ marginBottom: 8 }}>
+            Tushare 数据源需要在此配置 Token（仅管理员可操作）。配置后可在“数据源状态”页面查看 <Text strong>Tushare</Text>{" "}
+            的健康度。
+          </Paragraph>
+
+          {tushareLoading ? (
+            <div style={{ padding: "16px 0", display: "flex", justifyContent: "center" }}>
+              <Spin />
+            </div>
+          ) : tushareError ? (
+            <Result status="info" title="Tushare Token" subTitle={tushareError} />
+          ) : (
+            <Space direction="vertical" style={{ width: "100%" }} size={12}>
+              <Descriptions size="small" column={1} bordered>
+                <Descriptions.Item label="状态">
+                  {tushareStatus?.configured ? (
+                    <Text type="success">已配置（{tushareStatus.token_hint || "已隐藏"}）</Text>
+                  ) : (
+                    <Text type="warning">未配置</Text>
+                  )}
+                </Descriptions.Item>
+              </Descriptions>
+
+              <Form form={tushareForm} layout="vertical" onFinish={onSaveTushareToken} style={{ maxWidth: 520 }}>
+                <Form.Item label="Tushare Token" name="token">
+                  <Input.Password placeholder="粘贴 Token（留空并保存可清空）" autoComplete="off" />
+                </Form.Item>
+                <Space wrap>
+                  <Button type="primary" htmlType="submit" loading={tushareSaving}>
+                    保存
+                  </Button>
+                  <Button
+                    danger
+                    disabled={tushareSaving}
+                    onClick={async () => {
+                      setTushareSaving(true);
+                      try {
+                        await setTushareToken(null);
+                        const res = await getTushareTokenStatus();
+                        setTushareStatus((res.data ?? {}) as TushareTokenStatus);
+                        message.success("Tushare Token 已清空");
+                        tushareForm.resetFields();
+                      } catch (error: any) {
+                        const msg = error?.response?.data?.error || "清空 Tushare Token 失败";
+                        message.error(msg);
+                      } finally {
+                        setTushareSaving(false);
+                      }
+                    }}
+                  >
+                    清空
+                  </Button>
+                </Space>
+              </Form>
+            </Space>
+          )}
+        </Card>
 
       <Card style={{ marginBottom: 16 }}>
         <Title level={3} style={{ marginTop: 0 }}>

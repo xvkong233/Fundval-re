@@ -62,6 +62,8 @@ export const sourceDisplayName = (sourceName: string): string => {
       return "蛋卷";
     case "ths":
       return "同花顺";
+    case "tushare":
+      return "Tushare";
     default:
       return name || "-";
   }

@@ -8,6 +8,7 @@ use sqlx::Row;
 use uuid::Uuid;
 
 use crate::routes::auth;
+use crate::routes::errors;
 use crate::state::AppState;
 
 #[derive(Debug, Serialize)]
@@ -91,7 +92,7 @@ pub async fn list(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -105,7 +106,7 @@ pub async fn list(
         watchlists.push((id, row.get("name"), row.get("created_at")));
     }
 
-    let items_by_watchlist = load_items(pool, &ids).await;
+    let items_by_watchlist = load_items(&state, pool, &ids).await;
     let items_by_watchlist = match items_by_watchlist {
         Ok(v) => v,
         Err(resp) => return resp,
@@ -170,7 +171,7 @@ pub async fn create(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -200,7 +201,7 @@ pub async fn create(
     if let Err(e) = inserted {
         return (
             StatusCode::BAD_REQUEST,
-            Json(json!({ "error": e.to_string() })),
+            errors::masked_json(&state, "创建自选列表失败", e),
         )
             .into_response();
     }
@@ -260,7 +261,7 @@ pub async fn retrieve(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -270,7 +271,7 @@ pub async fn retrieve(
         return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
     };
 
-    let items_by_watchlist = match load_items(pool, &[id]).await {
+    let items_by_watchlist = match load_items(&state, pool, &[id]).await {
         Ok(v) => v,
         Err(resp) => return resp,
     };
@@ -357,7 +358,7 @@ async fn update_internal(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -389,7 +390,7 @@ async fn update_internal(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -411,12 +412,12 @@ async fn update_internal(
     {
         return (
             StatusCode::BAD_REQUEST,
-            Json(json!({ "error": e.to_string() })),
+            errors::masked_json(&state, "更新自选列表失败", e),
         )
             .into_response();
     }
 
-    let items_by_watchlist = match load_items(pool, &[id]).await {
+    let items_by_watchlist = match load_items(&state, pool, &[id]).await {
         Ok(v) => v,
         Err(resp) => return resp,
     };
@@ -470,7 +471,7 @@ pub async fn destroy(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -527,7 +528,7 @@ pub async fn items_add(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -553,7 +554,7 @@ pub async fn items_add(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -579,7 +580,7 @@ pub async fn items_add(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -600,7 +601,7 @@ pub async fn items_add(
             Err(e) => {
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({ "error": e.to_string() })),
+                    errors::internal_json(&state, e),
                 )
                     .into_response();
             }
@@ -624,7 +625,7 @@ pub async fn items_add(
     {
         return (
             StatusCode::BAD_REQUEST,
-            Json(json!({ "error": e.to_string() })),
+            errors::masked_json(&state, "添加基金到自选失败", e),
         )
             .into_response();
     }
@@ -673,7 +674,7 @@ pub async fn items_remove(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -691,7 +692,7 @@ pub async fn items_remove(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -714,7 +715,7 @@ pub async fn items_remove(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -774,7 +775,7 @@ pub async fn reorder(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -818,6 +819,7 @@ pub async fn reorder(
 }
 
 async fn load_items(
+    state: &AppState,
     pool: &sqlx::PgPool,
     watchlist_ids: &[Uuid],
 ) -> Result<HashMap<Uuid, Vec<WatchlistItemResponse>>, axum::response::Response> {
@@ -851,7 +853,7 @@ async fn load_items(
             return Err(
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({ "error": e.to_string() })),
+                    errors::internal_json(state, e),
                 )
                     .into_response(),
             );

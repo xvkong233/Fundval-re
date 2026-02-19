@@ -23,6 +23,11 @@ docker compose up --build
 
 如端口冲突，可在 `.env` 中调整 `FRONTEND_HOST_PORT / BACKEND_HOST_PORT`。
 
+## 部署注意（安全）
+
+- 生产环境务必设置高熵随机 `SECRET_KEY`；可将 `.env` 中 `REQUIRE_SECURE_SECRET=true` 以强制校验。
+- 如需浏览器跨域直连后端（不走前端 `/api` 反代），请配置 `CORS_ALLOW_ORIGINS`（逗号分隔 origins；`*` 将放开所有来源，不建议生产）。
+
 ## 初始化（Bootstrap Key）
 
 首次启动后，如果系统未初始化，`backend` 会在日志里输出 `BOOTSTRAP KEY`：
@@ -40,6 +45,7 @@ docker compose logs backend | grep "BOOTSTRAP KEY"
 - `tiantian`：天天基金（兼容别名：`eastmoney`）
 - `danjuan`：蛋卷
 - `ths`：同花顺（兼容别名：`tonghuashun` / `10jqka`）
+- `tushare`：Tushare（需在“设置”页面配置 Token）
 
 前端页面支持选择数据源（基金详情 / 基金列表 / 自选），选择后会把 `source` 透传给后端 API。
 

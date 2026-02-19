@@ -169,6 +169,7 @@ fn default_config() -> BTreeMap<String, Value> {
     m.insert("debug".into(), Value::Bool(false));
     m.insert("estimate_cache_ttl".into(), Value::Number(5.into()));
     m.insert("sources_health_probe".into(), Value::Bool(true));
+    m.insert("tushare_token".into(), Value::Null);
     m
 }
 

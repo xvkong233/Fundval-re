@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use crate::position_history;
 use crate::routes::auth;
+use crate::routes::errors;
 use crate::state::AppState;
 
 #[derive(Debug, Serialize)]
@@ -136,7 +137,7 @@ pub async fn list(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -217,7 +218,7 @@ pub async fn history(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -259,7 +260,7 @@ pub async fn history(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -311,7 +312,7 @@ pub async fn history(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -342,7 +343,7 @@ pub async fn history(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -441,7 +442,7 @@ pub async fn retrieve(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -654,7 +655,7 @@ pub async fn operations_list(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -753,7 +754,7 @@ pub async fn operations_create(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -792,7 +793,7 @@ pub async fn operations_create(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -844,7 +845,7 @@ pub async fn operations_create(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -873,7 +874,7 @@ pub async fn operations_create(
         let _ = tx.rollback().await;
         return (
             StatusCode::BAD_REQUEST,
-            Json(json!({ "error": e.to_string() })),
+            errors::masked_json(&state, "创建操作失败", e),
         )
             .into_response();
     }
@@ -981,7 +982,7 @@ pub async fn operations_retrieve(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -1069,7 +1070,7 @@ pub async fn operations_destroy(
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -1085,7 +1086,7 @@ pub async fn operations_destroy(
             let _ = tx.rollback().await;
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }
@@ -1109,7 +1110,7 @@ pub async fn operations_destroy(
             let _ = tx.rollback().await;
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                errors::internal_json(&state, e),
             )
                 .into_response();
         }

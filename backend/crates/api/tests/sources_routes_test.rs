@@ -30,6 +30,7 @@ async fn sources_list_returns_builtin_canonical_names() {
     assert!(names.contains(&"tiantian".to_string()));
     assert!(names.contains(&"danjuan".to_string()));
     assert!(names.contains(&"ths".to_string()));
+    assert!(names.contains(&"tushare".to_string()));
 }
 
 #[tokio::test]
@@ -55,7 +56,7 @@ async fn sources_health_can_be_disabled_for_tests() {
     let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     let arr = json.as_array().unwrap();
-    assert!(arr.len() >= 3);
+    assert!(arr.len() >= 4);
 
     let by_name = arr
         .iter()
@@ -67,9 +68,8 @@ async fn sources_health_can_be_disabled_for_tests() {
         })
         .collect::<std::collections::HashMap<_, _>>();
 
-    for name in ["tiantian", "danjuan", "ths"] {
+    for name in ["tiantian", "danjuan", "ths", "tushare"] {
         let err = by_name.get(name).expect("missing source in health");
         assert!(err.contains("禁用") || err.contains("disabled"));
     }
 }
-

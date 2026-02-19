@@ -30,6 +30,11 @@ export const changePassword = (oldPassword: string, newPassword: string) =>
 
 export const getMySummary = () => api.get("/users/me/summary/");
 
+// settings (admin)
+export const getTushareTokenStatus = () => api.get("/settings/tushare_token/");
+
+export const setTushareToken = (token: string | null) => api.put("/settings/tushare_token/", { token });
+
 // sources
 export const listSources = () => publicApi.get("/sources/");
 

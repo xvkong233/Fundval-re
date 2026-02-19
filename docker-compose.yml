@@ -25,6 +25,10 @@ services:
       - PORT=8001
       - DATABASE_URL=postgresql://${POSTGRES_USER:-fundval}:${POSTGRES_PASSWORD:-fundval}@db-candidate:5432/${POSTGRES_DB_CANDIDATE:-fundval}
       - SECRET_KEY=${SECRET_KEY:-django-insecure-dev-only}
+      # 可选：逗号分隔的 origins（例如 http://localhost:3000,https://your.domain）。留空表示默认不开放跨域。
+      - CORS_ALLOW_ORIGINS=${CORS_ALLOW_ORIGINS:-}
+      # 可选：生产环境建议开启，拒绝占位符/过短的 SECRET_KEY。
+      - REQUIRE_SECURE_SECRET=${REQUIRE_SECURE_SECRET:-false}
       - ALLOW_REGISTER=${ALLOW_REGISTER:-false}
       - DEBUG=${DEBUG:-false}
       - TZ=${TZ:-Asia/Shanghai}

@@ -36,6 +36,27 @@ pub struct NavRow {
     pub daily_growth: Option<Decimal>,
 }
 
+fn extract_jsonpgz_payload(text: &str) -> Option<&str> {
+    let text = text.trim();
+    let start = text.find("jsonpgz(")? + "jsonpgz(".len();
+
+    let tail = text[start..].trim_end();
+    let end = if tail.ends_with(");") {
+        tail.len().saturating_sub(2)
+    } else if tail.ends_with(')') {
+        tail.len().saturating_sub(1)
+    } else {
+        tail.rfind(')')?
+    };
+
+    let payload = tail[..end].trim();
+    if payload.is_empty() {
+        None
+    } else {
+        Some(payload)
+    }
+}
+
 pub fn build_client() -> Result<reqwest::Client, String> {
     let mut headers = HeaderMap::new();
     headers.insert(ACCEPT, HeaderValue::from_static("*/*"));
@@ -65,19 +86,9 @@ pub async fn fetch_estimate(client: &reqwest::Client, fund_code: &str) -> Result
         .await
         .map_err(|e| e.to_string())?;
 
-    let re = Regex::new(r"(?s)jsonpgz\((.*?)\);?").map_err(|e| e.to_string())?;
-    let Some(caps) = re.captures(&text) else {
+    let Some(json_str) = extract_jsonpgz_payload(&text) else {
         return Ok(None);
     };
-
-    let json_str = caps
-        .get(1)
-        .map(|m| m.as_str())
-        .unwrap_or_default()
-        .trim();
-    if json_str.is_empty() {
-        return Ok(None);
-    }
 
     let v: Value = serde_json::from_str(json_str).map_err(|e| e.to_string())?;
     let fundcode = v.get("fundcode").and_then(|x| x.as_str()).unwrap_or("").trim();
@@ -120,19 +131,9 @@ pub async fn fetch_realtime_nav(
         .await
         .map_err(|e| e.to_string())?;
 
-    let re = Regex::new(r"(?s)jsonpgz\((.*?)\);?").map_err(|e| e.to_string())?;
-    let Some(caps) = re.captures(&text) else {
+    let Some(json_str) = extract_jsonpgz_payload(&text) else {
         return Ok(None);
     };
-
-    let json_str = caps
-        .get(1)
-        .map(|m| m.as_str())
-        .unwrap_or_default()
-        .trim();
-    if json_str.is_empty() {
-        return Ok(None);
-    }
 
     let v: Value = serde_json::from_str(json_str).map_err(|e| e.to_string())?;
     let fundcode = v.get("fundcode").and_then(|x| x.as_str()).unwrap_or("").trim();
@@ -316,5 +317,30 @@ pub async fn fetch_nav_history(
     }
 
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_jsonpgz_payload;
+
+    #[test]
+    fn jsonpgz_payload_handles_parentheses_in_string() {
+        let text = r#"jsonpgz({"fundcode":"161725","name":"招商中证白酒指数(LOF)A","jzrq":"2026-02-12","dwjz":"0.7035","gsz":"0.7034","gszzl":"-0.01","gztime":"2026-02-13 15:00"});"#;
+        let payload = extract_jsonpgz_payload(text).expect("payload");
+        let v: serde_json::Value = serde_json::from_str(payload).expect("valid json");
+        assert_eq!(v.get("fundcode").and_then(|x| x.as_str()), Some("161725"));
+        assert_eq!(
+            v.get("name").and_then(|x| x.as_str()),
+            Some("招商中证白酒指数(LOF)A")
+        );
+    }
+
+    #[test]
+    fn jsonpgz_payload_works_without_semicolon_and_whitespace() {
+        let text = "  jsonpgz({\"a\":\"b(c)d\"}) \n";
+        let payload = extract_jsonpgz_payload(text).expect("payload");
+        let v: serde_json::Value = serde_json::from_str(payload).expect("valid json");
+        assert_eq!(v.get("a").and_then(|x| x.as_str()), Some("b(c)d"));
+    }
 }
 

@@ -5,6 +5,7 @@ use sqlx::Row;
 
 use crate::{jwt::JwtService, state::AppState};
 use crate::django_password;
+use crate::routes::errors;
 
 #[derive(Debug, Deserialize)]
 pub struct LoginRequest {
@@ -114,7 +115,7 @@ pub async fn login(
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
-                    error: e.to_string(),
+                    error: errors::internal_message(&state, e),
                 }),
             )
                 .into_response();
@@ -244,7 +245,7 @@ pub async fn me(
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
-                    error: e.to_string(),
+                    error: errors::internal_message(&state, e),
                 }),
             )
                 .into_response();
@@ -311,7 +312,7 @@ pub async fn change_password(
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
-                    error: e.to_string(),
+                    error: errors::internal_message(&state, e),
                 }),
             )
                 .into_response();
@@ -343,7 +344,7 @@ pub async fn change_password(
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
-                error: e.to_string(),
+                error: errors::internal_message(&state, e),
             }),
         )
             .into_response();

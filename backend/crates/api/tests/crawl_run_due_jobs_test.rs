@@ -69,7 +69,8 @@ async fn run_due_jobs_marks_success_and_increments_attempt() {
     .expect("select");
 
     assert_eq!(row.get::<String, _>("status"), "queued");
-    assert_eq!(row.get::<i64, _>("attempt"), 1);
+    // 成功后 attempt 应重置，避免历史失败导致后续 backoff 过大。
+    assert_eq!(row.get::<i64, _>("attempt"), 0);
     let last_ok_at: Option<String> = row.get("last_ok_at");
     assert!(last_ok_at.unwrap_or_default().trim().len() > 0);
     let last_error: Option<String> = row.get("last_error");

@@ -157,6 +157,7 @@ async fn mark_ok(pool: &sqlx::AnyPool, id: &str, not_before: String) -> Result<(
     let sql_pg = r#"
         UPDATE crawl_job
         SET status = 'queued',
+            attempt = 0,
             last_ok_at = CURRENT_TIMESTAMP,
             last_error = NULL,
             not_before = ($2)::timestamptz,
@@ -166,6 +167,7 @@ async fn mark_ok(pool: &sqlx::AnyPool, id: &str, not_before: String) -> Result<(
     let sql_sqlite = r#"
         UPDATE crawl_job
         SET status = 'queued',
+            attempt = 0,
             last_ok_at = CURRENT_TIMESTAMP,
             last_error = NULL,
             not_before = ?2,
@@ -386,16 +388,27 @@ async fn upsert_nav_job(
         INSERT INTO crawl_job (id, job_type, fund_code, source_name, priority, not_before, status, attempt, created_at, updated_at)
         VALUES (($1)::uuid, 'nav_history_sync', $2, $3, $4, CURRENT_TIMESTAMP, 'queued', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         ON CONFLICT (job_type, fund_code, source_name) DO UPDATE
-          SET priority = CASE WHEN EXCLUDED.priority > crawl_job.priority THEN EXCLUDED.priority ELSE crawl_job.priority END,
+          SET priority = EXCLUDED.priority,
+              -- 若优先级被提升，则把任务尽量提前到“现在”（不推迟已更早的 not_before）
+              not_before = CASE
+                WHEN crawl_job.not_before > CURRENT_TIMESTAMP THEN CURRENT_TIMESTAMP
+                ELSE crawl_job.not_before
+              END,
               updated_at = CURRENT_TIMESTAMP
+          WHERE EXCLUDED.priority > crawl_job.priority
     "#;
 
     let sql_any = r#"
         INSERT INTO crawl_job (id, job_type, fund_code, source_name, priority, not_before, status, attempt, created_at, updated_at)
         VALUES ($1, 'nav_history_sync', $2, $3, $4, CURRENT_TIMESTAMP, 'queued', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         ON CONFLICT (job_type, fund_code, source_name) DO UPDATE
-          SET priority = CASE WHEN EXCLUDED.priority > crawl_job.priority THEN EXCLUDED.priority ELSE crawl_job.priority END,
+          SET priority = EXCLUDED.priority,
+              not_before = CASE
+                WHEN crawl_job.not_before > CURRENT_TIMESTAMP THEN CURRENT_TIMESTAMP
+                ELSE crawl_job.not_before
+              END,
               updated_at = CURRENT_TIMESTAMP
+          WHERE EXCLUDED.priority > crawl_job.priority
     "#;
 
     let r = sqlx::query(sql_pg)

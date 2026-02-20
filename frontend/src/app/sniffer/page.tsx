@@ -1,12 +1,29 @@
 "use client";
 
-import { Button, Card, Input, Result, Select, Space, Spin, Table, Tag, Typography, message } from "antd";
+import {
+  Button,
+  Card,
+  Col,
+  Divider,
+  Input,
+  List,
+  Result,
+  Row,
+  Select,
+  Space,
+  Spin,
+  Table,
+  Tag,
+  Typography,
+  message,
+} from "antd";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ReloadOutlined, SyncOutlined } from "@ant-design/icons";
 import { AuthedLayout } from "../../components/AuthedLayout";
 import { adminSnifferSync, getSnifferItems, getSnifferStatus } from "../../lib/api";
 import { useAuth } from "../../contexts/AuthContext";
+import { buildSnifferAdvice } from "../../lib/snifferAdvice";
 
 const { Paragraph, Text, Title } = Typography;
 
@@ -113,6 +130,10 @@ export default function SnifferPage() {
     });
   }, [itemsResp, sector, tags, search]);
 
+  const advice = useMemo(() => buildSnifferAdvice(itemsResp?.items ?? []), [itemsResp]);
+  const focusList = useMemo(() => advice.focus.slice(0, 10), [advice.focus]);
+  const dipBuyList = useMemo(() => advice.dipBuy.slice(0, 10), [advice.dipBuy]);
+
   const lastRun = statusResp?.last_run ?? null;
   const lastRunOk = lastRun ? Boolean(lastRun.ok) : null;
   const lastRunError = lastRun?.error ? String(lastRun.error) : null;
@@ -139,175 +160,233 @@ export default function SnifferPage() {
           </Paragraph>
         </Card>
 
-        <Card>
-          <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
-            <Space direction="vertical" size={0}>
-              <Text type="secondary">
-                最近采集：{itemsResp?.has_snapshot ? itemsResp?.fetched_at || "-" : "暂无快照"}
-              </Text>
-              {lastRunOk === null ? null : lastRunOk ? (
-                <Text type="success">最近一次同步：成功</Text>
-              ) : (
-                <Text type="danger">最近一次同步：失败{lastRunError ? `（${lastRunError}）` : ""}</Text>
-              )}
-              <Text type="secondary">条目数：{itemsResp?.has_snapshot ? itemsResp?.item_count ?? 0 : 0}</Text>
-            </Space>
-            <Space wrap>
-              <Button icon={<ReloadOutlined />} onClick={() => void load()} disabled={loading}>
-                刷新
-              </Button>
-              {isAdmin ? (
-                <Button
-                  type="primary"
-                  icon={<SyncOutlined />}
-                  onClick={() => void triggerAdminSync()}
-                  loading={syncing}
-                  disabled={loading}
-                >
-                  立即同步
-                </Button>
-              ) : null}
-            </Space>
-          </Space>
-
-          <div style={{ marginTop: 16 }}>
-            <Space wrap style={{ width: "100%" }}>
-              <Select
-                allowClear
-                placeholder="按板块过滤"
-                style={{ minWidth: 220 }}
-                value={sector}
-                onChange={(v) => setSector(v ?? null)}
-                options={(itemsResp?.sectors ?? []).map((s) => ({ value: s, label: s }))}
-              />
-              <Select
-                mode="multiple"
-                allowClear
-                placeholder="按标签过滤（同时包含）"
-                style={{ minWidth: 320 }}
-                value={tags}
-                onChange={(v) => setTags(Array.isArray(v) ? (v as string[]) : [])}
-                options={(itemsResp?.tags ?? []).map((t) => ({ value: t, label: t }))}
-              />
-              <Input
-                placeholder="搜索：名称/代码"
-                style={{ minWidth: 260 }}
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-              <Button
-                icon={<ReloadOutlined />}
-                onClick={() => {
-                  setSector(null);
-                  setTags([]);
-                  setSearch("");
-                }}
-              >
-                清空筛选
-              </Button>
-            </Space>
-          </div>
-
-          {loading ? (
-            <div style={{ padding: "24px 0", display: "flex", justifyContent: "center" }}>
-              <Spin />
-            </div>
-          ) : error ? (
-            <Result status="error" title="加载失败" subTitle={error} />
-          ) : !itemsResp?.has_snapshot ? (
-            <Result
-              status="info"
-              title="暂无嗅探快照"
-              subTitle="系统将在每天 03:10 自动采集；如你是管理员，可点击“立即同步”触发一次。"
+        <Row gutter={[16, 16]}>
+          <Col xs={24} lg={16}>
+            <Card
+              title="筛选与结果"
               extra={
-                isAdmin ? (
-                  <Button type="primary" icon={<SyncOutlined />} onClick={() => void triggerAdminSync()} loading={syncing}>
-                    立即同步
-                  </Button>
-                ) : null
+                <Space wrap>
+                  <Tag color={lastRunOk === true ? "green" : lastRunOk === false ? "red" : "default"}>
+                    {lastRunOk === true ? "最近运行：成功" : lastRunOk === false ? "最近运行：失败" : "最近运行：-"}
+                  </Tag>
+                  {lastRunError ? <Tag color="red">{lastRunError.slice(0, 30)}</Tag> : null}
+                  {isAdmin ? (
+                    <Button type="primary" icon={<SyncOutlined />} onClick={() => void triggerAdminSync()} loading={syncing}>
+                      立即同步
+                    </Button>
+                  ) : null}
+                </Space>
               }
-            />
-          ) : (
-            <Table<SnifferItem>
-              rowKey={(r) => r.fund_code}
-              dataSource={filteredItems}
-              pagination={{ pageSize: 50, showSizeChanger: true }}
-              columns={[
-                {
-                  title: "基金",
-                  key: "fund",
-                  width: 320,
-                  render: (_, r) => (
-                    <Space direction="vertical" size={0}>
-                      <Link href={`/funds/${encodeURIComponent(r.fund_code)}`}>{r.fund_name}</Link>
+            >
+              <Space wrap style={{ width: "100%", justifyContent: "space-between" }}>
+                <Space wrap>
+                  <Select
+                    allowClear
+                    style={{ width: 180 }}
+                    placeholder="板块"
+                    value={sector ?? undefined}
+                    onChange={(v) => setSector(v ? String(v) : null)}
+                    options={(itemsResp?.sectors ?? []).map((s) => ({ value: s, label: s }))}
+                  />
+                  <Select
+                    mode="multiple"
+                    allowClear
+                    style={{ width: 260 }}
+                    placeholder="标签（多选）"
+                    value={tags}
+                    onChange={(v) => setTags(Array.isArray(v) ? (v as string[]).map(String) : [])}
+                    options={(itemsResp?.tags ?? []).map((t) => ({ value: t, label: t }))}
+                  />
+                  <Input
+                    placeholder="搜索：名称/代码"
+                    style={{ width: 260 }}
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </Space>
+                <Space wrap>
+                  <Button
+                    icon={<ReloadOutlined />}
+                    onClick={() => {
+                      setSector(null);
+                      setTags([]);
+                      setSearch("");
+                    }}
+                  >
+                    清空筛选
+                  </Button>
+                  <Button onClick={() => void load()} loading={loading}>
+                    刷新
+                  </Button>
+                </Space>
+              </Space>
+
+              <div style={{ marginTop: 12 }}>
+                {loading ? (
+                  <div style={{ padding: "24px 0", display: "flex", justifyContent: "center" }}>
+                    <Spin />
+                  </div>
+                ) : error ? (
+                  <Result status="error" title="加载失败" subTitle={error} />
+                ) : !itemsResp?.has_snapshot ? (
+                  <Result
+                    status="info"
+                    title="暂无嗅探快照"
+                    subTitle="系统将在每天 03:10 自动采集；如你是管理员，可点击“立即同步”触发一次。"
+                    extra={
+                      isAdmin ? (
+                        <Button type="primary" icon={<SyncOutlined />} onClick={() => void triggerAdminSync()} loading={syncing}>
+                          立即同步
+                        </Button>
+                      ) : null
+                    }
+                  />
+                ) : (
+                  <Table<SnifferItem>
+                    rowKey={(r) => r.fund_code}
+                    dataSource={filteredItems}
+                    pagination={{ pageSize: 50, showSizeChanger: true }}
+                    scroll={{ x: "max-content" }}
+                    columns={[
+                      {
+                        title: "基金",
+                        key: "fund",
+                        width: 320,
+                        render: (_, r) => (
+                          <Space direction="vertical" size={0}>
+                            <Link href={`/funds/${encodeURIComponent(r.fund_code)}`}>{r.fund_name}</Link>
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                              {r.fund_code}
+                            </Text>
+                          </Space>
+                        ),
+                        sorter: (a, b) => String(a.fund_code).localeCompare(String(b.fund_code)),
+                      },
+                      {
+                        title: "板块",
+                        dataIndex: "sector",
+                        width: 160,
+                        sorter: (a, b) => String(a.sector).localeCompare(String(b.sector)),
+                      },
+                      {
+                        title: "星级",
+                        dataIndex: "star_count",
+                        width: 120,
+                        render: (v: any) => <Text>{starsText(typeof v === "number" ? v : null)}</Text>,
+                        sorter: (a, b) => (a.star_count ?? -1) - (b.star_count ?? -1),
+                        defaultSortOrder: "descend",
+                      },
+                      {
+                        title: "近1周涨幅",
+                        dataIndex: "week_growth",
+                        width: 140,
+                        render: (v: any) => (v ? `${String(v)}%` : "-"),
+                        sorter: (a, b) => (toNumber(a.week_growth) ?? -Infinity) - (toNumber(b.week_growth) ?? -Infinity),
+                      },
+                      {
+                        title: "年涨幅",
+                        dataIndex: "year_growth",
+                        width: 140,
+                        render: (v: any) => (v ? `${String(v)}%` : "-"),
+                        sorter: (a, b) => (toNumber(a.year_growth) ?? -Infinity) - (toNumber(b.year_growth) ?? -Infinity),
+                      },
+                      {
+                        title: "最大回撤",
+                        dataIndex: "max_drawdown",
+                        width: 140,
+                        render: (v: any) => (v ? `${String(v)}%` : "-"),
+                        sorter: (a, b) =>
+                          (toNumber(a.max_drawdown) ?? -Infinity) - (toNumber(b.max_drawdown) ?? -Infinity),
+                      },
+                      {
+                        title: "标签",
+                        dataIndex: "tags",
+                        render: (v: any) => {
+                          const list = Array.isArray(v) ? (v as string[]) : [];
+                          if (!list.length) return "-";
+                          return (
+                            <Space size={[4, 4]} wrap>
+                              {list.slice(0, 8).map((t) => (
+                                <Tag key={t}>{t}</Tag>
+                              ))}
+                              {list.length > 8 ? <Text type="secondary">+{list.length - 8}</Text> : null}
+                            </Space>
+                          );
+                        },
+                      },
+                      {
+                        title: "规模",
+                        dataIndex: "fund_size_text",
+                        width: 180,
+                        render: (v: any) => (v ? String(v) : "-"),
+                      },
+                    ]}
+                  />
+                )}
+              </div>
+            </Card>
+          </Col>
+
+          <Col xs={24} lg={8}>
+            <Card title="购买建议" extra={<Tag color="gold">规则版（占位）</Tag>}>
+              <Paragraph type="secondary" style={{ marginBottom: 12 }}>
+                这里的建议暂基于“星级/回撤/涨幅”的规则排序生成；后续会替换为 ML 信号（波段/抄底/反转）与同类性价比分位。
+              </Paragraph>
+
+              <Title level={5} style={{ marginTop: 0 }}>
+                优先关注
+              </Title>
+              <List
+                size="small"
+                dataSource={focusList}
+                locale={{ emptyText: "暂无数据" }}
+                renderItem={(it) => (
+                  <List.Item>
+                    <Space direction="vertical" size={0} style={{ width: "100%" }}>
+                      <Space style={{ justifyContent: "space-between", width: "100%" }}>
+                        <Link href={`/funds/${encodeURIComponent(it.fund_code)}`}>{it.fund_name}</Link>
+                        <Text type="secondary">{starsText(it.star_count)}</Text>
+                      </Space>
                       <Text type="secondary" style={{ fontSize: 12 }}>
-                        {r.fund_code}
+                        {it.fund_code} · 年涨幅 {it.year_growth ?? "-"}% · 最大回撤 {it.max_drawdown ?? "-"}%
                       </Text>
                     </Space>
-                  ),
-                  sorter: (a, b) => String(a.fund_code).localeCompare(String(b.fund_code)),
-                },
-                {
-                  title: "板块",
-                  dataIndex: "sector",
-                  width: 160,
-                  sorter: (a, b) => String(a.sector).localeCompare(String(b.sector)),
-                },
-                {
-                  title: "星级",
-                  dataIndex: "star_count",
-                  width: 120,
-                  render: (v: any) => <Text>{starsText(typeof v === "number" ? v : null)}</Text>,
-                  sorter: (a, b) => (a.star_count ?? -1) - (b.star_count ?? -1),
-                  defaultSortOrder: "descend",
-                },
-                {
-                  title: "近1周涨幅",
-                  dataIndex: "week_growth",
-                  width: 140,
-                  render: (v: any) => (v ? `${String(v)}%` : "-"),
-                  sorter: (a, b) => (toNumber(a.week_growth) ?? -Infinity) - (toNumber(b.week_growth) ?? -Infinity),
-                },
-                {
-                  title: "年涨幅",
-                  dataIndex: "year_growth",
-                  width: 140,
-                  render: (v: any) => (v ? `${String(v)}%` : "-"),
-                  sorter: (a, b) => (toNumber(a.year_growth) ?? -Infinity) - (toNumber(b.year_growth) ?? -Infinity),
-                },
-                {
-                  title: "最大回撤",
-                  dataIndex: "max_drawdown",
-                  width: 140,
-                  render: (v: any) => (v ? `${String(v)}%` : "-"),
-                  sorter: (a, b) => (toNumber(a.max_drawdown) ?? -Infinity) - (toNumber(b.max_drawdown) ?? -Infinity),
-                },
-                {
-                  title: "标签",
-                  dataIndex: "tags",
-                  render: (v: any) => {
-                    const list = Array.isArray(v) ? (v as string[]) : [];
-                    if (!list.length) return "-";
-                    return (
-                      <Space size={[4, 4]} wrap>
-                        {list.slice(0, 8).map((t) => (
-                          <Tag key={t}>{t}</Tag>
-                        ))}
-                        {list.length > 8 ? <Text type="secondary">+{list.length - 8}</Text> : null}
+                  </List.Item>
+                )}
+              />
+
+              <Divider style={{ margin: "12px 0" }} />
+
+              <Title level={5} style={{ marginTop: 0 }}>
+                回撤抄底候选
+              </Title>
+              <List
+                size="small"
+                dataSource={dipBuyList}
+                locale={{ emptyText: "暂无候选" }}
+                renderItem={(it) => (
+                  <List.Item>
+                    <Space direction="vertical" size={0} style={{ width: "100%" }}>
+                      <Space style={{ justifyContent: "space-between", width: "100%" }}>
+                        <Link href={`/funds/${encodeURIComponent(it.fund_code)}`}>{it.fund_name}</Link>
+                        <Text type="secondary">{starsText(it.star_count)}</Text>
                       </Space>
-                    );
-                  },
-                },
-                {
-                  title: "规模",
-                  dataIndex: "fund_size_text",
-                  width: 180,
-                  render: (v: any) => (v ? String(v) : "-"),
-                },
-              ]}
-            />
-          )}
-        </Card>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        {it.fund_code} · 最大回撤 {it.max_drawdown ?? "-"}% · 年涨幅 {it.year_growth ?? "-"}%
+                      </Text>
+                    </Space>
+                  </List.Item>
+                )}
+              />
+
+              <div style={{ marginTop: 12 }}>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  风险提示：所有建议均不构成投资建议；请结合你的持有周期（自然日/交易日）与风险承受能力。
+                </Text>
+              </div>
+            </Card>
+          </Col>
+        </Row>
       </Space>
     </AuthedLayout>
   );

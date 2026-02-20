@@ -57,11 +57,19 @@ fi
 
 # 构建并启动服务
 echo "Building and starting services..."
-compose up -d --build
+compose up -d --build --remove-orphans
 
 echo ""
 echo "Waiting for services to be ready..."
 sleep 5
+
+# 提示：如果你同时运行了多个 compose 项目（例如本仓库的 git worktree），
+# 可能会出现“访问了旧端口/旧容器”的错觉。先用 `docker compose ls` / `docker ps` 确认端口映射。
+echo ""
+echo "=========================================="
+echo "  Compose Projects (Running)"
+echo "=========================================="
+docker compose ls 2>/dev/null || true
 
 # 显示 bootstrap key（backend 会在未初始化时输出）
 echo ""

@@ -175,7 +175,7 @@ mod tests {
             nav.push(NavRecord {
                 fund_id,
                 nav_date,
-                unit_nav: dec("1.0000") + dec(&(i as i64).to_string()) * dec("0.1000"),
+                unit_nav: dec("1.0000") + dec(&i.to_string()) * dec("0.1000"),
             });
         }
 

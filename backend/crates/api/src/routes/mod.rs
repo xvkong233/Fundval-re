@@ -6,10 +6,12 @@ pub mod accounts;
 pub mod auth;
 pub mod bootstrap;
 pub mod errors;
+pub mod fund_analytics;
 pub mod funds;
 pub mod health;
 pub mod nav_history;
 pub mod positions;
+pub mod rates;
 pub mod settings;
 pub mod sniffer;
 pub mod sources;
@@ -63,6 +65,10 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route(
             "/api/funds/{fund_code}/estimate",
             axum::routing::get(funds::estimate),
+        )
+        .route(
+            "/api/funds/{fund_code}/analytics",
+            axum::routing::get(fund_analytics::retrieve),
         )
         .route(
             "/api/funds/{fund_code}/accuracy",
@@ -154,11 +160,16 @@ pub fn router(state: AppState) -> Router<AppState> {
             "/api/nav-history/sync",
             axum::routing::post(nav_history::sync),
         )
+        .route("/api/rates/risk-free", axum::routing::get(rates::risk_free))
         .route("/api/sniffer/status", axum::routing::get(sniffer::status))
         .route("/api/sniffer/items", axum::routing::get(sniffer::items))
         .route(
             "/api/admin/sniffer/sync",
             axum::routing::post(sniffer::admin_sync),
+        )
+        .route(
+            "/api/admin/rates/risk-free/sync",
+            axum::routing::post(rates::admin_sync_risk_free),
         )
         .with_state(state)
 }

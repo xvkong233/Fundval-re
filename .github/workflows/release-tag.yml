@@ -41,7 +41,7 @@ jobs:
         working-directory: backend
         run: cargo test -p api
 
-      # Release 发行版支持 sqlite（开箱即用）与 postgres（docker/生产），确保驱动特性齐全。
+      # Guard sqlx features for both sqlite (local/dev) and postgres (docker/prod)
       - name: "Guard: backend sqlx drivers"
         working-directory: backend
         run: |

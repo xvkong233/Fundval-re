@@ -289,6 +289,10 @@ async fn main() {
 
     let state = AppState::new(pool, config, jwt);
 
+    if state.pool().is_some() {
+        tokio::spawn(api::crawl::worker::background_task(state.clone()));
+    }
+
     let cors = build_cors_layer(state.config().get_bool("debug", false));
 
     let app = app(state).layer(TraceLayer::new_for_http()).layer(cors);

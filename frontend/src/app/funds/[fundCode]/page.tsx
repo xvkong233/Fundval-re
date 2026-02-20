@@ -22,6 +22,7 @@ import { useParams } from "next/navigation";
 import { AuthedLayout } from "../../../components/AuthedLayout";
 import {
   getFundDetail,
+  getFundAnalytics,
   getFundEstimate,
   listNavHistory,
   listPositionOperations,
@@ -32,6 +33,7 @@ import {
 import { getDateRange, type TimeRange } from "../../../lib/dateRange";
 import { buildNavChartOption } from "../../../lib/navChart";
 import { buildFundPositionRows, sortOperationsDesc, type FundPositionRow } from "../../../lib/fundDetail";
+import { timeRangeToTradingDaysRange } from "../../../lib/fundAnalytics";
 import { normalizeNavHistoryRows } from "../../../lib/navHistoryNormalize";
 import { sourceDisplayName, type SourceItem } from "../../../lib/sources";
 
@@ -75,6 +77,10 @@ export default function FundDetailPage() {
   const [navHistory, setNavHistory] = useState<NavRow[]>([]);
   const [timeRange, setTimeRange] = useState<TimeRange>("1M");
   const [compactChart, setCompactChart] = useState(false);
+
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analytics, setAnalytics] = useState<any | null>(null);
+  const [analyticsError, setAnalyticsError] = useState<string | null>(null);
 
   const [positionsLoading, setPositionsLoading] = useState(false);
   const [positionRows, setPositionRows] = useState<FundPositionRow[]>([]);
@@ -235,6 +241,32 @@ export default function FundDetailPage() {
 
   useEffect(() => {
     if (!fundCode) return;
+    if (navHistory.length < 2) {
+      setAnalytics(null);
+      return;
+    }
+
+    const load = async () => {
+      setAnalyticsLoading(true);
+      setAnalyticsError(null);
+      try {
+        const range = timeRangeToTradingDaysRange(timeRange);
+        const res = await getFundAnalytics(fundCode, { range, source });
+        setAnalytics(res?.data ?? null);
+      } catch (e: any) {
+        const msg = e?.response?.data?.error || e?.response?.data?.detail || "加载专业指标失败";
+        setAnalytics(null);
+        setAnalyticsError(String(msg));
+      } finally {
+        setAnalyticsLoading(false);
+      }
+    };
+
+    void load();
+  }, [fundCode, source, timeRange, navHistory.length]);
+
+  useEffect(() => {
+    if (!fundCode) return;
     const latestFromHistory = navHistory.length ? navHistory[navHistory.length - 1]?.unit_nav : null;
     const latestNav = latestFromHistory ?? fund?.latest_nav ?? fund?.yesterday_nav ?? null;
     void loadPositionsAndOperations(latestNav);
@@ -286,6 +318,17 @@ export default function FundDetailPage() {
   const latestRow = navHistory.length ? navHistory[navHistory.length - 1] : null;
   const latestNav = latestRow?.unit_nav ?? fund.latest_nav ?? fund.yesterday_nav;
   const latestNavDate = latestRow?.nav_date ?? fund.latest_nav_date ?? fund.yesterday_nav_date;
+
+  const toNumber = (v: any): number | null => {
+    if (v === null || v === undefined || v === "") return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const sharpe = toNumber(analytics?.metrics?.sharpe);
+  const annVol = toNumber(analytics?.metrics?.ann_vol);
+  const maxDrawdown = toNumber(analytics?.metrics?.max_drawdown);
+  const rfRate = toNumber(analytics?.rf?.rate_percent);
 
   return (
     <AuthedLayout title={title}>
@@ -339,6 +382,59 @@ export default function FundDetailPage() {
                 Number(estimate?.estimate_growth ?? estimate?.estimate_growth_rate) >= 0 ? "+" : ""
               }
             />
+          </div>
+        </Card>
+
+        <Card
+          title="专业指标（风险调整）"
+          loading={analyticsLoading}
+          extra={
+            <Space wrap>
+              <Tag color="geekblue">窗口：{String(timeRangeToTradingDaysRange(timeRange))}</Tag>
+              <Tag color="default">自然日：7 / 30 / 180 / 365+</Tag>
+              <Tag color="default">交易日：5T / 20T / 60T / 120T / 252T</Tag>
+            </Space>
+          }
+        >
+          {analyticsError ? (
+            <Result status="warning" title="专业指标暂不可用" subTitle={analyticsError} />
+          ) : (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                gap: 16,
+              }}
+            >
+              <Statistic title="Sharpe" value={sharpe ?? "-"} precision={typeof sharpe === "number" ? 2 : 0} />
+              <Statistic
+                title="年化波动"
+                value={typeof annVol === "number" ? annVol * 100 : "-"}
+                precision={typeof annVol === "number" ? 2 : 0}
+                suffix={typeof annVol === "number" ? "%" : ""}
+              />
+              <Statistic
+                title="最大回撤"
+                value={typeof maxDrawdown === "number" ? maxDrawdown * 100 : "-"}
+                precision={typeof maxDrawdown === "number" ? 2 : 0}
+                suffix={typeof maxDrawdown === "number" ? "%" : ""}
+                valueStyle={{
+                  color: typeof maxDrawdown === "number" && maxDrawdown < 0 ? "#cf1322" : undefined,
+                }}
+              />
+              <Statistic
+                title="3M 国债利率（rf）"
+                value={typeof rfRate === "number" ? rfRate : "-"}
+                precision={typeof rfRate === "number" ? 4 : 0}
+                suffix={typeof rfRate === "number" ? "%" : ""}
+              />
+            </div>
+          )}
+
+          <div style={{ marginTop: 12 }}>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              说明：Sharpe 使用 3M 国债利率作为无风险利率（rf），指标随净值数据与数据源变化；不构成投资建议。
+            </Text>
           </div>
         </Card>
 

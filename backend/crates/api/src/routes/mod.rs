@@ -10,6 +10,7 @@ pub mod funds;
 pub mod health;
 pub mod nav_history;
 pub mod positions;
+pub mod rates;
 pub mod settings;
 pub mod sniffer;
 pub mod sources;
@@ -154,6 +155,7 @@ pub fn router(state: AppState) -> Router<AppState> {
             "/api/nav-history/sync",
             axum::routing::post(nav_history::sync),
         )
+        .route("/api/rates/risk-free", axum::routing::get(rates::risk_free))
         .route("/api/sniffer/status", axum::routing::get(sniffer::status))
         .route("/api/sniffer/items", axum::routing::get(sniffer::items))
         .route(

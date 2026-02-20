@@ -5,12 +5,10 @@ use axum::{
     Json,
 };
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::time::Instant;
 use tokio::{sync::Semaphore, task::JoinSet};
-use uuid::Uuid;
 
 use crate::eastmoney;
 use crate::accuracy;
@@ -262,9 +260,9 @@ pub async fn accuracy(
     let days = q.days.unwrap_or(100).max(0);
     let limit = days;
 
-    let rows: Vec<(Decimal,)> = match sqlx::query_as(
+    let rows: Vec<(f64,)> = match sqlx::query_as(
         r#"
-        SELECT error_rate
+        SELECT CAST(error_rate AS REAL) as error_rate
         FROM estimate_accuracy
         WHERE source_name = $1 AND error_rate IS NOT NULL
         ORDER BY estimate_date DESC
@@ -294,16 +292,16 @@ pub async fn accuracy(
         );
     }
 
-    let mut total = Decimal::ZERO;
+    let mut total: f64 = 0.0;
     for (error_rate,) in rows {
         total += error_rate;
     }
-    let avg = total / Decimal::from(record_count);
+    let avg = total / (record_count as f64);
 
     // 对齐 golden：这里以 number 返回。
     (
         StatusCode::OK,
-        Json(json!({ "avg_error_rate": avg.to_f64().unwrap_or(0.0), "record_count": record_count })),
+        Json(json!({ "avg_error_rate": avg, "record_count": record_count })),
     )
 }
 
@@ -389,14 +387,19 @@ pub async fn calculate_accuracy(
 
     let rows = match sqlx::query(
         r#"
-        SELECT ea.id, ea.fund_id, ea.estimate_nav, f.fund_code
+        SELECT
+          CAST(ea.id AS TEXT) as id,
+          CAST(ea.estimate_nav AS TEXT) as estimate_nav,
+          f.fund_code
         FROM estimate_accuracy ea
         JOIN fund f ON f.id = ea.fund_id
-        WHERE ea.source_name = $1 AND ea.estimate_date = $2 AND ea.actual_nav IS NULL
+        WHERE ea.source_name = $1
+          AND ea.estimate_date = CAST($2 AS DATE)
+          AND ea.actual_nav IS NULL
         "#,
     )
     .bind(source)
-    .bind(target_date)
+    .bind(target_date.to_string())
     .fetch_all(pool)
     .await
     {
@@ -440,17 +443,22 @@ pub async fn calculate_accuracy(
 
     #[derive(Clone)]
     struct WorkItem {
-        id: Uuid,
+        id: String,
         fund_code: String,
         estimate_nav: Decimal,
     }
 
     let mut items = Vec::with_capacity(rows.len());
     for row in rows {
+        let estimate_nav_raw: String = row.get("estimate_nav");
+        let estimate_nav = match estimate_nav_raw.parse::<Decimal>() {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
         items.push(WorkItem {
             id: row.get("id"),
             fund_code: row.get("fund_code"),
-            estimate_nav: row.get("estimate_nav"),
+            estimate_nav,
         });
     }
 
@@ -512,14 +520,14 @@ pub async fn calculate_accuracy(
             sqlx::query(
                 r#"
                 UPDATE estimate_accuracy
-                SET actual_nav = $2,
-                    error_rate = $3
-                WHERE id = $1
+                SET actual_nav = CAST($2 AS NUMERIC),
+                    error_rate = CAST($3 AS NUMERIC)
+                WHERE CAST(id AS TEXT) = $1
                 "#,
             )
             .bind(item.id)
-            .bind(actual_nav)
-            .bind(error_rate)
+            .bind(actual_nav.to_string())
+            .bind(error_rate.to_string())
             .execute(&pool)
             .await
             .map_err(|e| e.to_string())?;

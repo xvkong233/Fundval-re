@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product
+    Id="*"
+    Name="Fundval"
+    Language="1033"
+    Version="$(var.ProductVersion)"
+    Manufacturer="Fundval"
+    UpgradeCode="97C7AA4E-CBFF-4F8D-81C7-C4D6DD14B7D8"
+  >
+    <Package InstallerVersion="500" Compressed="yes" InstallScope="perUser" Platform="x64" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Fundval is already installed." />
+    <MediaTemplate />
+
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+    <UIRef Id="WixUI_InstallDir" />
+
+    <Feature Id="ProductFeature" Title="Fundval" Level="1">
+      <ComponentGroupRef Id="FundvalComponents" />
+    </Feature>
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="LocalAppDataFolder">
+        <Directory Id="INSTALLFOLDER" Name="Fundval" />
+      </Directory>
+    </Directory>
+  </Product>
+</Wix>
+

@@ -1,6 +1,6 @@
 use axum::{extract::Query, http::StatusCode, response::IntoResponse, Json};
 use chrono::{DateTime, Datelike, Duration, NaiveDate, SecondsFormat, Utc};
-use rust_decimal::{prelude::ToPrimitive, Decimal};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::Row;
@@ -15,7 +15,7 @@ use crate::sources;
 use crate::state::AppState;
 
 async fn upsert_basic_fund(
-    pool: &sqlx::PgPool,
+    pool: &sqlx::AnyPool,
     fund_code: &str,
     fund_name: &str,
     fund_type: Option<&str>,
@@ -29,14 +29,14 @@ async fn upsert_basic_fund(
     sqlx::query(
         r#"
         INSERT INTO fund (id, fund_code, fund_name, fund_type, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, NOW(), NOW())
+        VALUES (CAST($1 AS uuid), $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         ON CONFLICT (fund_code) DO UPDATE
           SET fund_name = EXCLUDED.fund_name,
               fund_type = COALESCE(EXCLUDED.fund_type, fund.fund_type),
-              updated_at = NOW()
+              updated_at = CURRENT_TIMESTAMP
         "#,
     )
-    .bind(Uuid::new_v4())
+    .bind(Uuid::new_v4().to_string())
     .bind(code)
     .bind(name)
     .bind(fund_type)
@@ -48,7 +48,7 @@ async fn upsert_basic_fund(
 }
 
 async fn ensure_fund_exists(
-    pool: &sqlx::PgPool,
+    pool: &sqlx::AnyPool,
     client: &reqwest::Client,
     fund_code: &str,
 ) -> Result<bool, String> {
@@ -139,7 +139,7 @@ pub async fn list(
         let t = s.trim();
         if t.is_empty() { None } else { Some(t.to_string()) }
     }) {
-        where_sql.push_str(" WHERE (fund_code ILIKE $1 OR fund_name ILIKE $1)");
+        where_sql.push_str(" WHERE (LOWER(fund_code) LIKE LOWER($1) OR LOWER(fund_name) LIKE LOWER($1))");
         binds.push(format!("%{search}%"));
     }
 
@@ -157,7 +157,7 @@ pub async fn list(
     }
 
     // count
-    let count_sql = format!("SELECT COUNT(*)::bigint as cnt FROM fund{where_sql}");
+    let count_sql = format!("SELECT COUNT(*) as cnt FROM fund{where_sql}");
     let mut count_q = sqlx::query(&count_sql);
     for b in &binds {
         count_q = count_q.bind(b);
@@ -178,14 +178,14 @@ pub async fn list(
     let list_sql = format!(
         r#"
         SELECT
-          id::text as id,
+          CAST(id AS TEXT) as id,
           fund_code,
           fund_name,
           fund_type,
-          latest_nav::text as latest_nav,
-          latest_nav_date::text as latest_nav_date,
-          created_at,
-          updated_at
+          CAST(latest_nav AS TEXT) as latest_nav,
+          CAST(latest_nav_date AS TEXT) as latest_nav_date,
+          CAST(created_at AS TEXT) as created_at,
+          CAST(updated_at AS TEXT) as updated_at
         FROM fund
         {where_sql}
         ORDER BY fund_code ASC
@@ -274,25 +274,35 @@ pub async fn list(
         let codes: Vec<String> = slice.iter().map(|it| it.fund_code.trim().to_string()).collect();
         let mut by_code: std::collections::HashMap<String, FundItem> = std::collections::HashMap::new();
         if !codes.is_empty() {
-            if let Ok(db_rows) = sqlx::query(
+            let mut sql = String::from(
                 r#"
                 SELECT
-                  id::text as id,
+                  CAST(id AS TEXT) as id,
                   fund_code,
                   fund_name,
                   fund_type,
-                  latest_nav::text as latest_nav,
-                  latest_nav_date::text as latest_nav_date,
-                  created_at,
-                  updated_at
+                  CAST(latest_nav AS TEXT) as latest_nav,
+                  CAST(latest_nav_date AS TEXT) as latest_nav_date,
+                  CAST(created_at AS TEXT) as created_at,
+                  CAST(updated_at AS TEXT) as updated_at
                 FROM fund
-                WHERE fund_code = ANY($1)
+                WHERE fund_code IN (
                 "#,
-            )
-            .bind(&codes)
-            .fetch_all(pool)
-            .await
-            {
+            );
+            for (i, _) in codes.iter().enumerate() {
+                if i > 0 {
+                    sql.push_str(", ");
+                }
+                sql.push_str(&format!("${}", i + 1));
+            }
+            sql.push_str(")\n");
+
+            let mut q = sqlx::query(&sql);
+            for code in &codes {
+                q = q.bind(code);
+            }
+
+            if let Ok(db_rows) = q.fetch_all(pool).await {
                 for row in db_rows {
                     let code = row.get::<String, _>("fund_code");
                     by_code.insert(
@@ -304,8 +314,8 @@ pub async fn list(
                             fund_type: row.get::<Option<String>, _>("fund_type"),
                             latest_nav: row.get::<Option<String>, _>("latest_nav"),
                             latest_nav_date: row.get::<Option<String>, _>("latest_nav_date"),
-                            created_at: format_dt(row.get::<DateTime<Utc>, _>("created_at")),
-                            updated_at: format_dt(row.get::<DateTime<Utc>, _>("updated_at")),
+                            created_at: crate::dbfmt::datetime_to_rfc3339(&row.get::<String, _>("created_at")),
+                            updated_at: crate::dbfmt::datetime_to_rfc3339(&row.get::<String, _>("updated_at")),
                         },
                     );
                 }
@@ -331,8 +341,8 @@ pub async fn list(
             fund_type: row.get::<Option<String>, _>("fund_type"),
             latest_nav: row.get::<Option<String>, _>("latest_nav"),
             latest_nav_date: row.get::<Option<String>, _>("latest_nav_date"),
-            created_at: format_dt(row.get::<DateTime<Utc>, _>("created_at")),
-            updated_at: format_dt(row.get::<DateTime<Utc>, _>("updated_at")),
+            created_at: crate::dbfmt::datetime_to_rfc3339(&row.get::<String, _>("created_at")),
+            updated_at: crate::dbfmt::datetime_to_rfc3339(&row.get::<String, _>("updated_at")),
         })
         .collect::<Vec<_>>();
 
@@ -357,14 +367,14 @@ pub async fn retrieve(
     let row = sqlx::query(
         r#"
         SELECT
-          id::text as id,
+          CAST(id AS TEXT) as id,
           fund_code,
           fund_name,
           fund_type,
-          latest_nav::text as latest_nav,
-          latest_nav_date::text as latest_nav_date,
-          created_at,
-          updated_at
+          CAST(latest_nav AS TEXT) as latest_nav,
+          CAST(latest_nav_date AS TEXT) as latest_nav_date,
+          CAST(created_at AS TEXT) as created_at,
+          CAST(updated_at AS TEXT) as updated_at
         FROM fund
         WHERE fund_code = $1
         "#,
@@ -403,14 +413,14 @@ pub async fn retrieve(
             sqlx::query(
                 r#"
                 SELECT
-                  id::text as id,
+                  CAST(id AS TEXT) as id,
                   fund_code,
                   fund_name,
                   fund_type,
-                  latest_nav::text as latest_nav,
-                  latest_nav_date::text as latest_nav_date,
-                  created_at,
-                  updated_at
+                  CAST(latest_nav AS TEXT) as latest_nav,
+                  CAST(latest_nav_date AS TEXT) as latest_nav_date,
+                  CAST(created_at AS TEXT) as created_at,
+                  CAST(updated_at AS TEXT) as updated_at
                 FROM fund
                 WHERE fund_code = $1
                 "#,
@@ -435,8 +445,8 @@ pub async fn retrieve(
         fund_type: row.get::<Option<String>, _>("fund_type"),
         latest_nav: row.get::<Option<String>, _>("latest_nav"),
         latest_nav_date: row.get::<Option<String>, _>("latest_nav_date"),
-        created_at: format_dt(row.get::<DateTime<Utc>, _>("created_at")),
-        updated_at: format_dt(row.get::<DateTime<Utc>, _>("updated_at")),
+        created_at: crate::dbfmt::datetime_to_rfc3339(&row.get::<String, _>("created_at")),
+        updated_at: crate::dbfmt::datetime_to_rfc3339(&row.get::<String, _>("updated_at")),
     };
 
     (StatusCode::OK, Json(item)).into_response()
@@ -458,7 +468,7 @@ pub async fn estimate(
         Some(p) => p,
     };
 
-    let row = sqlx::query("SELECT id, fund_name FROM fund WHERE fund_code = $1")
+    let row = sqlx::query("SELECT CAST(id AS TEXT) as id, fund_name FROM fund WHERE fund_code = $1")
         .bind(&fund_code)
         .fetch_optional(pool)
         .await;
@@ -489,7 +499,7 @@ pub async fn estimate(
                 }
             };
             let _ = ensure_fund_exists(pool, &client, &fund_code).await;
-            sqlx::query("SELECT id, fund_name FROM fund WHERE fund_code = $1")
+            sqlx::query("SELECT CAST(id AS TEXT) as id, fund_name FROM fund WHERE fund_code = $1")
                 .bind(&fund_code)
                 .fetch_optional(pool)
                 .await
@@ -501,7 +511,7 @@ pub async fn estimate(
     let Some(row) = row else {
         return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
     };
-    let fund_id: Uuid = row.get("id");
+    let fund_id: String = row.get("id");
     let fund_name: String = row.get("fund_name");
 
     let source_name_raw = q
@@ -535,8 +545,8 @@ pub async fn estimate(
                 let _ = upsert_estimate_accuracy(
                     pool,
                     sources::SOURCE_TIANTIAN,
-                    fund_id,
-                    estimate_date,
+                    &fund_id,
+                    estimate_date.to_string(),
                     estimate_nav,
                 )
                 .await;
@@ -564,7 +574,7 @@ pub async fn estimate(
             Ok(Some(row)) => {
                 let estimate_date = row.nav_date;
                 let estimate_nav = row.unit_nav;
-                let _ = upsert_estimate_accuracy(pool, sources::SOURCE_DANJUAN, fund_id, estimate_date, estimate_nav).await;
+                let _ = upsert_estimate_accuracy(pool, sources::SOURCE_DANJUAN, &fund_id, estimate_date.to_string(), estimate_nav).await;
 
                 (
                 StatusCode::OK,
@@ -632,7 +642,7 @@ pub async fn estimate(
 
             let estimate_date = latest.nav_date;
             let estimate_nav = latest.unit_nav;
-            let _ = upsert_estimate_accuracy(pool, sources::SOURCE_THS, fund_id, estimate_date, estimate_nav).await;
+            let _ = upsert_estimate_accuracy(pool, sources::SOURCE_THS, &fund_id, estimate_date.to_string(), estimate_nav).await;
 
             (
                 StatusCode::OK,
@@ -670,7 +680,7 @@ pub async fn accuracy(
         Some(p) => p,
     };
 
-    let row = sqlx::query("SELECT id FROM fund WHERE fund_code = $1")
+    let row = sqlx::query("SELECT CAST(id AS TEXT) as id FROM fund WHERE fund_code = $1")
         .bind(&fund_code)
         .fetch_optional(pool)
         .await;
@@ -690,7 +700,7 @@ pub async fn accuracy(
         return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
     }
 
-    let fund_id: Uuid = row.unwrap().get("id");
+    let fund_id: String = row.unwrap().get("id");
     let days: i64 = q
         .get("days")
         .and_then(|v| v.parse::<i64>().ok())
@@ -699,9 +709,12 @@ pub async fn accuracy(
 
     let rows = match sqlx::query(
         r#"
-        SELECT source_name, estimate_date, error_rate
+        SELECT
+          source_name,
+          CAST(estimate_date AS TEXT) as estimate_date,
+          CAST(error_rate AS REAL) as error_rate
         FROM estimate_accuracy
-        WHERE fund_id = $1 AND error_rate IS NOT NULL
+        WHERE CAST(fund_id AS TEXT) = $1 AND error_rate IS NOT NULL
         ORDER BY estimate_date DESC
         LIMIT $2
         "#,
@@ -723,7 +736,7 @@ pub async fn accuracy(
 
     #[derive(Default)]
     struct Accum {
-        total: Decimal,
+        total: f64,
         count: i64,
         records: Vec<serde_json::Value>,
     }
@@ -731,29 +744,29 @@ pub async fn accuracy(
     let mut by_source: std::collections::BTreeMap<String, Accum> = std::collections::BTreeMap::new();
     for row in rows {
         let source_name: String = row.get("source_name");
-        let estimate_date: NaiveDate = row.get("estimate_date");
-        let error_rate: Decimal = row.get("error_rate");
+        let estimate_date: String = row.get("estimate_date");
+        let error_rate: f64 = row.get("error_rate");
 
         let entry = by_source.entry(source_name).or_default();
         entry.total += error_rate;
         entry.count += 1;
         entry.records.push(json!({
-          "date": estimate_date.to_string(),
-          "error_rate": error_rate.to_f64().unwrap_or(0.0)
+          "date": estimate_date,
+          "error_rate": error_rate
         }));
     }
 
     let mut out: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     for (source_name, acc) in by_source {
         let avg = if acc.count > 0 {
-            acc.total / Decimal::from(acc.count)
+            acc.total / (acc.count as f64)
         } else {
-            Decimal::ZERO
+            0.0
         };
         out.insert(
             source_name,
             json!({
-              "avg_error_rate": avg.to_f64().unwrap_or(0.0),
+              "avg_error_rate": avg,
               "record_count": acc.count,
               "records": acc.records
             }),
@@ -805,34 +818,44 @@ pub async fn batch_estimate(
 
     #[derive(Clone)]
     struct FundDbRow {
-        id: Uuid,
+        id: String,
         fund_name: String,
         estimate_nav: Option<String>,
         estimate_growth: Option<String>,
-        estimate_time: Option<DateTime<Utc>>,
+        estimate_time: Option<String>,
         latest_nav: Option<String>,
         latest_nav_date: Option<String>,
     }
 
-    let rows = match sqlx::query(
+    let mut sql = String::from(
         r#"
         SELECT
-          id,
+          CAST(id AS TEXT) as id,
           fund_code,
           fund_name,
-          estimate_nav::text as estimate_nav,
-          estimate_growth::text as estimate_growth,
-          estimate_time,
-          latest_nav::text as latest_nav,
-          latest_nav_date::text as latest_nav_date
+          CAST(estimate_nav AS TEXT) as estimate_nav,
+          CAST(estimate_growth AS TEXT) as estimate_growth,
+          CAST(estimate_time AS TEXT) as estimate_time,
+          CAST(latest_nav AS TEXT) as latest_nav,
+          CAST(latest_nav_date AS TEXT) as latest_nav_date
         FROM fund
-        WHERE fund_code = ANY($1::text[])
+        WHERE fund_code IN (
         "#,
-    )
-    .bind(&fund_codes)
-    .fetch_all(pool)
-    .await
-    {
+    );
+    for (i, _) in fund_codes.iter().enumerate() {
+        if i > 0 {
+            sql.push_str(", ");
+        }
+        sql.push_str(&format!("${}", i + 1));
+    }
+    sql.push_str(")\n");
+
+    let mut q = sqlx::query(&sql);
+    for code in &fund_codes {
+        q = q.bind(code);
+    }
+
+    let rows = match q.fetch_all(pool).await {
         Ok(v) => v,
         Err(e) => {
             return (
@@ -874,7 +897,7 @@ pub async fn batch_estimate(
         };
 
         let cache_valid = cache_enabled
-            && match (&row.estimate_nav, row.estimate_time) {
+            && match (&row.estimate_nav, row.estimate_time.as_deref().and_then(crate::dbfmt::parse_datetime_utc)) {
                 (Some(_), Some(ts)) => now - ts < ttl,
                 _ => false,
             };
@@ -887,7 +910,7 @@ pub async fn batch_estimate(
                   "fund_name": row.fund_name,
                   "estimate_nav": row.estimate_nav,
                   "estimate_growth": row.estimate_growth,
-                  "estimate_time": row.estimate_time.map(format_dt),
+                  "estimate_time": row.estimate_time.as_deref().map(crate::dbfmt::datetime_to_rfc3339),
                   "latest_nav": row.latest_nav,
                   "latest_nav_date": row.latest_nav_date,
                   "from_cache": true
@@ -927,25 +950,25 @@ pub async fn batch_estimate(
                             let _ = sqlx::query(
                                 r#"
                                 UPDATE fund
-                                SET estimate_nav = $2,
-                                    estimate_growth = $3,
-                                    estimate_time = $4,
-                                    updated_at = NOW()
-                                WHERE id = $1
+                                SET estimate_nav = CAST($2 AS NUMERIC),
+                                    estimate_growth = CAST($3 AS NUMERIC),
+                                    estimate_time = CAST($4 AS TIMESTAMPTZ),
+                                    updated_at = CURRENT_TIMESTAMP
+                            WHERE CAST(id AS TEXT) = $1
                                 "#,
                             )
-                            .bind(row.id)
-                            .bind(data.estimate_nav)
-                            .bind(data.estimate_growth)
-                            .bind(now)
+                            .bind(&row.id)
+                            .bind(data.estimate_nav.to_string())
+                            .bind(data.estimate_growth.to_string())
+                            .bind(format_dt(now))
                             .execute(&pool)
                             .await;
 
                             let _ = upsert_estimate_accuracy(
                                 &pool,
                                 sources::SOURCE_TIANTIAN,
-                                row.id,
-                                data.estimate_time.date(),
+                                &row.id,
+                                data.estimate_time.date().to_string(),
                                 data.estimate_nav,
                             )
                             .await;
@@ -984,8 +1007,8 @@ pub async fn batch_estimate(
                             let _ = upsert_estimate_accuracy(
                                 &pool,
                                 sources::SOURCE_DANJUAN,
-                                row.id,
-                                latest.nav_date,
+                                &row.id,
+                                latest.nav_date.to_string(),
                                 latest.unit_nav,
                             )
                             .await;
@@ -1077,8 +1100,8 @@ pub async fn batch_estimate(
                         let _ = upsert_estimate_accuracy(
                             &pool,
                             sources::SOURCE_THS,
-                            row.id,
-                            latest.nav_date,
+                            &row.id,
+                            latest.nav_date.to_string(),
                             latest.unit_nav,
                         )
                         .await;
@@ -1157,11 +1180,20 @@ pub async fn batch_update_nav(
             .into_response();
     };
 
-    let rows = match sqlx::query("SELECT fund_code FROM fund WHERE fund_code = ANY($1::text[])")
-        .bind(&fund_codes)
-        .fetch_all(pool)
-        .await
-    {
+    let mut sql = String::from("SELECT fund_code FROM fund WHERE fund_code IN (");
+    for (i, _) in fund_codes.iter().enumerate() {
+        if i > 0 {
+            sql.push_str(", ");
+        }
+        sql.push_str(&format!("${}", i + 1));
+    }
+    sql.push_str(")");
+    let mut q = sqlx::query(&sql);
+    for code in &fund_codes {
+        q = q.bind(code);
+    }
+
+    let rows = match q.fetch_all(pool).await {
         Ok(v) => v,
         Err(e) => {
             return (
@@ -1230,15 +1262,15 @@ pub async fn batch_update_nav(
                     let _ = sqlx::query(
                         r#"
                         UPDATE fund
-                        SET latest_nav = $2,
-                            latest_nav_date = $3,
-                            updated_at = NOW()
+                        SET latest_nav = CAST($2 AS NUMERIC),
+                            latest_nav_date = CAST($3 AS DATE),
+                            updated_at = CURRENT_TIMESTAMP
                         WHERE fund_code = $1
                         "#,
                     )
                     .bind(&code)
-                    .bind(data.nav)
-                    .bind(data.nav_date)
+                    .bind(data.nav.to_string())
+                    .bind(data.nav_date.to_string())
                     .execute(&pool)
                     .await;
 
@@ -1326,10 +1358,10 @@ pub async fn query_nav(
     let row = sqlx::query(
         r#"
         SELECT
-          id,
+          CAST(id AS TEXT) as id,
           fund_name,
-          latest_nav::text as latest_nav,
-          latest_nav_date::text as latest_nav_date
+          CAST(latest_nav AS TEXT) as latest_nav,
+          CAST(latest_nav_date AS TEXT) as latest_nav_date
         FROM fund
         WHERE fund_code = $1
         "#,
@@ -1354,7 +1386,7 @@ pub async fn query_nav(
     }
 
     let row = row.unwrap();
-    let fund_id: Uuid = row.get("id");
+    let fund_id: String = row.get("id");
     let fund_name: String = row.get("fund_name");
     let latest_nav: Option<String> = row.get("latest_nav");
     let latest_nav_date: Option<String> = row.get("latest_nav_date");
@@ -1383,13 +1415,15 @@ pub async fn query_nav(
         r#"
         SELECT unit_nav::text as unit_nav, nav_date::text as nav_date
         FROM fund_nav_history
-        WHERE source_name = $1 AND fund_id = $2 AND nav_date = $3
+        WHERE source_name = $1
+          AND CAST(fund_id AS TEXT) = $2
+          AND nav_date = CAST($3 AS DATE)
         LIMIT 1
         "#,
     )
     .bind(source_name)
-    .bind(fund_id)
-    .bind(query_date)
+    .bind(&fund_id)
+    .bind(query_date.to_string())
     .fetch_optional(pool)
     .await;
 
@@ -1422,7 +1456,7 @@ pub async fn query_nav(
     let _ = sync_nav_history_for_date(
         pool,
         source_name,
-        fund_id,
+        &fund_id,
         body.fund_code.trim(),
         query_date,
         &tushare_token,
@@ -1432,13 +1466,15 @@ pub async fn query_nav(
         r#"
         SELECT unit_nav::text as unit_nav, nav_date::text as nav_date
         FROM fund_nav_history
-        WHERE source_name = $1 AND fund_id = $2 AND nav_date = $3
+        WHERE source_name = $1
+          AND CAST(fund_id AS TEXT) = $2
+          AND nav_date = CAST($3 AS DATE)
         LIMIT 1
         "#,
     )
     .bind(source_name)
-    .bind(fund_id)
-    .bind(query_date)
+    .bind(&fund_id)
+    .bind(query_date.to_string())
     .fetch_optional(pool)
     .await;
 
@@ -1558,35 +1594,43 @@ pub async fn sync(
     let mut updated: i64 = 0;
 
     for f in &funds {
-        let inserted: bool = match sqlx::query(
-            r#"
-            INSERT INTO fund (id, fund_code, fund_name, fund_type, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, NOW(), NOW())
-            ON CONFLICT (fund_code) DO UPDATE
-              SET fund_name = EXCLUDED.fund_name,
-                  fund_type = EXCLUDED.fund_type,
-                  updated_at = NOW()
-            RETURNING (xmax = 0) as inserted
-            "#,
-        )
-        .bind(Uuid::new_v4())
-        .bind(&f.fund_code)
-        .bind(&f.fund_name)
-        .bind(&f.fund_type)
-        .fetch_one(pool)
-        .await
+        let existed = match sqlx::query("SELECT 1 FROM fund WHERE fund_code = $1")
+            .bind(&f.fund_code)
+            .fetch_optional(pool)
+            .await
         {
-            Ok(row) => row.get::<bool, _>("inserted"),
+            Ok(v) => v.is_some(),
             Err(e) => {
-                tracing::error!(error = %e, "funds.sync upsert failed");
+                tracing::error!(error = %e, "funds.sync exists check failed");
                 continue;
             }
         };
 
-        if inserted {
-            created += 1;
-        } else {
+        if let Err(e) = sqlx::query(
+            r#"
+            INSERT INTO fund (id, fund_code, fund_name, fund_type, created_at, updated_at)
+            VALUES (CAST($1 AS uuid), $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT (fund_code) DO UPDATE
+              SET fund_name = EXCLUDED.fund_name,
+                  fund_type = EXCLUDED.fund_type,
+                  updated_at = CURRENT_TIMESTAMP
+            "#,
+        )
+        .bind(Uuid::new_v4().to_string())
+        .bind(&f.fund_code)
+        .bind(&f.fund_name)
+        .bind(&f.fund_type)
+        .execute(pool)
+        .await
+        {
+            tracing::error!(error = %e, "funds.sync upsert failed");
+            continue;
+        }
+
+        if existed {
             updated += 1;
+        } else {
+            created += 1;
         }
     }
 
@@ -1620,9 +1664,9 @@ fn get_last_trading_day(mut d: NaiveDate) -> NaiveDate {
 }
 
 async fn sync_nav_history_for_date(
-    pool: &sqlx::PgPool,
+    pool: &sqlx::AnyPool,
     source_name: &str,
-    fund_id: Uuid,
+    fund_id: &str,
     fund_code: &str,
     nav_date: NaiveDate,
     tushare_token: &str,
@@ -1653,31 +1697,56 @@ async fn sync_nav_history_for_date(
 
     let mut inserted_count: i64 = 0;
     for item in data {
-        let inserted: bool = sqlx::query(
+        let exists = sqlx::query(
             r#"
-            INSERT INTO fund_nav_history (id, source_name, fund_id, nav_date, unit_nav, accumulated_nav, daily_growth, created_at, updated_at)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),NOW())
-            ON CONFLICT (source_name, fund_id, nav_date) DO UPDATE
-            SET unit_nav = EXCLUDED.unit_nav,
-                accumulated_nav = EXCLUDED.accumulated_nav,
-                daily_growth = EXCLUDED.daily_growth,
-                updated_at = NOW()
-            RETURNING (xmax = 0) as inserted
+            SELECT 1
+            FROM fund_nav_history
+            WHERE source_name = $1
+              AND CAST(fund_id AS TEXT) = $2
+              AND nav_date = CAST($3 AS DATE)
             "#,
         )
-        .bind(Uuid::new_v4())
         .bind(source_name)
         .bind(fund_id)
-        .bind(item.nav_date)
-        .bind(item.unit_nav)
-        .bind(item.accumulated_nav)
-        .bind(item.daily_growth)
-        .fetch_one(pool)
+        .bind(item.nav_date.to_string())
+        .fetch_optional(pool)
         .await
         .map_err(|e| e.to_string())?
-        .get::<bool, _>("inserted");
+        .is_some();
 
-        if inserted {
+        sqlx::query(
+            r#"
+            INSERT INTO fund_nav_history (id, source_name, fund_id, nav_date, unit_nav, accumulated_nav, daily_growth, created_at, updated_at)
+            VALUES (
+              CAST($1 AS uuid),
+              $2,
+              CAST($3 AS uuid),
+              CAST($4 AS DATE),
+              CAST($5 AS NUMERIC),
+              CAST($6 AS NUMERIC),
+              CAST($7 AS NUMERIC),
+              CURRENT_TIMESTAMP,
+              CURRENT_TIMESTAMP
+            )
+            ON CONFLICT (source_name, fund_id, nav_date) DO UPDATE
+              SET unit_nav = CAST(EXCLUDED.unit_nav AS NUMERIC),
+                  accumulated_nav = CAST(EXCLUDED.accumulated_nav AS NUMERIC),
+                  daily_growth = CAST(EXCLUDED.daily_growth AS NUMERIC),
+                  updated_at = CURRENT_TIMESTAMP
+            "#,
+        )
+        .bind(Uuid::new_v4().to_string())
+        .bind(source_name)
+        .bind(fund_id)
+        .bind(item.nav_date.to_string())
+        .bind(item.unit_nav.to_string())
+        .bind(item.accumulated_nav.map(|v| v.to_string()))
+        .bind(item.daily_growth.map(|v| v.to_string()))
+        .execute(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        if !exists {
             inserted_count += 1;
         }
     }
@@ -1690,25 +1759,25 @@ fn format_dt(dt: DateTime<Utc>) -> String {
 }
 
 async fn upsert_estimate_accuracy(
-    pool: &sqlx::PgPool,
+    pool: &sqlx::AnyPool,
     source_name: &str,
-    fund_id: Uuid,
-    estimate_date: NaiveDate,
+    fund_id: &str,
+    estimate_date: String,
     estimate_nav: Decimal,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
         INSERT INTO estimate_accuracy (id, source_name, fund_id, estimate_date, estimate_nav, created_at)
-        VALUES ($1,$2,$3,$4,$5,NOW())
+        VALUES (CAST($1 AS uuid), $2, CAST($3 AS uuid), CAST($4 AS DATE), CAST($5 AS NUMERIC), CURRENT_TIMESTAMP)
         ON CONFLICT (source_name, fund_id, estimate_date) DO UPDATE
-          SET estimate_nav = EXCLUDED.estimate_nav
+          SET estimate_nav = CAST(EXCLUDED.estimate_nav AS NUMERIC)
         "#,
     )
-    .bind(Uuid::new_v4())
+    .bind(Uuid::new_v4().to_string())
     .bind(source_name)
     .bind(fund_id)
     .bind(estimate_date)
-    .bind(estimate_nav)
+    .bind(estimate_nav.to_string())
     .execute(pool)
     .await
     .map(|_| ())

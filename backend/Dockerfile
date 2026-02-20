@@ -12,7 +12,7 @@ RUN cargo build -p api --release
 FROM debian:bookworm-slim AS runtime
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl tzdata \
+    && apt-get install -y --no-install-recommends ca-certificates curl tzdata libsqlite3-0 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

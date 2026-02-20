@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::AnyPool;
 
 use crate::config::ConfigStore;
 use crate::jwt::JwtService;
@@ -12,13 +12,13 @@ pub struct AppState {
 }
 
 struct InnerState {
-    pub pool: Option<PgPool>,
+    pub pool: Option<AnyPool>,
     pub config: ConfigStore,
     pub jwt: JwtService,
 }
 
 impl AppState {
-    pub fn new(pool: Option<PgPool>, config: ConfigStore, jwt: JwtService) -> Self {
+    pub fn new(pool: Option<AnyPool>, config: ConfigStore, jwt: JwtService) -> Self {
         Self {
             inner: Arc::new(InnerState {
                 pool,
@@ -28,7 +28,7 @@ impl AppState {
         }
     }
 
-    pub fn pool(&self) -> Option<&PgPool> {
+    pub fn pool(&self) -> Option<&AnyPool> {
         self.inner.pool.as_ref()
     }
     pub fn config(&self) -> &ConfigStore {

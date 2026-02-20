@@ -4,13 +4,15 @@ use api::{app, state::AppState};
 use axum::http::{HeaderValue, Method};
 use axum::http::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE};
 use sqlx::Error as SqlxError;
+use sqlx::any::AnyPoolOptions;
 use sqlx::postgres::PgPoolOptions;
 use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 use sqlx::migrate::Migrator;
 
-static MIGRATOR: Migrator = sqlx::migrate!("../../migrations");
+static MIGRATOR_POSTGRES: Migrator = sqlx::migrate!("../../migrations/postgres");
+static MIGRATOR_SQLITE: Migrator = sqlx::migrate!("../../migrations/sqlite");
 
 fn env_truthy(key: &str) -> bool {
     std::env::var(key)
@@ -180,6 +182,40 @@ async fn ensure_database_exists(database_url: &str) -> Result<(), SqlxError> {
     Ok(())
 }
 
+fn maybe_ensure_sqlite_parent_dir(database_url: &str) {
+    // 兼容：sqlite:data.db / sqlite://data.db / sqlite:///abs/path
+    // 对内存数据库与 query-only URL 直接跳过。
+    let url = database_url.trim();
+    if !url.starts_with("sqlite:") {
+        return;
+    }
+    if url.starts_with("sqlite::memory:") || url.starts_with("sqlite://:memory:") {
+        return;
+    }
+
+    let rest = url
+        .trim_start_matches("sqlite:")
+        .trim_start_matches('/')
+        .split('?')
+        .next()
+        .unwrap_or("")
+        .trim();
+    if rest.is_empty() {
+        return;
+    }
+
+    // 这里不尝试解析 URL 编码；仅用于“目录不存在导致无法创建 sqlite 文件”的常见场景。
+    let path = std::path::PathBuf::from(rest.replace('/', &std::path::MAIN_SEPARATOR.to_string()));
+    let _ = api::db::ensure_parent_dir(&path);
+}
+
+async fn connect_any_pool(database_url: &str) -> Result<sqlx::AnyPool, SqlxError> {
+    AnyPoolOptions::new()
+        .max_connections(5)
+        .connect(database_url)
+        .await
+}
+
 #[tokio::main]
 async fn main() {
     dotenvy::dotenv().ok();
@@ -194,33 +230,37 @@ async fn main() {
         .and_then(|s| s.parse().ok())
         .unwrap_or(8001);
 
-    let database_url = std::env::var("DATABASE_URL").ok();
-    let pool = match database_url.as_deref() {
-        None => None,
-        Some(url) => match PgPoolOptions::new().max_connections(5).connect(url).await {
-            Ok(pool) => Some(pool),
-            Err(e) => {
-                if is_missing_database_error(&e) {
-                    tracing::warn!(error = %e, "database does not exist, trying to create it");
-                    match ensure_database_exists(url).await {
-                        Ok(()) => match PgPoolOptions::new().max_connections(5).connect(url).await {
-                            Ok(pool) => Some(pool),
-                            Err(e2) => {
-                                tracing::warn!(error = %e2, "failed to connect database after creation");
-                                None
-                            }
-                        },
+    sqlx::any::install_default_drivers();
+
+    let (database_url, db_kind) = api::db::resolve_database_url();
+
+    if db_kind == api::db::DatabaseKind::Sqlite {
+        maybe_ensure_sqlite_parent_dir(&database_url);
+    }
+
+    let pool = match connect_any_pool(&database_url).await {
+        Ok(pool) => Some(pool),
+        Err(e) => {
+            if db_kind == api::db::DatabaseKind::Postgres && is_missing_database_error(&e) {
+                tracing::warn!(error = %e, "database does not exist, trying to create it");
+                match ensure_database_exists(&database_url).await {
+                    Ok(()) => match connect_any_pool(&database_url).await {
+                        Ok(pool) => Some(pool),
                         Err(e2) => {
-                            tracing::warn!(error = %e2, "failed to create database");
+                            tracing::warn!(error = %e2, "failed to connect database after creation");
                             None
                         }
+                    },
+                    Err(e2) => {
+                        tracing::warn!(error = %e2, "failed to create database");
+                        None
                     }
-                } else {
-                    tracing::warn!(error = %e, "failed to connect database");
-                    None
                 }
+            } else {
+                tracing::warn!(error = %e, "failed to connect database");
+                None
             }
-        },
+        }
     };
 
     // 初始化配置（文件 + env 覆盖）
@@ -237,10 +277,14 @@ async fn main() {
         }
     }
 
-    if let Some(ref pool) = pool
-        && let Err(e) = MIGRATOR.run(pool).await
-    {
-        tracing::warn!(error=%e, "failed to run migrations");
+    if let Some(ref pool) = pool {
+        let migrator = match db_kind {
+            api::db::DatabaseKind::Postgres => &MIGRATOR_POSTGRES,
+            api::db::DatabaseKind::Sqlite => &MIGRATOR_SQLITE,
+        };
+        if let Err(e) = migrator.run(pool).await {
+            tracing::warn!(error=%e, "failed to run migrations");
+        }
     }
 
     let state = AppState::new(pool, config, jwt);

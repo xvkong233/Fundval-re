@@ -8,6 +8,8 @@ use std::{
 use rand::{distributions::Alphanumeric, Rng};
 use serde_json::Value;
 
+use crate::db;
+
 #[derive(Clone)]
 pub struct ConfigStore {
     path: PathBuf,
@@ -174,7 +176,12 @@ fn default_config() -> BTreeMap<String, Value> {
 }
 
 fn detect_config_path() -> PathBuf {
-    // 与 Python 行为对齐：优先 /app/config/config.json，否则回退到本地 backend 目录下的 config.json
+    // 发行版/本地：如果显式设置了 FUNDVAL_DATA_DIR，则优先使用该目录，避免把 config.json 写到安装目录根部。
+    if let Some(data_dir) = db::explicit_data_dir() {
+        return data_dir.join("config.json");
+    }
+
+    // Docker：与 Python 行为对齐：优先 /app/config/config.json，否则回退到本地 backend 目录下的 config.json
     let preferred = PathBuf::from("/app/config/config.json");
     if preferred.exists() {
         return preferred;
@@ -183,6 +190,10 @@ fn detect_config_path() -> PathBuf {
 }
 
 fn preferred_save_path(fallback: &Path) -> PathBuf {
+    if let Some(data_dir) = db::explicit_data_dir() {
+        return data_dir.join("config.json");
+    }
+
     let preferred_dir = PathBuf::from("/app/config");
     if preferred_dir.exists() {
         return preferred_dir.join("config.json");

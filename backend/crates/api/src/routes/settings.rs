@@ -101,13 +101,10 @@ pub async fn set_tushare_token(
         return resp;
     }
 
-    let token = body
-        .token
-        .map(|s| {
-            let t = s.trim().to_string();
-            if t.is_empty() { None } else { Some(t) }
-        })
-        .flatten();
+    let token = body.token.and_then(|s| {
+        let t = s.trim().to_string();
+        if t.is_empty() { None } else { Some(t) }
+    });
 
     state.config().set_string("tushare_token", token);
     if let Err(e) = state.config().save() {

@@ -87,22 +87,24 @@ pub async fn health(State(state): State<AppState>) -> impl IntoResponse {
         .into_iter()
         .map(|s| s.to_string())
         .collect();
-    if let Some(pool) = state.pool() {
-        if let Ok(rows) = sqlx::query("SELECT DISTINCT source_name FROM estimate_accuracy")
+    let db_rows = match state.pool() {
+        None => None,
+        Some(pool) => sqlx::query("SELECT DISTINCT source_name FROM estimate_accuracy")
             .fetch_all(pool)
             .await
-        {
-            for row in rows {
-                let name = row.get::<String, _>("source_name");
-                let name = name.trim();
-                if name.is_empty() {
-                    continue;
-                }
-                if let Some(canonical) = sources::normalize_source_name(name) {
-                    names.push(canonical.to_string());
-                } else {
-                    names.push(name.to_string());
-                }
+            .ok(),
+    };
+    if let Some(rows) = db_rows {
+        for row in rows {
+            let name = row.get::<String, _>("source_name");
+            let name = name.trim();
+            if name.is_empty() {
+                continue;
+            }
+            if let Some(canonical) = sources::normalize_source_name(name) {
+                names.push(canonical.to_string());
+            } else {
+                names.push(name.to_string());
             }
         }
     }

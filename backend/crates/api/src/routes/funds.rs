@@ -224,8 +224,10 @@ pub async fn list(
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
 
-    if count == 0 && rows.is_empty() && search_keyword.is_some() {
-        let keyword = search_keyword.unwrap();
+    if count == 0
+        && rows.is_empty()
+        && let Some(keyword) = search_keyword
+    {
         let keyword_lc = keyword.to_lowercase();
 
         let client = match eastmoney::build_client() {
@@ -286,8 +288,10 @@ pub async fn list(
             .collect();
         let mut by_code: std::collections::HashMap<String, FundItem> =
             std::collections::HashMap::new();
-        if !codes.is_empty() {
-            if let Ok(db_rows) = sqlx::query(
+        let db_rows = if codes.is_empty() {
+            Vec::new()
+        } else {
+            sqlx::query(
                 r#"
                 SELECT
                   id::text as id,
@@ -305,24 +309,23 @@ pub async fn list(
             .bind(&codes)
             .fetch_all(pool)
             .await
-            {
-                for row in db_rows {
-                    let code = row.get::<String, _>("fund_code");
-                    by_code.insert(
-                        code.clone(),
-                        FundItem {
-                            id: row.get::<String, _>("id"),
-                            fund_code: code,
-                            fund_name: row.get::<String, _>("fund_name"),
-                            fund_type: row.get::<Option<String>, _>("fund_type"),
-                            latest_nav: row.get::<Option<String>, _>("latest_nav"),
-                            latest_nav_date: row.get::<Option<String>, _>("latest_nav_date"),
-                            created_at: format_dt(row.get::<DateTime<Utc>, _>("created_at")),
-                            updated_at: format_dt(row.get::<DateTime<Utc>, _>("updated_at")),
-                        },
-                    );
-                }
-            }
+            .unwrap_or_default()
+        };
+        for row in db_rows {
+            let code = row.get::<String, _>("fund_code");
+            by_code.insert(
+                code.clone(),
+                FundItem {
+                    id: row.get::<String, _>("id"),
+                    fund_code: code,
+                    fund_name: row.get::<String, _>("fund_name"),
+                    fund_type: row.get::<Option<String>, _>("fund_type"),
+                    latest_nav: row.get::<Option<String>, _>("latest_nav"),
+                    latest_nav_date: row.get::<Option<String>, _>("latest_nav_date"),
+                    created_at: format_dt(row.get::<DateTime<Utc>, _>("created_at")),
+                    updated_at: format_dt(row.get::<DateTime<Utc>, _>("updated_at")),
+                },
+            );
         }
 
         let mut results: Vec<FundItem> = Vec::with_capacity(codes.len());
@@ -1061,7 +1064,6 @@ pub async fn batch_estimate(
             let client = client.clone();
             let sem = sem.clone();
             let pool = pool.clone();
-            let source_name = source_name;
             set.spawn(async move {
                 let _permit = sem.acquire_owned().await.expect("semaphore");
                 match source_name {
@@ -1346,7 +1348,6 @@ pub async fn batch_update_nav(
         let client = client.clone();
         let sem = sem.clone();
         let pool = pool.clone();
-        let source_name = source_name;
         let tushare_token = tushare_token.clone();
         set.spawn(async move {
             let _permit = sem.acquire_owned().await.expect("semaphore");

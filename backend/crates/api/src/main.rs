@@ -235,10 +235,10 @@ async fn main() {
     validate_secret_key(&secret, config.get_bool("debug", false));
     let jwt = api::jwt::JwtService::from_secret(&secret);
 
-    if !config.system_initialized() {
-        if let Some(key) = config.get_or_generate_bootstrap_key() {
-            tracing::info!(bootstrap_key = %key, "BOOTSTRAP KEY");
-        }
+    if !config.system_initialized()
+        && let Some(key) = config.get_or_generate_bootstrap_key()
+    {
+        tracing::info!(bootstrap_key = %key, "BOOTSTRAP KEY");
     }
 
     if let Some(ref pool) = pool

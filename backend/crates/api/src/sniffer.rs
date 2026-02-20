@@ -60,9 +60,10 @@ fn parse_star_count(s: &str) -> Option<i32> {
 }
 
 fn split_tags(s: &str) -> Vec<String> {
+    const TAG_SEPARATORS: &[char] = &['、', ',', '，', ';', '；', '|', '/', ' '];
     let mut out: Vec<String> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
-    for part in s.split(|c| matches!(c, '、' | ',' | '，' | ';' | '；' | '|' | '/' | ' ')) {
+    for part in s.split(TAG_SEPARATORS) {
         let t = part.trim();
         if t.is_empty() {
             continue;
@@ -88,6 +89,19 @@ fn pick_year_growth_header(headers: &[String]) -> Option<String> {
         return Some("今年涨幅".to_string());
     }
     None
+}
+
+#[derive(Clone, Copy)]
+struct CsvIndices {
+    sector_i: usize,
+    name_i: usize,
+    code_i: usize,
+    week_i: Option<usize>,
+    year_i: Option<usize>,
+    drawdown_i: Option<usize>,
+    size_i: Option<usize>,
+    star_i: Option<usize>,
+    tags_i: Option<usize>,
 }
 
 pub fn parse_deepq_csv(text: &str) -> Result<Vec<SnifferRow>, String> {
@@ -127,18 +141,27 @@ pub fn parse_deepq_csv(text: &str) -> Result<Vec<SnifferRow>, String> {
     let star_i = get_idx("评分星级");
     let tags_i = get_idx("特色标签");
 
+    let indices = CsvIndices {
+        sector_i,
+        name_i,
+        code_i,
+        week_i,
+        year_i,
+        drawdown_i,
+        size_i,
+        star_i,
+        tags_i,
+    };
+
     let mut rows: Vec<SnifferRow> = Vec::new();
     let mut seen_codes: HashSet<String> = HashSet::new();
 
     for rec in rdr.records() {
         let rec = rec.map_err(|e| format!("csv 读取记录失败: {e}"))?;
-        let row = parse_record(
-            &rec, sector_i, name_i, code_i, week_i, year_i, drawdown_i, size_i, star_i, tags_i,
-        );
-        if let Some(row) = row {
-            if seen_codes.insert(row.fund_code.clone()) {
-                rows.push(row);
-            }
+        if let Some(row) = parse_record(&rec, &indices)
+            && seen_codes.insert(row.fund_code.clone())
+        {
+            rows.push(row);
         }
     }
 
@@ -161,33 +184,30 @@ fn get_field(rec: &StringRecord, idx: usize) -> &str {
     rec.get(idx).unwrap_or("")
 }
 
-fn parse_record(
-    rec: &StringRecord,
-    sector_i: usize,
-    name_i: usize,
-    code_i: usize,
-    week_i: Option<usize>,
-    year_i: Option<usize>,
-    drawdown_i: Option<usize>,
-    size_i: Option<usize>,
-    star_i: Option<usize>,
-    tags_i: Option<usize>,
-) -> Option<SnifferRow> {
-    let sector = get_field(rec, sector_i).trim();
-    let fund_name = get_field(rec, name_i).trim();
-    let fund_code = get_field(rec, code_i).trim();
+fn parse_record(rec: &StringRecord, idx: &CsvIndices) -> Option<SnifferRow> {
+    let sector = get_field(rec, idx.sector_i).trim();
+    let fund_name = get_field(rec, idx.name_i).trim();
+    let fund_code = get_field(rec, idx.code_i).trim();
     if sector.is_empty() || fund_code.is_empty() || fund_name.is_empty() {
         return None;
     }
 
-    let week_growth = week_i.and_then(|i| parse_percent_decimal(get_field(rec, i)));
-    let year_growth = year_i.and_then(|i| parse_percent_decimal(get_field(rec, i)));
-    let max_drawdown = drawdown_i.and_then(|i| parse_percent_decimal(get_field(rec, i)));
-    let fund_size_text = size_i
+    let week_growth = idx
+        .week_i
+        .and_then(|i| parse_percent_decimal(get_field(rec, i)));
+    let year_growth = idx
+        .year_i
+        .and_then(|i| parse_percent_decimal(get_field(rec, i)));
+    let max_drawdown = idx
+        .drawdown_i
+        .and_then(|i| parse_percent_decimal(get_field(rec, i)));
+    let fund_size_text = idx
+        .size_i
         .map(|i| get_field(rec, i).trim().to_string())
         .filter(|s| !s.is_empty());
-    let star_count = star_i.and_then(|i| parse_star_count(get_field(rec, i)));
-    let tags = tags_i
+    let star_count = idx.star_i.and_then(|i| parse_star_count(get_field(rec, i)));
+    let tags = idx
+        .tags_i
         .map(|i| split_tags(get_field(rec, i)))
         .unwrap_or_default();
 

@@ -6,6 +6,7 @@ pub mod django_password;
 pub mod eastmoney;
 pub mod jwt;
 pub mod position_history;
+pub mod rates;
 pub mod routes;
 pub mod sniffer;
 pub mod sources;

@@ -2,6 +2,61 @@ use chrono::{DateTime, Duration, Utc};
 use sqlx::Row;
 use uuid::Uuid;
 
+pub fn daily_counter_key(job_type: &str, source_name: &str, kind: &str) -> String {
+    let day = Utc::now().format("%Y%m%d").to_string();
+    format!("crawl_{job_type}_{source_name}_{kind}_{day}")
+}
+
+pub async fn get_counter(pool: &sqlx::AnyPool, key: &str) -> Result<i64, String> {
+    let row = sqlx::query("SELECT value FROM crawl_state WHERE key = $1")
+        .bind(key)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    let Some(row) = row else {
+        return Ok(0);
+    };
+    let v: String = row.get("value");
+    Ok(v.trim().parse::<i64>().unwrap_or(0))
+}
+
+async fn bump_counter(pool: &sqlx::AnyPool, key: &str, delta: i64) -> Result<(), String> {
+    let delta = delta.to_string();
+
+    let sql_pg = r#"
+        INSERT INTO crawl_state (key, value, updated_at)
+        VALUES ($1, $2, CURRENT_TIMESTAMP)
+        ON CONFLICT (key) DO UPDATE
+          SET value = ((crawl_state.value)::bigint + ($2)::bigint)::text,
+              updated_at = CURRENT_TIMESTAMP
+    "#;
+
+    let sql_any = r#"
+        INSERT INTO crawl_state (key, value, updated_at)
+        VALUES ($1, $2, CURRENT_TIMESTAMP)
+        ON CONFLICT (key) DO UPDATE
+          SET value = (CAST(crawl_state.value as INTEGER) + CAST(excluded.value as INTEGER)),
+              updated_at = CURRENT_TIMESTAMP
+    "#;
+
+    let r = sqlx::query(sql_pg)
+        .bind(key)
+        .bind(&delta)
+        .execute(pool)
+        .await;
+    if r.is_ok() {
+        return Ok(());
+    }
+
+    sqlx::query(sql_any)
+        .bind(key)
+        .bind(&delta)
+        .execute(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 pub async fn enqueue_tick(
     pool: &sqlx::AnyPool,
     max_jobs: i64,
@@ -89,14 +144,21 @@ where
 
         mark_running(pool, &job.id).await?;
 
+        let source = job.source_name.as_deref().unwrap_or("unknown");
+        let _ = bump_counter(pool, &daily_counter_key(&job.job_type, source, "run"), 1).await;
+
         let attempt_now = job.attempt + 1;
         match exec(job.clone()).await {
             Ok(()) => {
                 mark_ok(pool, &job.id, next_at(success_delay_seconds(job.priority))).await?;
+                let _ =
+                    bump_counter(pool, &daily_counter_key(&job.job_type, source, "ok"), 1).await;
             }
             Err(e) => {
                 let backoff = backoff_seconds(attempt_now);
                 mark_error(pool, &job.id, &e, next_at(backoff)).await?;
+                let _ =
+                    bump_counter(pool, &daily_counter_key(&job.job_type, source, "err"), 1).await;
             }
         }
 

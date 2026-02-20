@@ -1,3 +1,4 @@
+use chrono::Utc;
 use sqlx::Row;
 use std::path::PathBuf;
 use uuid::Uuid;
@@ -110,4 +111,60 @@ async fn run_due_jobs_records_error_and_backoff() {
     assert!(last_ok_at.is_none());
     let last_error: Option<String> = row.get("last_error");
     assert_eq!(last_error.unwrap_or_default(), "boom");
+}
+
+#[tokio::test]
+async fn run_due_jobs_updates_daily_counters() {
+    let (pool, _db) = new_pool().await;
+
+    sqlx::query(
+        r#"
+        INSERT INTO crawl_job (
+          id, job_type, fund_code, source_name, priority, not_before, status, attempt, created_at, updated_at
+        ) VALUES
+          ('job-ok', 'nav_history_sync', 'A', 'tiantian', 1, DATETIME(CURRENT_TIMESTAMP, '-1 day'), 'queued', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+          ('job-err', 'nav_history_sync', 'B', 'tiantian', 1, DATETIME(CURRENT_TIMESTAMP, '-1 day'), 'queued', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        "#,
+    )
+    .execute(&pool)
+    .await
+    .expect("seed jobs");
+
+    let _ = api::crawl::scheduler::run_due_jobs(&pool, 10, |job| async move {
+        if job.id == "job-err" {
+            return Err("boom".to_string());
+        }
+        Ok(())
+    })
+    .await
+    .expect("run");
+
+    let day = Utc::now().format("%Y%m%d").to_string();
+    let key_run = format!("crawl_nav_history_sync_tiantian_run_{day}");
+    let key_ok = format!("crawl_nav_history_sync_tiantian_ok_{day}");
+    let key_err = format!("crawl_nav_history_sync_tiantian_err_{day}");
+
+    let run_row = sqlx::query("SELECT value FROM crawl_state WHERE key = $1")
+        .bind(&key_run)
+        .fetch_one(&pool)
+        .await
+        .expect("run counter");
+    let ok_row = sqlx::query("SELECT value FROM crawl_state WHERE key = $1")
+        .bind(&key_ok)
+        .fetch_one(&pool)
+        .await
+        .expect("ok counter");
+    let err_row = sqlx::query("SELECT value FROM crawl_state WHERE key = $1")
+        .bind(&key_err)
+        .fetch_one(&pool)
+        .await
+        .expect("err counter");
+
+    let run_v: String = run_row.get("value");
+    let ok_v: String = ok_row.get("value");
+    let err_v: String = err_row.get("value");
+
+    assert_eq!(run_v.trim(), "2");
+    assert_eq!(ok_v.trim(), "1");
+    assert_eq!(err_v.trim(), "1");
 }

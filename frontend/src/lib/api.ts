@@ -35,6 +35,22 @@ export const getTushareTokenStatus = () => api.get("/settings/tushare_token/");
 
 export const setTushareToken = (token: string | null) => api.put("/settings/tushare_token/", { token });
 
+export type CrawlConfig = {
+  crawl_enabled: boolean;
+  crawl_source: string;
+  crawl_tick_interval_seconds: number;
+  crawl_enqueue_max_jobs: number;
+  crawl_daily_run_limit: number;
+  crawl_run_max_jobs: number;
+  crawl_per_job_delay_ms: number;
+  crawl_per_job_jitter_ms: number;
+  crawl_source_fallbacks: string;
+};
+
+export const getCrawlConfig = () => api.get("/admin/crawl/config/");
+
+export const setCrawlConfig = (payload: Partial<CrawlConfig>) => api.put("/admin/crawl/config/", payload);
+
 // sniffer
 export const getSnifferStatus = () => api.get("/sniffer/status/");
 

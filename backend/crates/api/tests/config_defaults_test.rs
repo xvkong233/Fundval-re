@@ -13,6 +13,12 @@ fn default_crawl_config_is_present() {
     assert_eq!(cfg.get_string("crawl_source").as_deref(), Some("tiantian"));
     assert_eq!(cfg.get_i64("crawl_tick_interval_seconds", 0), 30);
     assert_eq!(cfg.get_i64("crawl_enqueue_max_jobs", 0), 200);
+    assert_eq!(cfg.get_i64("crawl_daily_run_limit", 0), 3000);
     assert_eq!(cfg.get_i64("crawl_run_max_jobs", 0), 20);
     assert_eq!(cfg.get_i64("crawl_per_job_delay_ms", 0), 250);
+    assert_eq!(cfg.get_i64("crawl_per_job_jitter_ms", 0), 200);
+    assert_eq!(
+        cfg.get_string("crawl_source_fallbacks").as_deref(),
+        Some("danjuan,ths")
+    );
 }

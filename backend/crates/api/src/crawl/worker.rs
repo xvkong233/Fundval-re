@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::crawl::scheduler::{self, CrawlJob};
@@ -6,11 +7,31 @@ use crate::routes::nav_history;
 use crate::sources;
 use crate::state::AppState;
 
+fn parse_source_list(raw: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for p in raw.split(',') {
+        let s = p.trim();
+        if s.is_empty() {
+            continue;
+        }
+        let Some(n) = sources::normalize_source_name(s) else {
+            continue;
+        };
+        let n = n.to_string();
+        if !out.contains(&n) {
+            out.push(n);
+        }
+    }
+    out
+}
+
 pub async fn run_due_jobs_with_nav_sync(
     pool: &sqlx::AnyPool,
     config: &crate::config::ConfigStore,
     max_run: i64,
     per_job_delay_ms: u64,
+    per_job_jitter_ms: u64,
+    source_fallbacks: Arc<Vec<String>>,
 ) -> Result<i64, String> {
     let client = eastmoney::build_client()?;
     let tushare_token = config.get_string("tushare_token").unwrap_or_default();
@@ -18,7 +39,19 @@ pub async fn run_due_jobs_with_nav_sync(
     scheduler::run_due_jobs(pool, max_run, |job| {
         let client = client.clone();
         let tushare_token = tushare_token.clone();
-        async move { exec_one(pool, &client, &tushare_token, per_job_delay_ms, job).await }
+        let source_fallbacks = source_fallbacks.clone();
+        async move {
+            exec_one(
+                pool,
+                &client,
+                &tushare_token,
+                per_job_delay_ms,
+                per_job_jitter_ms,
+                &source_fallbacks,
+                job,
+            )
+            .await
+        }
     })
     .await
 }
@@ -60,16 +93,55 @@ pub async fn background_task(state: AppState) {
             tracing::warn!(error = %e, "crawl enqueue_tick failed");
         }
 
-        let run_max = state
+        let mut run_max = state
             .config()
             .get_i64("crawl_run_max_jobs", 20)
             .clamp(0, 5000);
+
+        let daily_limit = state
+            .config()
+            .get_i64("crawl_daily_run_limit", 3000)
+            .clamp(0, 1_000_000);
+        if daily_limit > 0 && run_max > 0 {
+            let key = scheduler::daily_counter_key("nav_history_sync", source_name, "run");
+            if let Ok(used) = scheduler::get_counter(&pool, &key).await {
+                let remaining = (daily_limit - used).max(0);
+                if remaining <= 0 {
+                    continue;
+                }
+                run_max = run_max.min(remaining);
+            }
+        }
+        if run_max <= 0 {
+            continue;
+        }
+
         let per_job_delay_ms = state
             .config()
             .get_i64("crawl_per_job_delay_ms", 250)
             .clamp(0, 60_000) as u64;
-        if let Err(e) =
-            run_due_jobs_with_nav_sync(&pool, state.config(), run_max, per_job_delay_ms).await
+        let per_job_jitter_ms = state
+            .config()
+            .get_i64("crawl_per_job_jitter_ms", 200)
+            .clamp(0, 60_000) as u64;
+
+        let fallbacks_raw = state
+            .config()
+            .get_string("crawl_source_fallbacks")
+            .unwrap_or_default();
+        let mut fallbacks = parse_source_list(&fallbacks_raw);
+        fallbacks.retain(|s| s != source_name);
+        let fallbacks = Arc::new(fallbacks);
+
+        if let Err(e) = run_due_jobs_with_nav_sync(
+            &pool,
+            state.config(),
+            run_max,
+            per_job_delay_ms,
+            per_job_jitter_ms,
+            fallbacks,
+        )
+        .await
         {
             tracing::warn!(error = %e, "crawl run_due_jobs failed");
         }
@@ -81,6 +153,8 @@ async fn exec_one(
     client: &reqwest::Client,
     tushare_token: &str,
     per_job_delay_ms: u64,
+    per_job_jitter_ms: u64,
+    source_fallbacks: &[String],
     job: CrawlJob,
 ) -> Result<(), String> {
     if job.job_type != "nav_history_sync" {
@@ -99,19 +173,46 @@ async fn exec_one(
         return Err(format!("unknown source: {source_raw}"));
     };
 
-    let _inserted = nav_history::sync_one(
-        pool,
-        client,
-        source_name,
-        &fund_code,
-        None,
-        None,
-        tushare_token,
-    )
-    .await?;
+    let mut last_err: Option<String> = None;
+    let mut tried: Vec<&str> = Vec::new();
+    tried.push(source_name);
+    for fb in source_fallbacks {
+        if tried.contains(&fb.as_str()) {
+            continue;
+        }
+        tried.push(fb);
+    }
+
+    for s in tried {
+        match nav_history::sync_one(pool, client, s, &fund_code, None, None, tushare_token).await {
+            Ok(_) => {
+                last_err = None;
+                break;
+            }
+            Err(e) => {
+                last_err = Some(e);
+                continue;
+            }
+        }
+    }
+
+    if let Some(e) = last_err {
+        return Err(e);
+    }
 
     if per_job_delay_ms > 0 {
-        tokio::time::sleep(Duration::from_millis(per_job_delay_ms)).await;
+        let jitter = if per_job_jitter_ms == 0 {
+            0
+        } else {
+            // 稳定抖动：避免引入随机源（便于测试/复现），只用于分散节奏。
+            let mut h: u64 = 14695981039346656037;
+            for b in fund_code.as_bytes() {
+                h ^= *b as u64;
+                h = h.wrapping_mul(1099511628211);
+            }
+            h % (per_job_jitter_ms + 1)
+        };
+        tokio::time::sleep(Duration::from_millis(per_job_delay_ms + jitter)).await;
     }
 
     Ok(())

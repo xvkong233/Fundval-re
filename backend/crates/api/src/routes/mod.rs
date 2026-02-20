@@ -5,6 +5,7 @@ use crate::state::AppState;
 pub mod accounts;
 pub mod auth;
 pub mod bootstrap;
+pub mod crawl_config;
 pub mod errors;
 pub mod fund_analytics;
 pub mod funds;
@@ -170,6 +171,10 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route(
             "/api/admin/rates/risk-free/sync",
             axum::routing::post(rates::admin_sync_risk_free),
+        )
+        .route(
+            "/api/admin/crawl/config",
+            axum::routing::get(crawl_config::admin_get_config).put(crawl_config::admin_set_config),
         )
         .with_state(state)
 }

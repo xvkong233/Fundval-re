@@ -76,6 +76,15 @@ impl ConfigStore {
                 Value::Number(serde_json::Number::from(v)),
             );
         }
+        if let Some(v) = std::env::var("CRAWL_DAILY_RUN_LIMIT")
+            .ok()
+            .and_then(|s| s.parse::<i64>().ok())
+        {
+            data.insert(
+                "crawl_daily_run_limit".into(),
+                Value::Number(serde_json::Number::from(v)),
+            );
+        }
         if let Some(v) = std::env::var("CRAWL_RUN_MAX_JOBS")
             .ok()
             .and_then(|s| s.parse::<i64>().ok())
@@ -93,6 +102,18 @@ impl ConfigStore {
                 "crawl_per_job_delay_ms".into(),
                 Value::Number(serde_json::Number::from(v)),
             );
+        }
+        if let Some(v) = std::env::var("CRAWL_PER_JOB_JITTER_MS")
+            .ok()
+            .and_then(|s| s.parse::<i64>().ok())
+        {
+            data.insert(
+                "crawl_per_job_jitter_ms".into(),
+                Value::Number(serde_json::Number::from(v)),
+            );
+        }
+        if let Ok(v) = std::env::var("CRAWL_SOURCE_FALLBACKS") {
+            data.insert("crawl_source_fallbacks".into(), Value::String(v));
         }
 
         Self {
@@ -137,6 +158,18 @@ impl ConfigStore {
     pub fn set_bool(&self, key: &str, value: bool) {
         let mut guard = self.data.write().expect("config write lock");
         guard.insert(key.to_string(), Value::Bool(value));
+    }
+
+    pub fn set_i64(&self, key: &str, value: Option<i64>) {
+        let mut guard = self.data.write().expect("config write lock");
+        match value {
+            None => {
+                guard.insert(key.to_string(), Value::Null);
+            }
+            Some(v) => {
+                guard.insert(key.to_string(), Value::Number(serde_json::Number::from(v)));
+            }
+        }
     }
 
     pub fn set_string(&self, key: &str, value: Option<String>) {
@@ -230,8 +263,17 @@ fn default_config() -> BTreeMap<String, Value> {
         Value::Number(30.into()),
     );
     m.insert("crawl_enqueue_max_jobs".into(), Value::Number(200.into()));
+    // 防封锁：每日执行上限（0=不限）。默认给一个相对保守的上限，避免后台持续打点把数据源打挂。
+    m.insert("crawl_daily_run_limit".into(), Value::Number(3000.into()));
     m.insert("crawl_run_max_jobs".into(), Value::Number(20.into()));
     m.insert("crawl_per_job_delay_ms".into(), Value::Number(250.into()));
+    // 在固定 delay 上叠加一个小抖动，避免请求节奏过于规律（0=无抖动）。
+    m.insert("crawl_per_job_jitter_ms".into(), Value::Number(200.into()));
+    // 多数据源轮换：主源失败时按顺序 fallback（逗号分隔的 source 名称列表）。
+    m.insert(
+        "crawl_source_fallbacks".into(),
+        Value::String("danjuan,ths".into()),
+    );
     m
 }
 

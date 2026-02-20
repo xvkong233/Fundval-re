@@ -160,7 +160,9 @@ pub async fn login(
 
     let user_id = row.get::<String, _>("id");
     let username = row.get::<String, _>("username");
-    let is_superuser = row.get::<bool, _>("is_superuser");
+    let is_superuser = row
+        .try_get::<bool, _>("is_superuser")
+        .unwrap_or_else(|_| row.try_get::<i64, _>("is_superuser").unwrap_or(0) != 0);
 
     let jwt = state.jwt();
     let access_token = jwt.issue_access_token(&user_id);
@@ -271,7 +273,10 @@ pub async fn me(
             id: row.get::<String, _>("id"),
             username: row.get::<String, _>("username"),
             email: row.get::<String, _>("email"),
-            role: if row.get::<bool, _>("is_superuser") {
+            role: if row
+                .try_get::<bool, _>("is_superuser")
+                .unwrap_or_else(|_| row.try_get::<i64, _>("is_superuser").unwrap_or(0) != 0)
+            {
                 "admin".to_string()
             } else {
                 "user".to_string()

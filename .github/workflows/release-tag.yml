@@ -1,6 +1,6 @@
 name: Release (Tag)
 
-on:
+"on":
   push:
     tags:
       - "v*"
@@ -44,6 +44,7 @@ jobs:
       # Guard sqlx features for both sqlite (local/dev) and postgres (docker/prod)
       - name: "Guard: backend sqlx drivers"
         working-directory: backend
+        shell: bash
         run: |
           python - <<'PY'
           import pathlib

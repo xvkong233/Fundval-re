@@ -1,10 +1,10 @@
 "use client";
 
-import { Button, Card, Descriptions, Form, Input, Result, Space, Spin, Statistic, Typography, message, theme } from "antd";
+import { Button, Card, Descriptions, Form, Input, InputNumber, Result, Select, Space, Spin, Statistic, Switch, Typography, message, theme } from "antd";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AuthedLayout } from "../../components/AuthedLayout";
-import { changePassword, getCurrentUser, getMySummary, getTushareTokenStatus, setTushareToken } from "../../lib/api";
+import { type CrawlConfig, changePassword, getCrawlConfig, getCurrentUser, getMySummary, getTushareTokenStatus, setCrawlConfig, setTushareToken } from "../../lib/api";
 import { getChangePasswordErrorMessage } from "../../lib/changePassword";
 import { useAuth } from "../../contexts/AuthContext";
 import { normalizeUserSummary } from "../../lib/userSummary";
@@ -39,6 +39,12 @@ export default function SettingsPage() {
   const [tushareError, setTushareError] = useState<string | null>(null);
   const [tushareStatus, setTushareStatus] = useState<TushareTokenStatus | null>(null);
   const [tushareSaving, setTushareSaving] = useState(false);
+
+  const [crawlLoading, setCrawlLoading] = useState(true);
+  const [crawlError, setCrawlError] = useState<string | null>(null);
+  const [crawlConfig, setCrawlConfigState] = useState<CrawlConfig | null>(null);
+  const [crawlSaving, setCrawlSaving] = useState(false);
+  const [crawlForm] = Form.useForm<CrawlConfig>();
 
   const { token } = theme.useToken();
 
@@ -106,6 +112,42 @@ export default function SettingsPage() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function run() {
+      setCrawlLoading(true);
+      setCrawlError(null);
+      try {
+        const res = await getCrawlConfig();
+        if (cancelled) return;
+        const cfg = (res.data ?? null) as CrawlConfig | null;
+        setCrawlConfigState(cfg);
+        if (cfg) {
+          crawlForm.setFieldsValue(cfg);
+        }
+      } catch (error: any) {
+        if (cancelled) return;
+        if (error?.response?.status === 403) {
+          setCrawlConfigState(null);
+          setCrawlError("需要管理员权限");
+        } else {
+          const msg = error?.response?.data?.error || "加载爬虫配置失败";
+          setCrawlConfigState(null);
+          setCrawlError(msg);
+        }
+      } finally {
+        if (!cancelled) setCrawlLoading(false);
+      }
+    }
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const normalizedSummary = useMemo(() => {
     if (!summary) return null;
     return normalizeUserSummary(summary);
@@ -139,6 +181,33 @@ export default function SettingsPage() {
       message.error(msg);
     } finally {
       setTushareSaving(false);
+    }
+  };
+
+  const onSaveCrawlConfig = async (values: CrawlConfig) => {
+    setCrawlSaving(true);
+    try {
+      await setCrawlConfig({
+        crawl_enabled: !!values.crawl_enabled,
+        crawl_source: String(values.crawl_source ?? "").trim(),
+        crawl_tick_interval_seconds: Number(values.crawl_tick_interval_seconds),
+        crawl_enqueue_max_jobs: Number(values.crawl_enqueue_max_jobs),
+        crawl_daily_run_limit: Number(values.crawl_daily_run_limit),
+        crawl_run_max_jobs: Number(values.crawl_run_max_jobs),
+        crawl_per_job_delay_ms: Number(values.crawl_per_job_delay_ms),
+        crawl_per_job_jitter_ms: Number(values.crawl_per_job_jitter_ms),
+        crawl_source_fallbacks: String(values.crawl_source_fallbacks ?? "").trim(),
+      });
+      const res = await getCrawlConfig();
+      const cfg = (res.data ?? null) as CrawlConfig | null;
+      setCrawlConfigState(cfg);
+      if (cfg) crawlForm.setFieldsValue(cfg);
+      message.success("爬虫配置已保存");
+    } catch (error: any) {
+      const msg = error?.response?.data?.error || "保存爬虫配置失败";
+      message.error(msg);
+    } finally {
+      setCrawlSaving(false);
     }
   };
 
@@ -220,6 +289,89 @@ export default function SettingsPage() {
                     }}
                   >
                     清空
+                  </Button>
+                </Space>
+              </Form>
+            </Space>
+          )}
+        </Card>
+
+        <Card style={{ marginBottom: 16 }}>
+          <Title level={3} style={{ marginTop: 0 }}>
+            净值缓存爬虫（管理员）
+          </Title>
+          <Paragraph type="secondary" style={{ marginBottom: 8 }}>
+            后台会按固定节奏分批同步基金净值（优先自选与持仓），用于基金详情/嗅探等页面的缓存与计算。为降低被数据源封锁的风险，可在此调慢频率、设置每日上限、以及配置失败时的备用数据源。
+          </Paragraph>
+
+          {crawlLoading ? (
+            <div style={{ padding: "16px 0", display: "flex", justifyContent: "center" }}>
+              <Spin />
+            </div>
+          ) : crawlError ? (
+            <Result status="info" title="爬虫配置" subTitle={crawlError} />
+          ) : (
+            <Space direction="vertical" style={{ width: "100%" }} size={12}>
+              <Descriptions size="small" column={1} bordered>
+                <Descriptions.Item label="状态">
+                  {crawlConfig?.crawl_enabled ? <Text type="success">已启用</Text> : <Text type="warning">已停用</Text>}
+                </Descriptions.Item>
+                <Descriptions.Item label="主数据源">{crawlConfig?.crawl_source || "-"}</Descriptions.Item>
+              </Descriptions>
+
+              <Form form={crawlForm} layout="vertical" onFinish={onSaveCrawlConfig} style={{ maxWidth: 720 }}>
+                <Space wrap size={16} align="start">
+                  <Form.Item label="启用" name="crawl_enabled" valuePropName="checked">
+                    <Switch />
+                  </Form.Item>
+                  <Form.Item label="主数据源" name="crawl_source" style={{ minWidth: 180 }}>
+                    <Select
+                      options={[
+                        { label: "天天基金（tiantian）", value: "tiantian" },
+                        { label: "蛋卷（danjuan）", value: "danjuan" },
+                        { label: "同花顺（ths）", value: "ths" },
+                      ]}
+                    />
+                  </Form.Item>
+                  <Form.Item label="Tick 间隔(秒)" name="crawl_tick_interval_seconds">
+                    <InputNumber min={1} max={86400} style={{ width: 180 }} />
+                  </Form.Item>
+                  <Form.Item label="每轮入队上限" name="crawl_enqueue_max_jobs">
+                    <InputNumber min={0} max={5000} style={{ width: 180 }} />
+                  </Form.Item>
+                  <Form.Item label="每日执行上限(0=不限)" name="crawl_daily_run_limit">
+                    <InputNumber min={0} max={1_000_000} style={{ width: 220 }} />
+                  </Form.Item>
+                  <Form.Item label="每轮执行上限" name="crawl_run_max_jobs">
+                    <InputNumber min={0} max={5000} style={{ width: 180 }} />
+                  </Form.Item>
+                  <Form.Item label="单任务延迟(ms)" name="crawl_per_job_delay_ms">
+                    <InputNumber min={0} max={60_000} style={{ width: 180 }} />
+                  </Form.Item>
+                  <Form.Item label="延迟抖动(ms)" name="crawl_per_job_jitter_ms">
+                    <InputNumber min={0} max={60_000} style={{ width: 180 }} />
+                  </Form.Item>
+                </Space>
+
+                <Form.Item
+                  label="备用数据源（逗号分隔）"
+                  name="crawl_source_fallbacks"
+                  extra={<Text type="secondary">示例：danjuan,ths；仅在主源请求失败时尝试备用源。</Text>}
+                >
+                  <Input placeholder="danjuan,ths" />
+                </Form.Item>
+
+                <Space wrap>
+                  <Button type="primary" htmlType="submit" loading={crawlSaving}>
+                    保存
+                  </Button>
+                  <Button
+                    disabled={crawlSaving}
+                    onClick={() => {
+                      if (crawlConfig) crawlForm.setFieldsValue(crawlConfig);
+                    }}
+                  >
+                    还原为当前值
                   </Button>
                 </Space>
               </Form>

@@ -364,7 +364,9 @@ pub async fn calculate_accuracy(
         .fetch_optional(pool)
         .await
     {
-        Ok(Some(row)) => row.get::<bool, _>("is_staff"),
+        Ok(Some(row)) => row
+            .try_get::<bool, _>("is_staff")
+            .unwrap_or_else(|_| row.try_get::<i64, _>("is_staff").unwrap_or(0) != 0),
         _ => false,
     };
 

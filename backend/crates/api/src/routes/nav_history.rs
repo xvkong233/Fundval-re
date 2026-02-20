@@ -495,7 +495,10 @@ async fn maybe_is_staff(
                 .into_response()
         })?;
 
-    Ok(row.map(|r| r.get::<bool, _>("is_staff")))
+    Ok(row.map(|r| {
+        r.try_get::<bool, _>("is_staff")
+            .unwrap_or_else(|_| r.try_get::<i64, _>("is_staff").unwrap_or(0) != 0)
+    }))
 }
 
 pub(crate) async fn sync_one(

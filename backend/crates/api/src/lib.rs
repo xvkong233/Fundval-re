@@ -1,6 +1,7 @@
 pub mod accuracy;
 pub mod analytics;
 pub mod config;
+pub mod crawl;
 pub mod db;
 pub mod dbfmt;
 pub mod django_password;

@@ -17,6 +17,7 @@ struct InnerState {
     pub config: ConfigStore,
     pub jwt: JwtService,
     pub sniffer_lock: Mutex<()>,
+    pub crawl_lock: Mutex<()>,
 }
 
 impl AppState {
@@ -27,6 +28,7 @@ impl AppState {
                 config,
                 jwt,
                 sniffer_lock: Mutex::new(()),
+                crawl_lock: Mutex::new(()),
             }),
         }
     }
@@ -44,6 +46,10 @@ impl AppState {
 
     pub fn sniffer_lock(&self) -> &Mutex<()> {
         &self.inner.sniffer_lock
+    }
+
+    pub fn crawl_lock(&self) -> &Mutex<()> {
+        &self.inner.crawl_lock
     }
 }
 

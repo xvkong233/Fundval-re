@@ -498,7 +498,7 @@ async fn maybe_is_staff(
     Ok(row.map(|r| r.get::<bool, _>("is_staff")))
 }
 
-async fn sync_one(
+pub(crate) async fn sync_one(
     pool: &sqlx::AnyPool,
     client: &reqwest::Client,
     source_name: &str,
@@ -587,55 +587,40 @@ async fn sync_one(
     }
 
     let mut inserted_count: i64 = 0;
+    let mut prefer_postgres = true;
     for item in data {
-        let exists = sqlx::query(
-            r#"
-            SELECT 1
-            FROM fund_nav_history
-            WHERE source_name = $1
-              AND CAST(fund_id AS TEXT) = $2
-              AND nav_date = CAST($3 AS DATE)
-            "#,
+        let exists = match nav_history_exists(
+            pool,
+            prefer_postgres,
+            source_name,
+            &fund_id,
+            &item.nav_date.to_string(),
         )
-        .bind(source_name)
-        .bind(fund_id.to_string())
-        .bind(item.nav_date.to_string())
-        .fetch_optional(pool)
         .await
-        .map_err(|e| e.to_string())?
-        .is_some();
+        {
+            Ok(v) => v,
+            Err(e) if prefer_postgres => {
+                prefer_postgres = false;
+                nav_history_exists(
+                    pool,
+                    prefer_postgres,
+                    source_name,
+                    &fund_id,
+                    &item.nav_date.to_string(),
+                )
+                .await?
+            }
+            Err(e) => return Err(e),
+        };
 
-        sqlx::query(
-            r#"
-            INSERT INTO fund_nav_history (id, source_name, fund_id, nav_date, unit_nav, accumulated_nav, daily_growth, created_at, updated_at)
-            VALUES (
-              CAST($1 AS uuid),
-              $2,
-              CAST($3 AS uuid),
-              CAST($4 AS DATE),
-              CAST($5 AS NUMERIC),
-              CAST($6 AS NUMERIC),
-              CAST($7 AS NUMERIC),
-              CURRENT_TIMESTAMP,
-              CURRENT_TIMESTAMP
-            )
-            ON CONFLICT (source_name, fund_id, nav_date) DO UPDATE
-              SET unit_nav = CAST(EXCLUDED.unit_nav AS NUMERIC),
-                  accumulated_nav = CAST(EXCLUDED.accumulated_nav AS NUMERIC),
-                  daily_growth = CAST(EXCLUDED.daily_growth AS NUMERIC),
-                  updated_at = CURRENT_TIMESTAMP
-            "#,
-        )
-        .bind(Uuid::new_v4().to_string())
-        .bind(source_name)
-        .bind(fund_id.to_string())
-        .bind(item.nav_date.to_string())
-        .bind(item.unit_nav.to_string())
-        .bind(item.accumulated_nav.map(|v| v.to_string()))
-        .bind(item.daily_growth.map(|v| v.to_string()))
-        .execute(pool)
-        .await
-        .map_err(|e| e.to_string())?;
+        if let Err(e) = nav_history_upsert(pool, prefer_postgres, source_name, &fund_id, &item).await {
+            if prefer_postgres {
+                prefer_postgres = false;
+                nav_history_upsert(pool, prefer_postgres, source_name, &fund_id, &item).await?;
+            } else {
+                return Err(e);
+            }
+        }
 
         if !exists {
             inserted_count += 1;
@@ -643,6 +628,117 @@ async fn sync_one(
     }
 
     Ok(inserted_count)
+}
+
+async fn nav_history_exists(
+    pool: &sqlx::AnyPool,
+    prefer_postgres: bool,
+    source_name: &str,
+    fund_id: &str,
+    nav_date: &str,
+) -> Result<bool, String> {
+    if prefer_postgres {
+        // Postgres: 使用 `::` cast，确保在 SQLite 下会语法报错并触发 fallback。
+        let sql_pg = r#"
+            SELECT 1
+            FROM fund_nav_history
+            WHERE source_name = $1
+              AND fund_id = ($2)::uuid
+              AND nav_date = ($3)::date
+            LIMIT 1
+        "#;
+        return Ok(sqlx::query(sql_pg)
+            .bind(source_name)
+            .bind(fund_id)
+            .bind(nav_date)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| e.to_string())?
+            .is_some());
+    }
+
+    let sql_sqlite = r#"
+        SELECT 1
+        FROM fund_nav_history
+        WHERE source_name = $1
+          AND fund_id = $2
+          AND nav_date = $3
+        LIMIT 1
+    "#;
+    Ok(sqlx::query(sql_sqlite)
+        .bind(source_name)
+        .bind(fund_id)
+        .bind(nav_date)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| e.to_string())?
+        .is_some())
+}
+
+async fn nav_history_upsert(
+    pool: &sqlx::AnyPool,
+    prefer_postgres: bool,
+    source_name: &str,
+    fund_id: &str,
+    item: &eastmoney::NavRow,
+) -> Result<(), String> {
+    if prefer_postgres {
+        let sql_pg = r#"
+            INSERT INTO fund_nav_history (id, source_name, fund_id, nav_date, unit_nav, accumulated_nav, daily_growth, created_at, updated_at)
+            VALUES (
+              ($1)::uuid,
+              $2,
+              ($3)::uuid,
+              ($4)::date,
+              ($5)::numeric,
+              ($6)::numeric,
+              ($7)::numeric,
+              CURRENT_TIMESTAMP,
+              CURRENT_TIMESTAMP
+            )
+            ON CONFLICT (source_name, fund_id, nav_date) DO UPDATE
+              SET unit_nav = EXCLUDED.unit_nav,
+                  accumulated_nav = EXCLUDED.accumulated_nav,
+                  daily_growth = EXCLUDED.daily_growth,
+                  updated_at = CURRENT_TIMESTAMP
+        "#;
+
+        sqlx::query(sql_pg)
+            .bind(Uuid::new_v4().to_string())
+            .bind(source_name)
+            .bind(fund_id)
+            .bind(item.nav_date.to_string())
+            .bind(item.unit_nav.to_string())
+            .bind(item.accumulated_nav.map(|v| v.to_string()))
+            .bind(item.daily_growth.map(|v| v.to_string()))
+            .execute(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    let sql_sqlite = r#"
+        INSERT INTO fund_nav_history (id, source_name, fund_id, nav_date, unit_nav, accumulated_nav, daily_growth, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT (source_name, fund_id, nav_date) DO UPDATE
+          SET unit_nav = EXCLUDED.unit_nav,
+              accumulated_nav = EXCLUDED.accumulated_nav,
+              daily_growth = EXCLUDED.daily_growth,
+              updated_at = CURRENT_TIMESTAMP
+    "#;
+
+    sqlx::query(sql_sqlite)
+        .bind(Uuid::new_v4().to_string())
+        .bind(source_name)
+        .bind(fund_id)
+        .bind(item.nav_date.to_string())
+        .bind(item.unit_nav.to_string())
+        .bind(item.accumulated_nav.map(|v| v.to_string()))
+        .bind(item.daily_growth.map(|v| v.to_string()))
+        .execute(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 fn row_to_item(row: AnyRow) -> NavHistoryItem {

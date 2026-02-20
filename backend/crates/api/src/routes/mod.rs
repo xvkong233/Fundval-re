@@ -167,5 +167,9 @@ pub fn router(state: AppState) -> Router<AppState> {
             "/api/admin/sniffer/sync",
             axum::routing::post(sniffer::admin_sync),
         )
+        .route(
+            "/api/admin/rates/risk-free/sync",
+            axum::routing::post(rates::admin_sync_risk_free),
+        )
         .with_state(state)
 }

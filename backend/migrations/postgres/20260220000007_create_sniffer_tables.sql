@@ -48,4 +48,3 @@ CREATE INDEX IF NOT EXISTS sniffer_item_snapshot_id_idx ON sniffer_item(snapshot
 CREATE INDEX IF NOT EXISTS sniffer_item_fund_id_idx ON sniffer_item(fund_id);
 CREATE INDEX IF NOT EXISTS sniffer_item_sector_idx ON sniffer_item(sector);
 CREATE INDEX IF NOT EXISTS sniffer_item_tags_gin_idx ON sniffer_item USING GIN(tags);
-

@@ -1,10 +1,10 @@
-use axum::{http::StatusCode, response::IntoResponse, Json};
+use axum::{Json, http::StatusCode, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 
-use crate::state::AppState;
 use crate::django_password;
 use crate::routes::auth;
 use crate::routes::errors;
+use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
 pub struct RegisterRequest {
@@ -84,7 +84,9 @@ pub async fn register(
         return (
             StatusCode::BAD_REQUEST,
             Json(FieldErrors {
-                username: Some(vec!["Ensure this field has no more than 150 characters.".to_string()]),
+                username: Some(vec![
+                    "Ensure this field has no more than 150 characters.".to_string(),
+                ]),
                 password: None,
                 password_confirm: None,
             }),
@@ -112,7 +114,9 @@ pub async fn register(
             StatusCode::BAD_REQUEST,
             Json(FieldErrors {
                 username: None,
-                password: Some(vec!["Ensure this field has at least 8 characters.".to_string()]),
+                password: Some(vec![
+                    "Ensure this field has at least 8 characters.".to_string(),
+                ]),
                 password_confirm: None,
             }),
         )

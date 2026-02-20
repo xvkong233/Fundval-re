@@ -12,7 +12,7 @@ pub fn parse_datetime_utc(raw: &str) -> Option<DateTime<Utc>> {
     }
 
     // 兼容 Postgres TIMESTAMPTZ cast to text（常见：2024-01-01 10:00:00+00 / +00:00）
-    if let Some((left, tz)) = s.rsplit_once(|c| c == '+' || c == '-') {
+    if let Some((left, tz)) = s.rsplit_once(['+', '-']) {
         let sign = s.as_bytes()[left.len()] as char;
         let tz = tz.trim();
         // tz 可能是 "00" / "00:00" / "0800" / "08:00"
@@ -23,8 +23,8 @@ pub fn parse_datetime_utc(raw: &str) -> Option<DateTime<Utc>> {
         };
         let candidate = format!(
             "{}T{}{}{}",
-            left.trim().split_whitespace().next().unwrap_or(""),
-            left.trim().split_whitespace().nth(1).unwrap_or(""),
+            left.split_whitespace().next().unwrap_or(""),
+            left.split_whitespace().nth(1).unwrap_or(""),
             sign,
             tz_norm
         );

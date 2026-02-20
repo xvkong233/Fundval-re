@@ -1,10 +1,9 @@
 use axum::{Json, http::StatusCode, response::IntoResponse};
-use chrono::{SecondsFormat, Utc};
 use serde::Serialize;
 use serde_json::json;
 use sqlx::Row;
-use uuid::Uuid;
 
+use crate::dbfmt;
 use crate::routes::auth;
 use crate::routes::errors;
 use crate::sniffer;
@@ -40,8 +39,66 @@ struct SnifferStatusResponse {
     last_snapshot: Option<serde_json::Value>,
 }
 
-fn format_dt(dt: chrono::DateTime<Utc>) -> String {
-    dt.to_rfc3339_opts(SecondsFormat::Secs, true)
+fn format_dt(raw: &str) -> String {
+    dbfmt::datetime_to_rfc3339(raw)
+}
+
+fn parse_tags(raw: &str) -> Vec<String> {
+    let s = raw.trim();
+    if s.is_empty() {
+        return vec![];
+    }
+
+    // Prefer JSON array if present.
+    if s.starts_with('[')
+        && let Ok(v) = serde_json::from_str::<Vec<String>>(s)
+    {
+        return v
+            .into_iter()
+            .map(|t| t.trim().to_string())
+            .filter(|t| !t.is_empty())
+            .collect();
+    }
+
+    // Postgres array literal: {"a","b"}
+    if s.starts_with('{') && s.ends_with('}') {
+        let inner = &s[1..s.len() - 1];
+        let mut out: Vec<String> = Vec::new();
+        let mut cur = String::new();
+        let mut in_quotes = false;
+        let mut escape = false;
+        for ch in inner.chars() {
+            if escape {
+                cur.push(ch);
+                escape = false;
+                continue;
+            }
+            if ch == '\\' && in_quotes {
+                escape = true;
+                continue;
+            }
+            if ch == '"' {
+                in_quotes = !in_quotes;
+                continue;
+            }
+            if ch == ',' && !in_quotes {
+                let t = cur.trim().to_string();
+                if !t.is_empty() {
+                    out.push(t);
+                }
+                cur.clear();
+                continue;
+            }
+            cur.push(ch);
+        }
+        let t = cur.trim().to_string();
+        if !t.is_empty() {
+            out.push(t);
+        }
+        return out;
+    }
+
+    vec![s.to_string()]
 }
 
 pub async fn status(
@@ -70,7 +127,15 @@ pub async fn status(
 
     let last_run_row = sqlx::query(
         r#"
-        SELECT id, source_url, started_at, finished_at, ok, item_count, error, snapshot_id
+        SELECT
+          CAST(id AS TEXT) as id,
+          source_url,
+          CAST(started_at AS TEXT) as started_at,
+          CAST(finished_at AS TEXT) as finished_at,
+          ok,
+          item_count,
+          error,
+          CAST(snapshot_id AS TEXT) as snapshot_id
         FROM sniffer_run
         ORDER BY started_at DESC
         LIMIT 1
@@ -81,14 +146,14 @@ pub async fn status(
 
     let last_run = match last_run_row {
         Ok(Some(r)) => Some(json!({
-          "id": r.get::<Uuid, _>("id").to_string(),
+          "id": r.get::<String, _>("id"),
           "source_url": r.get::<String, _>("source_url"),
-          "started_at": format_dt(r.get("started_at")),
-          "finished_at": r.get::<Option<chrono::DateTime<Utc>>, _>("finished_at").map(format_dt),
+          "started_at": format_dt(&r.get::<String, _>("started_at")),
+          "finished_at": r.get::<Option<String>, _>("finished_at").map(|s| format_dt(&s)),
           "ok": r.get::<bool, _>("ok"),
           "item_count": r.get::<i32, _>("item_count"),
           "error": r.get::<Option<String>, _>("error"),
-          "snapshot_id": r.get::<Option<Uuid>, _>("snapshot_id").map(|v| v.to_string()),
+          "snapshot_id": r.get::<Option<String>, _>("snapshot_id"),
         })),
         Ok(None) => None,
         Err(e) => {
@@ -102,7 +167,12 @@ pub async fn status(
 
     let last_snapshot_row = sqlx::query(
         r#"
-        SELECT id, source_url, fetched_at, item_count, run_id
+        SELECT
+          CAST(id AS TEXT) as id,
+          source_url,
+          CAST(fetched_at AS TEXT) as fetched_at,
+          item_count,
+          CAST(run_id AS TEXT) as run_id
         FROM sniffer_snapshot
         ORDER BY fetched_at DESC
         LIMIT 1
@@ -113,11 +183,11 @@ pub async fn status(
 
     let last_snapshot = match last_snapshot_row {
         Ok(Some(r)) => Some(json!({
-          "id": r.get::<Uuid, _>("id").to_string(),
+          "id": r.get::<String, _>("id"),
           "source_url": r.get::<String, _>("source_url"),
-          "fetched_at": format_dt(r.get("fetched_at")),
+          "fetched_at": format_dt(&r.get::<String, _>("fetched_at")),
           "item_count": r.get::<i32, _>("item_count"),
-          "run_id": r.get::<Option<Uuid>, _>("run_id").map(|v| v.to_string()),
+          "run_id": r.get::<Option<String>, _>("run_id"),
         })),
         Ok(None) => None,
         Err(e) => {
@@ -165,7 +235,11 @@ pub async fn items(
 
     let snap_row = match sqlx::query(
         r#"
-        SELECT id, source_url, fetched_at, item_count
+        SELECT
+          CAST(id AS TEXT) as id,
+          source_url,
+          CAST(fetched_at AS TEXT) as fetched_at,
+          item_count
         FROM sniffer_snapshot
         ORDER BY fetched_at DESC
         LIMIT 1
@@ -200,9 +274,9 @@ pub async fn items(
             .into_response();
     };
 
-    let snapshot_id: Uuid = snap_row.get("id");
+    let snapshot_id: String = snap_row.get("id");
     let source_url: String = snap_row.get("source_url");
-    let fetched_at: chrono::DateTime<Utc> = snap_row.get("fetched_at");
+    let fetched_at: String = snap_row.get("fetched_at");
     let item_count: i32 = snap_row.get("item_count");
 
     let rows = match sqlx::query(
@@ -212,10 +286,10 @@ pub async fn items(
           f.fund_name,
           i.sector,
           i.star_count,
-          i.tags,
-          i.week_growth,
-          i.year_growth,
-          i.max_drawdown,
+          CAST(i.tags AS TEXT) as tags,
+          CAST(i.week_growth AS TEXT) as week_growth,
+          CAST(i.year_growth AS TEXT) as year_growth,
+          CAST(i.max_drawdown AS TEXT) as max_drawdown,
           i.fund_size_text
         FROM sniffer_item i
         JOIN fund f ON f.id = i.fund_id
@@ -223,7 +297,7 @@ pub async fn items(
         ORDER BY i.sector ASC, i.star_count DESC NULLS LAST, i.week_growth DESC NULLS LAST, f.fund_code ASC
         "#,
     )
-    .bind(snapshot_id)
+    .bind(&snapshot_id)
     .fetch_all(pool)
     .await
     {
@@ -245,7 +319,7 @@ pub async fn items(
         let sector: String = r.get("sector");
         sectors_set.insert(sector.clone());
 
-        let tags: Vec<String> = r.get::<Vec<String>, _>("tags");
+        let tags: Vec<String> = parse_tags(&r.get::<String, _>("tags"));
         for t in &tags {
             if !t.trim().is_empty() {
                 tags_set.insert(t.trim().to_string());
@@ -258,15 +332,9 @@ pub async fn items(
             sector,
             star_count: r.get("star_count"),
             tags,
-            week_growth: r
-                .get::<Option<rust_decimal::Decimal>, _>("week_growth")
-                .map(|v| v.to_string()),
-            year_growth: r
-                .get::<Option<rust_decimal::Decimal>, _>("year_growth")
-                .map(|v| v.to_string()),
-            max_drawdown: r
-                .get::<Option<rust_decimal::Decimal>, _>("max_drawdown")
-                .map(|v| v.to_string()),
+            week_growth: r.get::<Option<String>, _>("week_growth"),
+            year_growth: r.get::<Option<String>, _>("year_growth"),
+            max_drawdown: r.get::<Option<String>, _>("max_drawdown"),
             fund_size_text: r.get("fund_size_text"),
         });
     }
@@ -276,7 +344,7 @@ pub async fn items(
         Json(SnifferItemsResponse {
             has_snapshot: true,
             source_url: Some(source_url),
-            fetched_at: Some(format_dt(fetched_at)),
+            fetched_at: Some(format_dt(&fetched_at)),
             item_count,
             sectors: sectors_set.into_iter().collect(),
             tags: tags_set.into_iter().collect(),
@@ -332,8 +400,8 @@ pub async fn admin_sync(
         Ok(r) => (
             StatusCode::OK,
             Json(json!({
-              "run_id": r.run_id.to_string(),
-              "snapshot_id": r.snapshot_id.to_string(),
+              "run_id": r.run_id,
+              "snapshot_id": r.snapshot_id,
               "item_count": r.item_count,
               "users_updated": r.users_updated,
               "watchlist_name": sniffer::SNIFFER_WATCHLIST_NAME,

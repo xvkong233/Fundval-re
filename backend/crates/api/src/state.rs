@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use serde::Serialize;
 use sqlx::AnyPool;
+use tokio::sync::Mutex;
 
 use crate::config::ConfigStore;
 use crate::jwt::JwtService;
@@ -15,6 +16,7 @@ struct InnerState {
     pub pool: Option<AnyPool>,
     pub config: ConfigStore,
     pub jwt: JwtService,
+    pub sniffer_lock: Mutex<()>,
 }
 
 impl AppState {
@@ -24,6 +26,7 @@ impl AppState {
                 pool,
                 config,
                 jwt,
+                sniffer_lock: Mutex::new(()),
             }),
         }
     }
@@ -37,6 +40,10 @@ impl AppState {
 
     pub fn jwt(&self) -> &JwtService {
         &self.inner.jwt
+    }
+
+    pub fn sniffer_lock(&self) -> &Mutex<()> {
+        &self.inner.sniffer_lock
     }
 }
 

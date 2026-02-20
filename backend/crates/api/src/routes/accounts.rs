@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
-use axum::{http::StatusCode, response::IntoResponse, Json};
+use axum::{Json, http::StatusCode, response::IntoResponse};
 use chrono::{DateTime, SecondsFormat, Utc};
 use rust_decimal::{Decimal, RoundingStrategy};
 use serde::{Deserialize, Serialize};
@@ -306,9 +306,9 @@ pub async fn create(
         match sqlx::query(
             "SELECT CAST(parent_id AS TEXT) as parent_id FROM account WHERE CAST(id AS TEXT) = $1",
         )
-            .bind(parent_id.to_string())
-            .fetch_optional(pool)
-            .await
+        .bind(parent_id.to_string())
+        .fetch_optional(pool)
+        .await
         {
             Ok(Some(row)) => {
                 let pp: Option<String> = row.get("parent_id");
@@ -374,10 +374,12 @@ pub async fn create(
     };
 
     if is_default
-        && let Err(e) = sqlx::query("UPDATE account SET is_default = FALSE WHERE user_id = $1 AND is_default = TRUE")
-            .bind(user_id_i64)
-            .execute(&mut *tx)
-            .await
+        && let Err(e) = sqlx::query(
+            "UPDATE account SET is_default = FALSE WHERE user_id = $1 AND is_default = TRUE",
+        )
+        .bind(user_id_i64)
+        .execute(&mut *tx)
+        .await
     {
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -490,7 +492,11 @@ pub async fn retrieve(
     };
 
     let Some(row) = row else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "detail": "Not found." })),
+        )
+            .into_response();
     };
 
     let account = AccountRow {
@@ -503,13 +509,21 @@ pub async fn retrieve(
     };
 
     if account.parent_id.is_some() {
-        let positions_by_account = match load_positions(&state, pool, std::slice::from_ref(&account.id)).await {
-            Ok(v) => v,
-            Err(resp) => return resp,
-        };
-        let positions = positions_by_account.get(&account.id).map(Vec::as_slice).unwrap_or(&[]);
+        let positions_by_account =
+            match load_positions(&state, pool, std::slice::from_ref(&account.id)).await {
+                Ok(v) => v,
+                Err(resp) => return resp,
+            };
+        let positions = positions_by_account
+            .get(&account.id)
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
         let summary = compute_child_summary(positions);
-        return (StatusCode::OK, Json(to_account_response(&account, &summary))).into_response();
+        return (
+            StatusCode::OK,
+            Json(to_account_response(&account, &summary)),
+        )
+            .into_response();
     }
 
     let child_rows = match sqlx::query(
@@ -561,7 +575,10 @@ pub async fn retrieve(
     let mut child_responses: Vec<AccountResponse> = Vec::with_capacity(children.len());
     let mut child_summaries: Vec<Summary> = Vec::with_capacity(children.len());
     for c in &children {
-        let positions = positions_by_account.get(&c.id).map(Vec::as_slice).unwrap_or(&[]);
+        let positions = positions_by_account
+            .get(&c.id)
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
         let s = compute_child_summary(positions);
         child_summaries.push(s.clone());
         child_responses.push(to_account_response(c, &s));
@@ -664,7 +681,11 @@ async fn update_internal(
     };
 
     let Some(row) = existing else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "detail": "Not found." })),
+        )
+            .into_response();
     };
 
     let existing_row = AccountRow {
@@ -708,9 +729,9 @@ async fn update_internal(
         match sqlx::query(
             "SELECT CAST(parent_id AS TEXT) as parent_id FROM account WHERE CAST(id AS TEXT) = $1",
         )
-            .bind(parent_id)
-            .fetch_optional(pool)
-            .await
+        .bind(parent_id)
+        .fetch_optional(pool)
+        .await
         {
             Ok(Some(row)) => {
                 let pp: Option<String> = row.get("parent_id");
@@ -827,7 +848,12 @@ async fn update_internal(
     }
 
     let id_uuid = Uuid::parse_str(&existing_row.id).unwrap_or(id);
-    retrieve(axum::extract::State(state), headers, axum::extract::Path(id_uuid)).await
+    retrieve(
+        axum::extract::State(state),
+        headers,
+        axum::extract::Path(id_uuid),
+    )
+    .await
 }
 
 pub async fn destroy(
@@ -874,7 +900,11 @@ pub async fn destroy(
     };
 
     if res.rows_affected() == 0 {
-        return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "detail": "Not found." })),
+        )
+            .into_response();
     }
 
     StatusCode::NO_CONTENT.into_response()
@@ -907,23 +937,28 @@ pub async fn positions(
         Some(p) => p,
     };
 
-    let account_row = match sqlx::query("SELECT name FROM account WHERE CAST(id AS TEXT) = $1 AND user_id = $2")
-        .bind(id.to_string())
-        .bind(user_id_i64)
-        .fetch_optional(pool)
-        .await
-    {
-        Ok(v) => v,
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                errors::internal_json(&state, e),
-            )
-                .into_response();
-        }
-    };
+    let account_row =
+        match sqlx::query("SELECT name FROM account WHERE CAST(id AS TEXT) = $1 AND user_id = $2")
+            .bind(id.to_string())
+            .bind(user_id_i64)
+            .fetch_optional(pool)
+            .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    errors::internal_json(&state, e),
+                )
+                    .into_response();
+            }
+        };
     let Some(account_row) = account_row else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "detail": "Not found." })),
+        )
+            .into_response();
     };
     let account_name: String = account_row.get("name");
 
@@ -969,7 +1004,9 @@ pub async fn positions(
         let holding_share = parse_decimal(row.get::<String, _>("holding_share"));
         let holding_cost = parse_decimal(row.get::<String, _>("holding_cost"));
         let holding_nav = parse_decimal(row.get::<String, _>("holding_nav"));
-        let latest_nav = row.get::<Option<String>, _>("latest_nav").map(parse_decimal);
+        let latest_nav = row
+            .get::<Option<String>, _>("latest_nav")
+            .map(parse_decimal);
 
         let pnl_dec = match latest_nav {
             None => Decimal::ZERO,
@@ -1053,13 +1090,11 @@ async fn load_positions(
     let rows = match rows {
         Ok(v) => v,
         Err(e) => {
-            return Err(
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    errors::internal_json(state, e),
-                )
-                    .into_response(),
-            );
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                errors::internal_json(state, e),
+            )
+                .into_response());
         }
     };
 
@@ -1068,17 +1103,19 @@ async fn load_positions(
         let account_id = row.get::<String, _>("account_id");
         let holding_share = parse_decimal(row.get::<String, _>("holding_share"));
         let holding_cost = parse_decimal(row.get::<String, _>("holding_cost"));
-        let latest_nav = row.get::<Option<String>, _>("latest_nav").map(parse_decimal);
-        let estimate_nav = row.get::<Option<String>, _>("estimate_nav").map(parse_decimal);
+        let latest_nav = row
+            .get::<Option<String>, _>("latest_nav")
+            .map(parse_decimal);
+        let estimate_nav = row
+            .get::<Option<String>, _>("estimate_nav")
+            .map(parse_decimal);
 
-        map.entry(account_id)
-            .or_default()
-            .push(PositionAggRow {
-                holding_share,
-                holding_cost,
-                latest_nav,
-                estimate_nav,
-            });
+        map.entry(account_id).or_default().push(PositionAggRow {
+            holding_share,
+            holding_cost,
+            latest_nav,
+            estimate_nav,
+        });
     }
     Ok(map)
 }
@@ -1105,7 +1142,8 @@ fn compute_child_summary(positions: &[PositionAggRow]) -> Summary {
             match p.estimate_nav {
                 None => estimate_value = None,
                 Some(estimate) => {
-                    estimate_value = Some(estimate_value.unwrap_or_default() + estimate * p.holding_share)
+                    estimate_value =
+                        Some(estimate_value.unwrap_or_default() + estimate * p.holding_share)
                 }
             }
         }
@@ -1113,7 +1151,8 @@ fn compute_child_summary(positions: &[PositionAggRow]) -> Summary {
         if today_pnl.is_some() {
             match (p.estimate_nav, p.latest_nav) {
                 (Some(estimate), Some(latest)) => {
-                    today_pnl = Some(today_pnl.unwrap_or_default() + p.holding_share * (estimate - latest));
+                    today_pnl =
+                        Some(today_pnl.unwrap_or_default() + p.holding_share * (estimate - latest));
                 }
                 _ => today_pnl = None,
             }

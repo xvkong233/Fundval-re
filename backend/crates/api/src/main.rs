@@ -1,15 +1,15 @@
 use std::net::SocketAddr;
 
 use api::{app, state::AppState};
-use axum::http::{HeaderValue, Method};
 use axum::http::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE};
+use axum::http::{HeaderValue, Method};
 use sqlx::Error as SqlxError;
 use sqlx::any::AnyPoolOptions;
+use sqlx::migrate::Migrator;
 use sqlx::postgres::PgPoolOptions;
 use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
-use sqlx::migrate::Migrator;
 
 static MIGRATOR_POSTGRES: Migrator = sqlx::migrate!("../../migrations/postgres");
 static MIGRATOR_SQLITE: Migrator = sqlx::migrate!("../../migrations/sqlite");
@@ -40,9 +40,7 @@ fn is_placeholder_secret(secret: &str) -> bool {
 fn validate_secret_key(secret: &str, debug: bool) {
     if debug {
         if is_default_insecure_secret(secret) || is_placeholder_secret(secret) {
-            tracing::warn!(
-                "DEBUG=true 且 SECRET_KEY 看起来不安全；仅建议本地开发使用"
-            );
+            tracing::warn!("DEBUG=true 且 SECRET_KEY 看起来不安全；仅建议本地开发使用");
         }
         return;
     }
@@ -78,7 +76,9 @@ fn build_cors_layer(debug: bool) -> CorsLayer {
     // - 开发：如果未配置则放开，便于直接从浏览器请求后端
     let allow_origin = if raw.is_empty() {
         if debug {
-            tracing::warn!("未设置 CORS_ALLOW_ORIGINS 且 DEBUG=true：将使用宽松 CORS（仅建议本地开发）");
+            tracing::warn!(
+                "未设置 CORS_ALLOW_ORIGINS 且 DEBUG=true：将使用宽松 CORS（仅建议本地开发）"
+            );
             Any.into()
         } else {
             AllowOrigin::predicate(|_, _| false)
@@ -205,7 +205,7 @@ fn maybe_ensure_sqlite_parent_dir(database_url: &str) {
     }
 
     // 这里不尝试解析 URL 编码；仅用于“目录不存在导致无法创建 sqlite 文件”的常见场景。
-    let path = std::path::PathBuf::from(rest.replace('/', &std::path::MAIN_SEPARATOR.to_string()));
+    let path = std::path::PathBuf::from(rest.replace('/', std::path::MAIN_SEPARATOR_STR));
     let _ = api::db::ensure_parent_dir(&path);
 }
 
@@ -271,10 +271,10 @@ async fn main() {
     validate_secret_key(&secret, config.get_bool("debug", false));
     let jwt = api::jwt::JwtService::from_secret(&secret);
 
-    if !config.system_initialized() {
-        if let Some(key) = config.get_or_generate_bootstrap_key() {
-            tracing::info!(bootstrap_key = %key, "BOOTSTRAP KEY");
-        }
+    if !config.system_initialized()
+        && let Some(key) = config.get_or_generate_bootstrap_key()
+    {
+        tracing::info!(bootstrap_key = %key, "BOOTSTRAP KEY");
     }
 
     if let Some(ref pool) = pool {

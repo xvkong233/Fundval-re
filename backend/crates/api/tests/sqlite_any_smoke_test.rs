@@ -14,4 +14,3 @@ async fn sqlite_anypool_can_connect_and_query() {
         .await
         .expect("query ok");
 }
-

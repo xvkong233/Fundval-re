@@ -31,4 +31,3 @@ async fn sqlite_migrations_can_run_in_memory() {
         .await
         .expect("watchlist exists");
 }
-

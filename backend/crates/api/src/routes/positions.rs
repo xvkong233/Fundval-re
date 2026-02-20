@@ -1,11 +1,11 @@
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
-use axum::{body::Bytes, extract::Query, http::StatusCode, response::IntoResponse, Json};
+use axum::{Json, body::Bytes, extract::Query, http::StatusCode, response::IntoResponse};
 use chrono::{DateTime, Duration, NaiveDate, SecondsFormat, Utc};
-use rust_decimal::{prelude::ToPrimitive, Decimal, RoundingStrategy};
+use rust_decimal::{Decimal, RoundingStrategy, prelude::ToPrimitive};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -197,7 +197,11 @@ pub async fn history(
     let account_id = match Uuid::parse_str(&account_id_raw) {
         Ok(v) => v,
         Err(_) => {
-            return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "detail": "Not found." })),
+            )
+                .into_response();
         }
     };
     let account_id_str = account_id.to_string();
@@ -229,7 +233,11 @@ pub async fn history(
     };
 
     let Some(row) = row else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "detail": "Not found." })),
+        )
+            .into_response();
     };
 
     let parent_id: Option<String> = row.get("parent_id");
@@ -276,7 +284,11 @@ pub async fn history(
     };
 
     if op_rows.is_empty() {
-        return (StatusCode::OK, Json(Vec::<PositionHistoryPointResponse>::new())).into_response();
+        return (
+            StatusCode::OK,
+            Json(Vec::<PositionHistoryPointResponse>::new()),
+        )
+            .into_response();
     }
 
     let mut ops = Vec::with_capacity(op_rows.len());
@@ -364,10 +376,11 @@ pub async fn history(
             Ok(v) => v,
             Err(_) => continue,
         };
-        let nav_date = match NaiveDate::parse_from_str(row.get::<String, _>("nav_date").trim(), "%Y-%m-%d") {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
+        let nav_date =
+            match NaiveDate::parse_from_str(row.get::<String, _>("nav_date").trim(), "%Y-%m-%d") {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
         nav_records.push(position_history::NavRecord {
             fund_id,
             nav_date,
@@ -419,7 +432,9 @@ pub async fn history(
             Err(_) => continue,
         };
         let latest_nav_text: Option<String> = row.get("latest_nav");
-        let Some(latest_nav_text) = latest_nav_text else { continue };
+        let Some(latest_nav_text) = latest_nav_text else {
+            continue;
+        };
         let latest_nav_text = latest_nav_text.trim().to_string();
         if latest_nav_text.is_empty() {
             continue;
@@ -515,7 +530,11 @@ pub async fn retrieve(
     };
 
     let Some(row) = row else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "detail": "Not found." })),
+        )
+            .into_response();
     };
 
     (StatusCode::OK, Json(position_from_row(row))).into_response()
@@ -589,7 +608,13 @@ pub async fn recalculate(
             .into_response();
     }
 
-    (StatusCode::OK, Json(MessageResponse { message: "重算完成" })).into_response()
+    (
+        StatusCode::OK,
+        Json(MessageResponse {
+            message: "重算完成",
+        }),
+    )
+        .into_response()
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -700,7 +725,12 @@ pub async fn operations_list(
         sql.push_str(&format!(" AND CAST(o.account_id AS TEXT) = ${bind_idx}"));
         bind_idx += 1;
     }
-    if q.fund_code.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()).is_some() {
+    if q.fund_code
+        .as_ref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .is_some()
+    {
         sql.push_str(&format!(" AND f.fund_code = ${bind_idx}"));
     }
     sql.push_str(" ORDER BY o.operation_date ASC, o.created_at ASC");
@@ -712,7 +742,12 @@ pub async fn operations_list(
     if let Some(account_id) = q.account {
         query = query.bind(account_id.to_string());
     }
-    if let Some(fund_code) = q.fund_code.as_ref().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
+    if let Some(fund_code) = q
+        .fund_code
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+    {
         query = query.bind(fund_code);
     }
 
@@ -776,11 +811,18 @@ pub async fn operations_create(
     };
 
     fn field_error(field: &'static str, message: impl Into<String>) -> axum::response::Response {
-        (StatusCode::BAD_REQUEST, Json(json!({ field: [message.into()] }))).into_response()
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ field: [message.into()] })),
+        )
+            .into_response()
     }
 
     #[allow(clippy::result_large_err)]
-    fn parse_decimal_input(field: &'static str, value: &Value) -> Result<Decimal, axum::response::Response> {
+    fn parse_decimal_input(
+        field: &'static str,
+        value: &Value,
+    ) -> Result<Decimal, axum::response::Response> {
         let raw = match value {
             Value::String(s) => s.trim().to_string(),
             Value::Number(n) => n.to_string(),
@@ -853,10 +895,12 @@ pub async fn operations_create(
     }
     let account_name: String = account_row.get("name");
 
-    let fund_row = match sqlx::query("SELECT CAST(id AS TEXT) as id, fund_name FROM fund WHERE fund_code = $1")
-        .bind(&fund_code)
-        .fetch_optional(pool)
-        .await
+    let fund_row = match sqlx::query(
+        "SELECT CAST(id AS TEXT) as id, fund_name FROM fund WHERE fund_code = $1",
+    )
+    .bind(&fund_code)
+    .fetch_optional(pool)
+    .await
     {
         Ok(v) => v,
         Err(e) => {
@@ -1057,7 +1101,11 @@ pub async fn operations_retrieve(
         }
     };
     let Some(row) = row else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "detail": "Not found." })),
+        )
+            .into_response();
     };
 
     if !is_staff {
@@ -1071,24 +1119,32 @@ pub async fn operations_retrieve(
             _ => -1,
         };
         if owner != user_id_i64 {
-            return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "detail": "Not found." })),
+            )
+                .into_response();
         }
     }
 
-    (StatusCode::OK, Json(OperationResponse {
-        id: row.get::<String, _>("id"),
-        account: row.get::<String, _>("account"),
-        account_name: row.get::<String, _>("account_name"),
-        fund: row.get::<String, _>("fund"),
-        fund_name: row.get::<String, _>("fund_name"),
-        operation_type: row.get::<String, _>("operation_type"),
-        operation_date: row.get::<String, _>("operation_date"),
-        before_15: row.get::<bool, _>("before_15"),
-        amount: fmt_decimal_fixed(parse_decimal(row.get::<String, _>("amount")), 2),
-        share: fmt_decimal_fixed(parse_decimal(row.get::<String, _>("share")), 4),
-        nav: fmt_decimal_fixed(parse_decimal(row.get::<String, _>("nav")), 4),
-        created_at: dbfmt::datetime_to_rfc3339(&row.get::<String, _>("created_at")),
-    })).into_response()
+    (
+        StatusCode::OK,
+        Json(OperationResponse {
+            id: row.get::<String, _>("id"),
+            account: row.get::<String, _>("account"),
+            account_name: row.get::<String, _>("account_name"),
+            fund: row.get::<String, _>("fund"),
+            fund_name: row.get::<String, _>("fund_name"),
+            operation_type: row.get::<String, _>("operation_type"),
+            operation_date: row.get::<String, _>("operation_date"),
+            before_15: row.get::<bool, _>("before_15"),
+            amount: fmt_decimal_fixed(parse_decimal(row.get::<String, _>("amount")), 2),
+            share: fmt_decimal_fixed(parse_decimal(row.get::<String, _>("share")), 4),
+            nav: fmt_decimal_fixed(parse_decimal(row.get::<String, _>("nav")), 4),
+            created_at: dbfmt::datetime_to_rfc3339(&row.get::<String, _>("created_at")),
+        }),
+    )
+        .into_response()
 }
 
 pub async fn operations_destroy(
@@ -1165,7 +1221,11 @@ pub async fn operations_destroy(
 
     let Some(row) = row else {
         let _ = tx.rollback().await;
-        return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "detail": "Not found." })),
+        )
+            .into_response();
     };
 
     let account_id: String = row.get("account_id");
@@ -1189,7 +1249,11 @@ pub async fn operations_destroy(
 
     if res.rows_affected() == 0 {
         let _ = tx.rollback().await;
-        return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "detail": "Not found." })),
+        )
+            .into_response();
     }
 
     if let Err(e) = recalculate_position(&mut tx, &account_id, &fund_id).await {
@@ -1215,7 +1279,9 @@ fn position_from_row(row: sqlx::any::AnyRow) -> PositionResponse {
     let holding_share = parse_decimal(row.get::<String, _>("holding_share"));
     let holding_cost = parse_decimal(row.get::<String, _>("holding_cost"));
     let holding_nav = parse_decimal(row.get::<String, _>("holding_nav"));
-    let latest_nav = row.get::<Option<String>, _>("latest_nav").map(parse_decimal);
+    let latest_nav = row
+        .get::<Option<String>, _>("latest_nav")
+        .map(parse_decimal);
 
     let pnl_dec = match latest_nav {
         None => Decimal::ZERO,
@@ -1331,11 +1397,13 @@ async fn recalculate_position(
     fund_id: &str,
 ) -> Result<(), String> {
     // 确认 account 是子账户（与 Django clean() 行为一致）
-    let row = sqlx::query("SELECT CAST(parent_id AS TEXT) as parent_id FROM account WHERE CAST(id AS TEXT) = $1")
-        .bind(account_id)
-        .fetch_optional(&mut **tx)
-        .await
-        .map_err(|e| e.to_string())?;
+    let row = sqlx::query(
+        "SELECT CAST(parent_id AS TEXT) as parent_id FROM account WHERE CAST(id AS TEXT) = $1",
+    )
+    .bind(account_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|e| e.to_string())?;
     let Some(row) = row else {
         return Err("account not found".to_string());
     };

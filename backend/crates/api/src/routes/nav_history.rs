@@ -1,9 +1,9 @@
-use axum::{extract::Query, http::StatusCode, response::IntoResponse, Json};
+use axum::{Json, extract::Query, http::StatusCode, response::IntoResponse};
 use chrono::{NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sqlx::any::AnyRow;
 use sqlx::Row;
+use sqlx::any::AnyRow;
 use uuid::Uuid;
 
 use crate::eastmoney;
@@ -55,7 +55,11 @@ pub async fn list(
         Some(p) => p,
     };
 
-    let fund_code = q.fund_code.as_ref().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    let fund_code = q
+        .fund_code
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
     let start_date = q
         .start_date
         .as_ref()
@@ -188,7 +192,11 @@ pub async fn retrieve(
         }
     };
     let Some(row) = row else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "detail": "Not found." })),
+        )
+            .into_response();
     };
 
     (StatusCode::OK, Json(row_to_item(row))).into_response()
@@ -417,11 +425,24 @@ pub async fn sync(
                 .into_response();
         }
     };
-    let tushare_token = state.config().get_string("tushare_token").unwrap_or_default();
+    let tushare_token = state
+        .config()
+        .get_string("tushare_token")
+        .unwrap_or_default();
 
     let mut results: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     for code in fund_codes {
-        match sync_one(pool, &client, source_name, &code, start_date, end_date, &tushare_token).await {
+        match sync_one(
+            pool,
+            &client,
+            source_name,
+            &code,
+            start_date,
+            end_date,
+            &tushare_token,
+        )
+        .await
+        {
             Ok(count) => {
                 results.insert(code, json!({ "success": true, "count": count }));
             }
@@ -518,10 +539,17 @@ async fn sync_one(
 
     let data = match source_name {
         sources::SOURCE_TIANTIAN => {
-            eastmoney::fetch_nav_history(client, fund_code, effective_start, Some(effective_end)).await?
+            eastmoney::fetch_nav_history(client, fund_code, effective_start, Some(effective_end))
+                .await?
         }
         sources::SOURCE_DANJUAN => {
-            sources::danjuan::fetch_nav_history(client, fund_code, effective_start, Some(effective_end)).await?
+            sources::danjuan::fetch_nav_history(
+                client,
+                fund_code,
+                effective_start,
+                Some(effective_end),
+            )
+            .await?
         }
         sources::SOURCE_THS => {
             let all = sources::ths::fetch_nav_series(client, fund_code).await?;
@@ -543,7 +571,14 @@ async fn sync_one(
             if tushare_token.trim().is_empty() {
                 return Err("tushare token 未配置（请在“设置”页面填写）".to_string());
             }
-            sources::tushare::fetch_nav_history(client, tushare_token, fund_code, effective_start, Some(effective_end)).await?
+            sources::tushare::fetch_nav_history(
+                client,
+                tushare_token,
+                fund_code,
+                effective_start,
+                Some(effective_end),
+            )
+            .await?
         }
         _ => return Err(format!("数据源 {source_name} 不存在")),
     };

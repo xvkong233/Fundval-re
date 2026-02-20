@@ -299,6 +299,7 @@ async fn run_sync_once_unlocked(state: &AppState) -> Result<SnifferSyncReport, S
     .await;
 
     let client = Client::builder()
+        .timeout(Duration::from_secs(30))
         .user_agent("Fundval-re sniffer/1.0")
         .build()
         .map_err(|e| format!("创建 HTTP 客户端失败: {e}"))?;

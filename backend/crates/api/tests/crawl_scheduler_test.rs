@@ -240,3 +240,49 @@ async fn enqueue_tick_bumps_priority_and_makes_job_due_soon() {
     let not_before: String = row.get("not_before");
     assert!(!not_before.contains("2099-01-01"));
 }
+
+#[tokio::test]
+async fn enqueue_tick_all_funds_stops_when_all_seeded() {
+    sqlx::any::install_default_drivers();
+
+    let pool = sqlx::any::AnyPoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .expect("connect sqlite in-memory");
+
+    let migrator = sqlx::migrate!("../../migrations/sqlite");
+    migrator.run(&pool).await.expect("migrate");
+
+    // seed funds only (no watchlists / positions) -> enqueue_tick should seed all funds
+    for (id, code) in [("f-a", "A"), ("f-b", "B")] {
+        sqlx::query(
+            r#"
+            INSERT INTO fund (id, fund_code, fund_name, fund_type, created_at, updated_at)
+            VALUES ($1, $2, $3, '股票型', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            "#,
+        )
+        .bind(id)
+        .bind(code)
+        .bind(format!("fund-{code}"))
+        .execute(&pool)
+        .await
+        .expect("seed fund");
+    }
+
+    let n1 = api::crawl::scheduler::enqueue_tick(&pool, 100, "tiantian")
+        .await
+        .expect("enqueue tick 1");
+    assert_eq!(n1, 2);
+
+    let n2 = api::crawl::scheduler::enqueue_tick(&pool, 100, "tiantian")
+        .await
+        .expect("enqueue tick 2");
+    assert_eq!(n2, 0);
+
+    // Once all funds have crawl jobs, subsequent ticks should remain 0 (no round-robin churn).
+    let n3 = api::crawl::scheduler::enqueue_tick(&pool, 100, "tiantian")
+        .await
+        .expect("enqueue tick 3");
+    assert_eq!(n3, 0);
+}

@@ -49,6 +49,51 @@ impl ConfigStore {
         if let Ok(debug) = std::env::var("DEBUG") {
             data.insert("debug".into(), Value::Bool(debug.to_lowercase() == "true"));
         }
+        if let Ok(v) = std::env::var("CRAWL_ENABLED") {
+            data.insert(
+                "crawl_enabled".into(),
+                Value::Bool(v.to_lowercase() == "true"),
+            );
+        }
+        if let Ok(v) = std::env::var("CRAWL_SOURCE") {
+            data.insert("crawl_source".into(), Value::String(v));
+        }
+        if let Some(v) = std::env::var("CRAWL_TICK_INTERVAL_SECONDS")
+            .ok()
+            .and_then(|s| s.parse::<i64>().ok())
+        {
+            data.insert(
+                "crawl_tick_interval_seconds".into(),
+                Value::Number(serde_json::Number::from(v)),
+            );
+        }
+        if let Some(v) = std::env::var("CRAWL_ENQUEUE_MAX_JOBS")
+            .ok()
+            .and_then(|s| s.parse::<i64>().ok())
+        {
+            data.insert(
+                "crawl_enqueue_max_jobs".into(),
+                Value::Number(serde_json::Number::from(v)),
+            );
+        }
+        if let Some(v) = std::env::var("CRAWL_RUN_MAX_JOBS")
+            .ok()
+            .and_then(|s| s.parse::<i64>().ok())
+        {
+            data.insert(
+                "crawl_run_max_jobs".into(),
+                Value::Number(serde_json::Number::from(v)),
+            );
+        }
+        if let Some(v) = std::env::var("CRAWL_PER_JOB_DELAY_MS")
+            .ok()
+            .and_then(|s| s.parse::<i64>().ok())
+        {
+            data.insert(
+                "crawl_per_job_delay_ms".into(),
+                Value::Number(serde_json::Number::from(v)),
+            );
+        }
 
         Self {
             path,
@@ -177,6 +222,16 @@ fn default_config() -> BTreeMap<String, Value> {
     m.insert("estimate_cache_ttl".into(), Value::Number(5.into()));
     m.insert("sources_health_probe".into(), Value::Bool(true));
     m.insert("tushare_token".into(), Value::Null);
+    // crawl / cache: 自选/持仓优先，分批播种全量，避免触发数据源封锁
+    m.insert("crawl_enabled".into(), Value::Bool(true));
+    m.insert("crawl_source".into(), Value::String("tiantian".into()));
+    m.insert(
+        "crawl_tick_interval_seconds".into(),
+        Value::Number(30.into()),
+    );
+    m.insert("crawl_enqueue_max_jobs".into(), Value::Number(200.into()));
+    m.insert("crawl_run_max_jobs".into(), Value::Number(20.into()));
+    m.insert("crawl_per_job_delay_ms".into(), Value::Number(250.into()));
     m
 }
 

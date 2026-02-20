@@ -29,17 +29,48 @@ pub async fn background_task(state: AppState) {
     };
 
     // 每轮：先补充队列（自选/持仓优先），再跑一批到期任务。
-    let mut interval = tokio::time::interval(Duration::from_secs(30));
+    let tick_seconds = state
+        .config()
+        .get_i64("crawl_tick_interval_seconds", 30)
+        .max(1) as u64;
+    let mut interval = tokio::time::interval(Duration::from_secs(tick_seconds));
     loop {
         interval.tick().await;
 
         let _guard = state.crawl_lock().lock().await;
 
-        if let Err(e) = scheduler::enqueue_tick(&pool, 200, sources::SOURCE_TIANTIAN).await {
+        if !state.config().get_bool("crawl_enabled", true) {
+            continue;
+        }
+
+        let source_raw = state
+            .config()
+            .get_string("crawl_source")
+            .unwrap_or_else(|| sources::SOURCE_TIANTIAN.to_string());
+        let Some(source_name) = sources::normalize_source_name(&source_raw) else {
+            tracing::warn!(source = %source_raw, "crawl disabled due to unknown source");
+            continue;
+        };
+
+        let enqueue_max = state
+            .config()
+            .get_i64("crawl_enqueue_max_jobs", 200)
+            .clamp(0, 5000);
+        if let Err(e) = scheduler::enqueue_tick(&pool, enqueue_max, source_name).await {
             tracing::warn!(error = %e, "crawl enqueue_tick failed");
         }
 
-        if let Err(e) = run_due_jobs_with_nav_sync(&pool, state.config(), 20, 250).await {
+        let run_max = state
+            .config()
+            .get_i64("crawl_run_max_jobs", 20)
+            .clamp(0, 5000);
+        let per_job_delay_ms = state
+            .config()
+            .get_i64("crawl_per_job_delay_ms", 250)
+            .clamp(0, 60_000) as u64;
+        if let Err(e) =
+            run_due_jobs_with_nav_sync(&pool, state.config(), run_max, per_job_delay_ms).await
+        {
             tracing::warn!(error = %e, "crawl run_due_jobs failed");
         }
     }

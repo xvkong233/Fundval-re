@@ -316,28 +316,23 @@ async fn enqueue_nav_for_all_funds_round_robin(
     if max_jobs <= 0 {
         return Ok(0);
     }
-
-    let offset: i64 = sqlx::query("SELECT value FROM crawl_state WHERE key = 'fund_offset'")
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten()
-        .and_then(|r| r.try_get::<String, _>("value").ok())
-        .and_then(|s| s.trim().parse::<i64>().ok())
-        .unwrap_or(0)
-        .max(0);
-
+    // 全量播种：只补“还没有 crawl_job 的基金”，避免 OFFSET 轮询导致的反复扫描/抖动。
+    // 一旦全量都播种完毕，此函数将稳定返回 0。
     let rows = sqlx::query(
         r#"
-        SELECT fund_code
-        FROM fund
-        ORDER BY fund_code ASC
+        SELECT f.fund_code as fund_code
+        FROM fund f
+        LEFT JOIN crawl_job cj
+          ON cj.job_type = 'nav_history_sync'
+         AND cj.fund_code = f.fund_code
+         AND cj.source_name = $2
+        WHERE cj.id IS NULL
+        ORDER BY f.fund_code ASC
         LIMIT $1
-        OFFSET $2
         "#,
     )
     .bind(max_jobs)
-    .bind(offset)
+    .bind(source_name)
     .fetch_all(pool)
     .await
     .map_err(|e| e.to_string())?;
@@ -351,22 +346,6 @@ async fn enqueue_nav_for_all_funds_round_robin(
         upsert_nav_job(pool, code.trim(), source_name, 10).await?;
         inserted += 1;
     }
-
-    let new_offset = if rows.is_empty() {
-        0
-    } else {
-        offset + rows.len() as i64
-    };
-    let _ = sqlx::query(
-        r#"
-        INSERT INTO crawl_state (key, value, updated_at)
-        VALUES ('fund_offset', $1, CURRENT_TIMESTAMP)
-        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP
-        "#,
-    )
-    .bind(new_offset.to_string())
-    .execute(pool)
-    .await;
 
     Ok(inserted)
 }

@@ -33,8 +33,13 @@ fn parses_by_header_name_not_column_order() {
     assert_eq!(rows[0].sector, "有色金属");
     assert_eq!(rows[0].fund_code, "017193");
     assert_eq!(rows[0].star_count, Some(5));
-    assert_eq!(rows[0].week_growth, Some(Decimal::from_str("2.75").unwrap()));
-    assert_eq!(rows[0].year_growth, Some(Decimal::from_str("112.77").unwrap()));
+    assert_eq!(
+        rows[0].week_growth,
+        Some(Decimal::from_str("2.75").unwrap())
+    );
+    assert_eq!(
+        rows[0].year_growth,
+        Some(Decimal::from_str("112.77").unwrap())
+    );
     assert_eq!(rows[0].tags, vec!["强势中", "涨得多"]);
 }
-

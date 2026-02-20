@@ -129,7 +129,14 @@ pub async fn status(
         }
     };
 
-    (StatusCode::OK, Json(SnifferStatusResponse { last_run, last_snapshot })).into_response()
+    (
+        StatusCode::OK,
+        Json(SnifferStatusResponse {
+            last_run,
+            last_snapshot,
+        }),
+    )
+        .into_response()
 }
 
 pub async fn items(
@@ -334,10 +341,6 @@ pub async fn admin_sync(
             })),
         )
             .into_response(),
-        Err(e) => (
-            StatusCode::BAD_GATEWAY,
-            Json(json!({ "error": e })),
-        )
-            .into_response(),
+        Err(e) => (StatusCode::BAD_GATEWAY, Json(json!({ "error": e }))).into_response(),
     }
 }

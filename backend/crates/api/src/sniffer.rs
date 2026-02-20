@@ -7,8 +7,8 @@ use csv::StringRecord;
 use reqwest::Client;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
-use sqlx::{PgPool, Postgres, Row};
 use sqlx::types::Json;
+use sqlx::{PgPool, Postgres, Row};
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -110,9 +110,15 @@ pub fn parse_deepq_csv(text: &str) -> Result<Vec<SnifferRow>, String> {
     }
 
     let get_idx = |name: &str| idx.get(name).copied();
-    let Some(sector_i) = get_idx("板块") else { return Err("csv 缺少列：板块".to_string()); };
-    let Some(name_i) = get_idx("基金名称") else { return Err("csv 缺少列：基金名称".to_string()); };
-    let Some(code_i) = get_idx("基金代码") else { return Err("csv 缺少列：基金代码".to_string()); };
+    let Some(sector_i) = get_idx("板块") else {
+        return Err("csv 缺少列：板块".to_string());
+    };
+    let Some(name_i) = get_idx("基金名称") else {
+        return Err("csv 缺少列：基金名称".to_string());
+    };
+    let Some(code_i) = get_idx("基金代码") else {
+        return Err("csv 缺少列：基金代码".to_string());
+    };
     let week_i = get_idx("近1周涨幅");
     let year_h = pick_year_growth_header(&headers);
     let year_i = year_h.as_deref().and_then(get_idx);
@@ -127,16 +133,7 @@ pub fn parse_deepq_csv(text: &str) -> Result<Vec<SnifferRow>, String> {
     for rec in rdr.records() {
         let rec = rec.map_err(|e| format!("csv 读取记录失败: {e}"))?;
         let row = parse_record(
-            &rec,
-            sector_i,
-            name_i,
-            code_i,
-            week_i,
-            year_i,
-            drawdown_i,
-            size_i,
-            star_i,
-            tags_i,
+            &rec, sector_i, name_i, code_i, week_i, year_i, drawdown_i, size_i, star_i, tags_i,
         );
         if let Some(row) = row {
             if seen_codes.insert(row.fund_code.clone()) {
@@ -149,7 +146,11 @@ pub fn parse_deepq_csv(text: &str) -> Result<Vec<SnifferRow>, String> {
         a.sector
             .cmp(&b.sector)
             .then_with(|| b.star_count.unwrap_or(-1).cmp(&a.star_count.unwrap_or(-1)))
-            .then_with(|| b.week_growth.unwrap_or(Decimal::MIN).cmp(&a.week_growth.unwrap_or(Decimal::MIN)))
+            .then_with(|| {
+                b.week_growth
+                    .unwrap_or(Decimal::MIN)
+                    .cmp(&a.week_growth.unwrap_or(Decimal::MIN))
+            })
             .then_with(|| a.fund_code.cmp(&b.fund_code))
     });
 
@@ -226,7 +227,9 @@ pub fn next_daily_run_utc(now_utc: chrono::DateTime<Utc>) -> chrono::DateTime<Ut
     let next_local = if local.naive_utc() < target_today {
         target_today
     } else {
-        (today.succ_opt().unwrap_or(today)).and_hms_opt(DAILY_HOUR, DAILY_MINUTE, 0).unwrap()
+        (today.succ_opt().unwrap_or(today))
+            .and_hms_opt(DAILY_HOUR, DAILY_MINUTE, 0)
+            .unwrap()
     };
     chrono::DateTime::<Utc>::from_naive_utc_and_offset(
         next_local - chrono::Duration::seconds(TZ_OFFSET_SECONDS as i64),
@@ -319,7 +322,10 @@ async fn run_sync_once_unlocked(state: &AppState) -> Result<SnifferSyncReport, S
     let snapshot_id = Uuid::new_v4();
     let item_count = rows.len() as i32;
 
-    let mut tx = pool.begin().await.map_err(|e| format!("开启事务失败: {e}"))?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| format!("开启事务失败: {e}"))?;
 
     sqlx::query(
         r#"
@@ -386,7 +392,10 @@ async fn run_sync_once_unlocked(state: &AppState) -> Result<SnifferSyncReport, S
         .fetch_all(&mut *tx)
         .await
         .map_err(|e| format!("读取用户列表失败: {e}"))?;
-    let user_ids: Vec<i64> = user_rows.into_iter().map(|r| r.get::<i64, _>("id")).collect();
+    let user_ids: Vec<i64> = user_rows
+        .into_iter()
+        .map(|r| r.get::<i64, _>("id"))
+        .collect();
 
     let mut users_updated: i32 = 0;
     for user_id in &user_ids {

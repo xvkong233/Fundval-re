@@ -8,6 +8,7 @@ import {
   Empty,
   Result,
   Select,
+  Slider,
   Space,
   Spin,
   Statistic,
@@ -81,6 +82,16 @@ export default function FundDetailPage() {
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analytics, setAnalytics] = useState<any | null>(null);
   const [analyticsError, setAnalyticsError] = useState<string | null>(null);
+
+  const [gamma, setGamma] = useState<number>(() => {
+    if (typeof window === "undefined") return 3;
+    const raw = window.localStorage.getItem("fundval_gamma");
+    const n = raw ? Number(raw) : 3;
+    return Number.isFinite(n) && n > 0 ? n : 3;
+  });
+  const [multiAnalyticsLoading, setMultiAnalyticsLoading] = useState(false);
+  const [multiAnalytics, setMultiAnalytics] = useState<Record<string, any | null>>({});
+  const [multiAnalyticsError, setMultiAnalyticsError] = useState<string | null>(null);
 
   const [positionsLoading, setPositionsLoading] = useState(false);
   const [positionRows, setPositionRows] = useState<FundPositionRow[]>([]);
@@ -222,6 +233,11 @@ export default function FundDetailPage() {
   }, [source]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("fundval_gamma", String(gamma));
+  }, [gamma]);
+
+  useEffect(() => {
     if (!fundCode) return;
     void loadFund();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -251,7 +267,7 @@ export default function FundDetailPage() {
       setAnalyticsError(null);
       try {
         const range = timeRangeToTradingDaysRange(timeRange);
-        const res = await getFundAnalytics(fundCode, { range, source });
+        const res = await getFundAnalytics(fundCode, { range, source, gamma });
         setAnalytics(res?.data ?? null);
       } catch (e: any) {
         const msg = e?.response?.data?.error || e?.response?.data?.detail || "加载专业指标失败";
@@ -263,7 +279,40 @@ export default function FundDetailPage() {
     };
 
     void load();
-  }, [fundCode, source, timeRange, navHistory.length]);
+  }, [fundCode, source, timeRange, navHistory.length, gamma]);
+
+  useEffect(() => {
+    if (!fundCode) return;
+
+    const load = async () => {
+      setMultiAnalyticsLoading(true);
+      setMultiAnalyticsError(null);
+      try {
+        const ranges = ["60T", "120T", "252T"];
+        const res = await Promise.all(
+          ranges.map(async (range) => {
+            try {
+              const r = await getFundAnalytics(fundCode, { range, source, gamma });
+              return [range, r?.data ?? null] as const;
+            } catch (e: any) {
+              const msg = e?.response?.data?.error || e?.response?.data?.detail || "加载失败";
+              return [range, { __error: String(msg) }] as const;
+            }
+          })
+        );
+        const out: Record<string, any | null> = {};
+        for (const [range, data] of res) out[range] = data;
+        setMultiAnalytics(out);
+      } catch {
+        setMultiAnalytics({});
+        setMultiAnalyticsError("加载性价比/短线策略失败");
+      } finally {
+        setMultiAnalyticsLoading(false);
+      }
+    };
+
+    void load();
+  }, [fundCode, source, gamma]);
 
   useEffect(() => {
     if (!fundCode) return;
@@ -330,6 +379,13 @@ export default function FundDetailPage() {
   const maxDrawdown = toNumber(analytics?.metrics?.max_drawdown);
   const rfRate = toNumber(analytics?.rf?.rate_percent);
 
+  const bucketLabel = (b: any) => {
+    const s = String(b ?? "").toLowerCase();
+    if (s === "low") return { text: "偏低", color: "green" };
+    if (s === "high") return { text: "偏高", color: "red" };
+    return { text: "中等", color: "gold" };
+  };
+
   return (
     <AuthedLayout title={title}>
       <Space direction="vertical" size="large" style={{ width: "100%" }}>
@@ -391,6 +447,7 @@ export default function FundDetailPage() {
           extra={
             <Space wrap>
               <Tag color="geekblue">窗口：{String(timeRangeToTradingDaysRange(timeRange))}</Tag>
+              <Tag color="purple">γ：{gamma.toFixed(1)}</Tag>
               <Tag color="default">自然日：7 / 30 / 180 / 365+</Tag>
               <Tag color="default">交易日：5T / 20T / 60T / 120T / 252T</Tag>
             </Space>
@@ -434,6 +491,106 @@ export default function FundDetailPage() {
           <div style={{ marginTop: 12 }}>
             <Text type="secondary" style={{ fontSize: 12 }}>
               说明：Sharpe 使用 3M 国债利率作为无风险利率（rf），指标随净值数据与数据源变化；不构成投资建议。
+            </Text>
+          </div>
+        </Card>
+
+        <Card
+          title="性价比（同类分位）& 经济学 CE（γ 可调）& 短线策略（趋势优先）"
+          loading={multiAnalyticsLoading}
+          extra={
+            <Space wrap>
+              <span style={{ color: token.colorTextSecondary, fontSize: 12 }}>γ（风险厌恶系数）</span>
+              <div style={{ width: 220 }}>
+                <Slider
+                  min={1}
+                  max={10}
+                  step={0.5}
+                  value={gamma}
+                  onChange={(v) => setGamma(typeof v === "number" ? v : 3)}
+                  tooltip={{ open: false }}
+                />
+              </div>
+              <Tag color="purple">{gamma.toFixed(1)}</Tag>
+            </Space>
+          }
+        >
+          {multiAnalyticsError ? <Result status="warning" title="暂不可用" subTitle={multiAnalyticsError} /> : null}
+
+          <Table
+            rowKey={(r: any) => String(r.range)}
+            pagination={false}
+            size="small"
+            dataSource={[
+              { range: "60T", label: "60T（≈3M）", data: multiAnalytics["60T"] },
+              { range: "120T", label: "120T（≈6M）", data: multiAnalytics["120T"] },
+              { range: "252T", label: "252T（≈1Y）", data: multiAnalytics["252T"] },
+            ]}
+            columns={[
+              { title: "窗口", dataIndex: "label", key: "label", width: 140 },
+              {
+                title: "同类分位综合分",
+                key: "value_score",
+                render: (_: any, row: any) => {
+                  const d = row?.data;
+                  if (!d || d.__error) return <Text type="secondary">-</Text>;
+                  const vs = d.value_score;
+                  if (!vs) return <Text type="secondary">-</Text>;
+                  return (
+                    <Space direction="vertical" size={0}>
+                      <span>
+                        {Number(vs.score_0_100).toFixed(1)} / 100（{Number(vs.percentile_0_100).toFixed(0)}%）
+                      </span>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        同类：{String(vs.fund_type || "-")}（样本 {String(vs.sample_size ?? "-")}）
+                      </Text>
+                    </Space>
+                  );
+                },
+              },
+              {
+                title: "CE（年化）",
+                key: "ce",
+                width: 220,
+                render: (_: any, row: any) => {
+                  const d = row?.data;
+                  if (!d || d.__error) return <Text type="secondary">-</Text>;
+                  const ce = d.ce;
+                  if (!ce) return <Text type="secondary">-</Text>;
+                  const cePct = Number(ce.ce) * 100;
+                  const p = Number(ce.percentile_0_100);
+                  return (
+                    <span>
+                      {Number.isFinite(cePct) ? `${cePct.toFixed(2)}%` : "-"}（{Number.isFinite(p) ? `${p.toFixed(0)}%` : "-"}）
+                    </span>
+                  );
+                },
+              },
+              {
+                title: "短线建议",
+                key: "short_term",
+                render: (_: any, row: any) => {
+                  const d = row?.data;
+                  if (!d || d.__error) return <Text type="secondary">-</Text>;
+                  const st = d.short_term;
+                  if (!st?.combined) return <Text type="secondary">-</Text>;
+                  const b = bucketLabel(st.combined.bucket);
+                  return (
+                    <Space direction="vertical" size={0}>
+                      <Tag color={b.color}>{b.text}</Tag>
+                      <Text type="secondary" style={{ fontSize: 12 }} ellipsis>
+                        {String(st.combined.action_hint || "")}
+                      </Text>
+                    </Space>
+                  );
+                },
+              },
+            ]}
+          />
+
+          <div style={{ marginTop: 12 }}>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              说明：同类分位综合分按 fund_type 同类比较；CE 为确定性等价（超额收益 - 0.5*γ*方差），γ 越大越保守；短线策略为“趋势优先 + 均值回归”并行，仅供参考，不构成投资建议。
             </Text>
           </div>
         </Card>

@@ -65,7 +65,10 @@ export const getFundDetail = (fundCode: string) => api.get(`/funds/${encodeURICo
 export const getFundEstimate = (fundCode: string, source?: string) =>
   api.get(`/funds/${encodeURIComponent(fundCode)}/estimate/`, { params: source ? { source } : {} });
 
-export const getFundAnalytics = (fundCode: string, params?: { range?: string; source?: string }) =>
+export const getFundAnalytics = (
+  fundCode: string,
+  params?: { range?: string; source?: string; gamma?: number }
+) =>
   api.get(`/funds/${encodeURIComponent(fundCode)}/analytics/`, { params });
 
 export const batchEstimate = (fundCodes: string[], source?: string) =>

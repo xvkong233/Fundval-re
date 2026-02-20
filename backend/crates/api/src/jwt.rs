@@ -49,4 +49,3 @@ impl JwtService {
         jsonwebtoken::decode::<Claims>(token, &self.decoding, &validation)
     }
 }
-

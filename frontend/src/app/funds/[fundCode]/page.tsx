@@ -195,7 +195,6 @@ export default function FundDetailPage() {
 
   useEffect(() => {
     void loadSources();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

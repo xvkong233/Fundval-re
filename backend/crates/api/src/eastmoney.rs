@@ -1,9 +1,9 @@
 use chrono::{NaiveDate, NaiveDateTime, TimeZone, Utc};
 use regex::Regex;
+use reqwest::header::{ACCEPT, ACCEPT_LANGUAGE, HeaderMap, HeaderValue, REFERER};
 use rust_decimal::Decimal;
 use serde_json::Value;
 use std::collections::HashMap;
-use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, ACCEPT_LANGUAGE, REFERER};
 
 #[derive(Debug, Clone)]
 pub struct EstimateData {
@@ -60,8 +60,14 @@ fn extract_jsonpgz_payload(text: &str) -> Option<&str> {
 pub fn build_client() -> Result<reqwest::Client, String> {
     let mut headers = HeaderMap::new();
     headers.insert(ACCEPT, HeaderValue::from_static("*/*"));
-    headers.insert(ACCEPT_LANGUAGE, HeaderValue::from_static("zh-CN,zh;q=0.9,en;q=0.8"));
-    headers.insert(REFERER, HeaderValue::from_static("https://fund.eastmoney.com/"));
+    headers.insert(
+        ACCEPT_LANGUAGE,
+        HeaderValue::from_static("zh-CN,zh;q=0.9,en;q=0.8"),
+    );
+    headers.insert(
+        REFERER,
+        HeaderValue::from_static("https://fund.eastmoney.com/"),
+    );
 
     reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
@@ -72,7 +78,10 @@ pub fn build_client() -> Result<reqwest::Client, String> {
         .map_err(|e| e.to_string())
 }
 
-pub async fn fetch_estimate(client: &reqwest::Client, fund_code: &str) -> Result<Option<EstimateData>, String> {
+pub async fn fetch_estimate(
+    client: &reqwest::Client,
+    fund_code: &str,
+) -> Result<Option<EstimateData>, String> {
     // 与原项目（Python requests）保持一致：使用 fundgz 的 jsonpgz JSONP
     let url = format!("http://fundgz.1234567.com.cn/js/{fund_code}.js");
     let text = client
@@ -91,13 +100,26 @@ pub async fn fetch_estimate(client: &reqwest::Client, fund_code: &str) -> Result
     };
 
     let v: Value = serde_json::from_str(json_str).map_err(|e| e.to_string())?;
-    let fundcode = v.get("fundcode").and_then(|x| x.as_str()).unwrap_or("").trim();
+    let fundcode = v
+        .get("fundcode")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .trim();
     let name = v.get("name").and_then(|x| x.as_str()).unwrap_or("").trim();
     let gsz = v.get("gsz").and_then(|x| x.as_str()).unwrap_or("").trim();
     let gszzl = v.get("gszzl").and_then(|x| x.as_str()).unwrap_or("").trim();
-    let gztime = v.get("gztime").and_then(|x| x.as_str()).unwrap_or("").trim();
+    let gztime = v
+        .get("gztime")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .trim();
 
-    if fundcode.is_empty() || name.is_empty() || gsz.is_empty() || gszzl.is_empty() || gztime.is_empty() {
+    if fundcode.is_empty()
+        || name.is_empty()
+        || gsz.is_empty()
+        || gszzl.is_empty()
+        || gztime.is_empty()
+    {
         return Ok(None);
     }
 
@@ -136,7 +158,11 @@ pub async fn fetch_realtime_nav(
     };
 
     let v: Value = serde_json::from_str(json_str).map_err(|e| e.to_string())?;
-    let fundcode = v.get("fundcode").and_then(|x| x.as_str()).unwrap_or("").trim();
+    let fundcode = v
+        .get("fundcode")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .trim();
     let dwjz = v.get("dwjz").and_then(|x| x.as_str()).unwrap_or("").trim();
     let jzrq = v.get("jzrq").and_then(|x| x.as_str()).unwrap_or("").trim();
 
@@ -343,4 +369,3 @@ mod tests {
         assert_eq!(v.get("a").and_then(|x| x.as_str()), Some("b(c)d"));
     }
 }
-

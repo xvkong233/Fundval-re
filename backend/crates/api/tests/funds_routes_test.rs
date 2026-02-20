@@ -8,7 +8,7 @@ async fn funds_list_requires_database() {
     let config = api::config::ConfigStore::load();
     let jwt = api::jwt::JwtService::from_secret("test-secret");
     let state = AppState::new(None, config, jwt);
-    let app = api::app(state);
+    let app = api::service(state);
 
     let res = app
         .oneshot(
@@ -28,7 +28,7 @@ async fn funds_retrieve_requires_database() {
     let config = api::config::ConfigStore::load();
     let jwt = api::jwt::JwtService::from_secret("test-secret");
     let state = AppState::new(None, config, jwt);
-    let app = api::app(state);
+    let app = api::service(state);
 
     let res = app
         .oneshot(
@@ -42,4 +42,3 @@ async fn funds_retrieve_requires_database() {
 
     assert_eq!(res.status(), 500);
 }
-

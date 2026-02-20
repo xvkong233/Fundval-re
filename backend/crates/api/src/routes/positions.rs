@@ -1,11 +1,11 @@
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
-use axum::{body::Bytes, extract::Query, http::StatusCode, response::IntoResponse, Json};
+use axum::{Json, body::Bytes, extract::Query, http::StatusCode, response::IntoResponse};
 use chrono::{DateTime, Duration, NaiveDate, SecondsFormat, Utc};
-use rust_decimal::{prelude::ToPrimitive, Decimal, RoundingStrategy};
+use rust_decimal::{Decimal, RoundingStrategy, prelude::ToPrimitive};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -196,7 +196,11 @@ pub async fn history(
     let account_id = match Uuid::parse_str(&account_id_raw) {
         Ok(v) => v,
         Err(_) => {
-            return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "detail": "Not found." })),
+            )
+                .into_response();
         }
     };
 
@@ -225,7 +229,11 @@ pub async fn history(
     };
 
     let Some(row) = row else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "detail": "Not found." })),
+        )
+            .into_response();
     };
 
     let parent_id: Option<Uuid> = row.get("parent_id");
@@ -267,7 +275,11 @@ pub async fn history(
     };
 
     if op_rows.is_empty() {
-        return (StatusCode::OK, Json(Vec::<PositionHistoryPointResponse>::new())).into_response();
+        return (
+            StatusCode::OK,
+            Json(Vec::<PositionHistoryPointResponse>::new()),
+        )
+            .into_response();
     }
 
     let mut ops = Vec::with_capacity(op_rows.len());
@@ -353,7 +365,9 @@ pub async fn history(
     for row in latest_rows {
         let fund_id: Uuid = row.get("fund_id");
         let latest_nav_text: Option<String> = row.get("latest_nav");
-        let Some(latest_nav_text) = latest_nav_text else { continue };
+        let Some(latest_nav_text) = latest_nav_text else {
+            continue;
+        };
         let latest_nav_text = latest_nav_text.trim().to_string();
         if latest_nav_text.is_empty() {
             continue;
@@ -449,7 +463,11 @@ pub async fn retrieve(
     };
 
     let Some(row) = row else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "detail": "Not found." })),
+        )
+            .into_response();
     };
 
     (StatusCode::OK, Json(position_from_row(row))).into_response()
@@ -523,7 +541,13 @@ pub async fn recalculate(
             .into_response();
     }
 
-    (StatusCode::OK, Json(MessageResponse { message: "重算完成" })).into_response()
+    (
+        StatusCode::OK,
+        Json(MessageResponse {
+            message: "重算完成",
+        }),
+    )
+        .into_response()
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -634,7 +658,12 @@ pub async fn operations_list(
         sql.push_str(&format!(" AND o.account_id = ${bind_idx}"));
         bind_idx += 1;
     }
-    if q.fund_code.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()).is_some() {
+    if q.fund_code
+        .as_ref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .is_some()
+    {
         sql.push_str(&format!(" AND f.fund_code = ${bind_idx}"));
     }
     sql.push_str(" ORDER BY o.operation_date ASC, o.created_at ASC");
@@ -646,7 +675,12 @@ pub async fn operations_list(
     if let Some(account_id) = q.account {
         query = query.bind(account_id);
     }
-    if let Some(fund_code) = q.fund_code.as_ref().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
+    if let Some(fund_code) = q
+        .fund_code
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+    {
         query = query.bind(fund_code);
     }
 
@@ -710,11 +744,18 @@ pub async fn operations_create(
     };
 
     fn field_error(field: &'static str, message: impl Into<String>) -> axum::response::Response {
-        (StatusCode::BAD_REQUEST, Json(json!({ field: [message.into()] }))).into_response()
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ field: [message.into()] })),
+        )
+            .into_response()
     }
 
     #[allow(clippy::result_large_err)]
-    fn parse_decimal_input(field: &'static str, value: &Value) -> Result<Decimal, axum::response::Response> {
+    fn parse_decimal_input(
+        field: &'static str,
+        value: &Value,
+    ) -> Result<Decimal, axum::response::Response> {
         let raw = match value {
             Value::String(s) => s.trim().to_string(),
             Value::Number(n) => n.to_string(),
@@ -745,20 +786,21 @@ pub async fn operations_create(
         _ => false,
     };
 
-    let account_row = match sqlx::query("SELECT user_id, parent_id, name FROM account WHERE id = $1")
-        .bind(body.account)
-        .fetch_optional(pool)
-        .await
-    {
-        Ok(v) => v,
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                errors::internal_json(&state, e),
-            )
-                .into_response();
-        }
-    };
+    let account_row =
+        match sqlx::query("SELECT user_id, parent_id, name FROM account WHERE id = $1")
+            .bind(body.account)
+            .fetch_optional(pool)
+            .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    errors::internal_json(&state, e),
+                )
+                    .into_response();
+            }
+        };
     let Some(account_row) = account_row else {
         return (
             StatusCode::BAD_REQUEST,
@@ -988,7 +1030,11 @@ pub async fn operations_retrieve(
         }
     };
     let Some(row) = row else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "detail": "Not found." })),
+        )
+            .into_response();
     };
 
     if !is_staff {
@@ -1002,24 +1048,32 @@ pub async fn operations_retrieve(
             _ => -1,
         };
         if owner != user_id_i64 {
-            return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "detail": "Not found." })),
+            )
+                .into_response();
         }
     }
 
-    (StatusCode::OK, Json(OperationResponse {
-        id: row.get::<String, _>("id"),
-        account: row.get::<String, _>("account"),
-        account_name: row.get::<String, _>("account_name"),
-        fund: row.get::<String, _>("fund"),
-        fund_name: row.get::<String, _>("fund_name"),
-        operation_type: row.get::<String, _>("operation_type"),
-        operation_date: row.get::<String, _>("operation_date"),
-        before_15: row.get::<bool, _>("before_15"),
-        amount: fmt_decimal_fixed(parse_decimal(row.get::<String, _>("amount")), 2),
-        share: fmt_decimal_fixed(parse_decimal(row.get::<String, _>("share")), 4),
-        nav: fmt_decimal_fixed(parse_decimal(row.get::<String, _>("nav")), 4),
-        created_at: format_dt(row.get::<DateTime<Utc>, _>("created_at")),
-    })).into_response()
+    (
+        StatusCode::OK,
+        Json(OperationResponse {
+            id: row.get::<String, _>("id"),
+            account: row.get::<String, _>("account"),
+            account_name: row.get::<String, _>("account_name"),
+            fund: row.get::<String, _>("fund"),
+            fund_name: row.get::<String, _>("fund_name"),
+            operation_type: row.get::<String, _>("operation_type"),
+            operation_date: row.get::<String, _>("operation_date"),
+            before_15: row.get::<bool, _>("before_15"),
+            amount: fmt_decimal_fixed(parse_decimal(row.get::<String, _>("amount")), 2),
+            share: fmt_decimal_fixed(parse_decimal(row.get::<String, _>("share")), 4),
+            nav: fmt_decimal_fixed(parse_decimal(row.get::<String, _>("nav")), 4),
+            created_at: format_dt(row.get::<DateTime<Utc>, _>("created_at")),
+        }),
+    )
+        .into_response()
 }
 
 pub async fn operations_destroy(
@@ -1094,7 +1148,11 @@ pub async fn operations_destroy(
 
     let Some(row) = row else {
         let _ = tx.rollback().await;
-        return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "detail": "Not found." })),
+        )
+            .into_response();
     };
 
     let account_id: Uuid = row.get("account_id");
@@ -1118,7 +1176,11 @@ pub async fn operations_destroy(
 
     if res.rows_affected() == 0 {
         let _ = tx.rollback().await;
-        return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "detail": "Not found." })),
+        )
+            .into_response();
     }
 
     if let Err(e) = recalculate_position(&mut tx, account_id, fund_id).await {
@@ -1144,7 +1206,9 @@ fn position_from_row(row: sqlx::postgres::PgRow) -> PositionResponse {
     let holding_share = parse_decimal(row.get::<String, _>("holding_share"));
     let holding_cost = parse_decimal(row.get::<String, _>("holding_cost"));
     let holding_nav = parse_decimal(row.get::<String, _>("holding_nav"));
-    let latest_nav = row.get::<Option<String>, _>("latest_nav").map(parse_decimal);
+    let latest_nav = row
+        .get::<Option<String>, _>("latest_nav")
+        .map(parse_decimal);
 
     let pnl_dec = match latest_nav {
         None => Decimal::ZERO,

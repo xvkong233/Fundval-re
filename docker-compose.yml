@@ -24,7 +24,8 @@ services:
     environment:
       - PORT=8001
       - DATABASE_URL=postgresql://${POSTGRES_USER:-fundval}:${POSTGRES_PASSWORD:-fundval}@db-candidate:5432/${POSTGRES_DB_CANDIDATE:-fundval}
-      - SECRET_KEY=${SECRET_KEY:-django-insecure-dev-only}
+      # 注意：后端在 DEBUG=false 时会拒绝默认占位符 secret；这里提供一个仅用于本地 docker 的默认值（建议覆盖）。
+      - SECRET_KEY=${SECRET_KEY:-local-docker-default-secret-please-change-0123456789}
       # 可选：逗号分隔的 origins（例如 http://localhost:3000,https://your.domain）。留空表示默认不开放跨域。
       - CORS_ALLOW_ORIGINS=${CORS_ALLOW_ORIGINS:-}
       # 可选：生产环境建议开启，拒绝占位符/过短的 SECRET_KEY。

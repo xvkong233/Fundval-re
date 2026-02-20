@@ -1,4 +1,4 @@
-use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
+use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::Row;
@@ -16,7 +16,10 @@ fn mask_token(token: &str) -> Option<String> {
     Some(format!("{}****{}", &t[..4], &t[t.len() - 4..]))
 }
 
-async fn require_staff(state: &AppState, headers: &axum::http::HeaderMap) -> Result<(), axum::response::Response> {
+async fn require_staff(
+    state: &AppState,
+    headers: &axum::http::HeaderMap,
+) -> Result<(), axum::response::Response> {
     let pool = match state.pool() {
         Some(p) => p,
         None => {
@@ -69,7 +72,10 @@ pub async fn get_tushare_token_status(
         return resp;
     }
 
-    let token = state.config().get_string("tushare_token").unwrap_or_default();
+    let token = state
+        .config()
+        .get_string("tushare_token")
+        .unwrap_or_default();
     let hint = mask_token(&token);
     (
         StatusCode::OK,
@@ -95,14 +101,13 @@ pub async fn set_tushare_token(
         return resp;
     }
 
-    let token = body.token.map(|s| {
-        let t = s.trim().to_string();
-        if t.is_empty() {
-            None
-        } else {
-            Some(t)
-        }
-    }).flatten();
+    let token = body
+        .token
+        .map(|s| {
+            let t = s.trim().to_string();
+            if t.is_empty() { None } else { Some(t) }
+        })
+        .flatten();
 
     state.config().set_string("tushare_token", token);
     if let Err(e) = state.config().save() {
@@ -115,4 +120,3 @@ pub async fn set_tushare_token(
 
     (StatusCode::OK, Json(json!({ "message": "ok" }))).into_response()
 }
-

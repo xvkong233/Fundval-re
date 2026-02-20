@@ -57,7 +57,9 @@ pub fn calculate_account_history(
     let mut current: HashMap<Uuid, (Decimal, Decimal)> = HashMap::new();
 
     for op in operations {
-        let entry = current.entry(op.fund_id).or_insert((Decimal::ZERO, Decimal::ZERO));
+        let entry = current
+            .entry(op.fund_id)
+            .or_insert((Decimal::ZERO, Decimal::ZERO));
         match op.operation_type {
             OperationType::Buy => {
                 entry.0 += op.share;
@@ -88,11 +90,7 @@ pub fn calculate_account_history(
         let mut total_cost = Decimal::ZERO;
 
         for (fund_id, fund_snaps) in &snapshots {
-            let Some((share, cost)) = fund_snaps
-                .range(..=d)
-                .next_back()
-                .map(|(_, v)| *v)
-            else {
+            let Some((share, cost)) = fund_snaps.range(..=d).next_back().map(|(_, v)| *v) else {
                 continue;
             };
 
@@ -121,7 +119,10 @@ pub fn calculate_account_history(
             value: total_value,
             cost: total_cost,
         });
-        d = d.succ_opt().unwrap();
+        let Some(next) = d.succ_opt() else {
+            break;
+        };
+        d = next;
     }
 
     out
@@ -139,7 +140,7 @@ mod tests {
     use rust_decimal::Decimal;
     use uuid::Uuid;
 
-    use super::{calculate_account_history, HistoryPoint, NavRecord, Operation, OperationType};
+    use super::{HistoryPoint, NavRecord, Operation, OperationType, calculate_account_history};
 
     fn dec(s: &str) -> Decimal {
         s.parse::<Decimal>().unwrap()
@@ -246,5 +247,24 @@ mod tests {
 
         // 平均每份成本 = 300 / 200 = 1.5，卖出 100 份后剩余成本应为 150
         assert_eq!(last.cost, dec("150.00"));
+    }
+
+    #[test]
+    fn max_end_date_does_not_panic() {
+        let fund_id = Uuid::new_v4();
+        let start = chrono::NaiveDate::MAX;
+        let end = chrono::NaiveDate::MAX;
+
+        let ops = vec![Operation {
+            fund_id,
+            operation_type: OperationType::Buy,
+            operation_date: start,
+            amount: dec("100.00"),
+            share: dec("100.0000"),
+        }];
+
+        let out = calculate_account_history(&ops, &[], &Default::default(), start, end);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].date, start);
     }
 }

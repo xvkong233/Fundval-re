@@ -12,4 +12,3 @@ fn normalize_source_name_maps_aliases_to_canonical() {
 
     assert_eq!(normalize_source_name("unknown-source"), None);
 }
-

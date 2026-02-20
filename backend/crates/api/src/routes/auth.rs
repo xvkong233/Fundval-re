@@ -1,11 +1,11 @@
-use axum::{http::StatusCode, response::IntoResponse, Json};
+use axum::{Json, http::StatusCode, response::IntoResponse};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
-use crate::{jwt::JwtService, state::AppState};
 use crate::django_password;
 use crate::routes::errors;
+use crate::{jwt::JwtService, state::AppState};
 
 #[derive(Debug, Deserialize)]
 pub struct LoginRequest {
@@ -350,7 +350,13 @@ pub async fn change_password(
             .into_response();
     }
 
-    (StatusCode::OK, Json(MessageResponse { message: "密码修改成功" })).into_response()
+    (
+        StatusCode::OK,
+        Json(MessageResponse {
+            message: "密码修改成功",
+        }),
+    )
+        .into_response()
 }
 
 #[allow(clippy::result_large_err)]
@@ -359,15 +365,13 @@ pub(crate) fn authenticate(
     headers: &axum::http::HeaderMap,
 ) -> Result<String, axum::response::Response> {
     let Some(auth) = headers.get(axum::http::header::AUTHORIZATION) else {
-        return Err(
-            (
-                StatusCode::UNAUTHORIZED,
-                Json(NotAuthenticatedResponse {
-                    detail: "Authentication credentials were not provided.",
-                }),
-            )
-                .into_response(),
-        );
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(NotAuthenticatedResponse {
+                detail: "Authentication credentials were not provided.",
+            }),
+        )
+            .into_response());
     };
 
     let auth_str = match auth.to_str() {

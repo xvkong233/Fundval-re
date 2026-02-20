@@ -3,16 +3,12 @@ pub const SOURCE_DANJUAN: &str = "danjuan";
 pub const SOURCE_THS: &str = "ths";
 pub const SOURCE_TUSHARE: &str = "tushare";
 
-pub const BUILTIN_SOURCES: [&str; 4] = [
-    SOURCE_TIANTIAN,
-    SOURCE_DANJUAN,
-    SOURCE_THS,
-    SOURCE_TUSHARE,
-];
+pub const BUILTIN_SOURCES: [&str; 4] =
+    [SOURCE_TIANTIAN, SOURCE_DANJUAN, SOURCE_THS, SOURCE_TUSHARE];
 
 pub mod danjuan;
-pub mod tushare;
 pub mod ths;
+pub mod tushare;
 
 pub fn normalize_source_name(input: &str) -> Option<&'static str> {
     let s = input.trim().to_ascii_lowercase();

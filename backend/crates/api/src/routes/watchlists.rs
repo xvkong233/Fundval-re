@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use axum::{http::StatusCode, response::IntoResponse, Json};
+use axum::{Json, http::StatusCode, response::IntoResponse};
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -161,21 +161,22 @@ pub async fn create(
         Some(p) => p,
     };
 
-    let exists = match sqlx::query("SELECT 1 FROM watchlist WHERE user_id = $1 AND name = $2 LIMIT 1")
-        .bind(user_id_i64)
-        .bind(&name)
-        .fetch_optional(pool)
-        .await
-    {
-        Ok(v) => v.is_some(),
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                errors::internal_json(&state, e),
-            )
-                .into_response();
-        }
-    };
+    let exists =
+        match sqlx::query("SELECT 1 FROM watchlist WHERE user_id = $1 AND name = $2 LIMIT 1")
+            .bind(user_id_i64)
+            .bind(&name)
+            .fetch_optional(pool)
+            .await
+        {
+            Ok(v) => v.is_some(),
+            Err(e) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    errors::internal_json(&state, e),
+                )
+                    .into_response();
+            }
+        };
     if exists {
         return (
             StatusCode::BAD_REQUEST,
@@ -268,7 +269,11 @@ pub async fn retrieve(
     };
 
     let Some(row) = row else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "detail": "Not found." })),
+        )
+            .into_response();
     };
 
     let items_by_watchlist = match load_items(&state, pool, &[id]).await {
@@ -348,23 +353,28 @@ async fn update_internal(
         Some(p) => p,
     };
 
-    let row = match sqlx::query("SELECT name, created_at FROM watchlist WHERE id = $1 AND user_id = $2")
-        .bind(id)
-        .bind(user_id_i64)
-        .fetch_optional(pool)
-        .await
-    {
-        Ok(v) => v,
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                errors::internal_json(&state, e),
-            )
-                .into_response();
-        }
-    };
+    let row =
+        match sqlx::query("SELECT name, created_at FROM watchlist WHERE id = $1 AND user_id = $2")
+            .bind(id)
+            .bind(user_id_i64)
+            .fetch_optional(pool)
+            .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    errors::internal_json(&state, e),
+                )
+                    .into_response();
+            }
+        };
     let Some(row) = row else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "detail": "Not found." })),
+        )
+            .into_response();
     };
 
     let current_name: String = row.get("name");
@@ -478,7 +488,11 @@ pub async fn destroy(
     };
 
     if res.rows_affected() == 0 {
-        return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "detail": "Not found." })),
+        )
+            .into_response();
     }
 
     StatusCode::NO_CONTENT.into_response()
@@ -534,10 +548,19 @@ pub async fn items_add(
         }
     };
     if !owned {
-        return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "detail": "Not found." })),
+        )
+            .into_response();
     }
 
-    let Some(fund_code) = body.fund_code.as_ref().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) else {
+    let Some(fund_code) = body
+        .fund_code
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+    else {
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({ "error": "基金代码不能为空" })),
@@ -593,19 +616,22 @@ pub async fn items_add(
             .into_response();
     }
 
-    let max_order_row = match sqlx::query("SELECT MAX(\"order\")::int as max_order FROM watchlist_item WHERE watchlist_id = $1")
-        .bind(id)
-        .fetch_one(pool)
-        .await {
-            Ok(v) => v,
-            Err(e) => {
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    errors::internal_json(&state, e),
-                )
-                    .into_response();
-            }
-        };
+    let max_order_row = match sqlx::query(
+        "SELECT MAX(\"order\")::int as max_order FROM watchlist_item WHERE watchlist_id = $1",
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                errors::internal_json(&state, e),
+            )
+                .into_response();
+        }
+    };
     let max_order: Option<i32> = max_order_row.get("max_order");
     let next_order = max_order.unwrap_or(-1) + 1;
 
@@ -680,7 +706,11 @@ pub async fn items_remove(
         }
     };
     if !owned {
-        return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "detail": "Not found." })),
+        )
+            .into_response();
     }
 
     let fund_row = match sqlx::query("SELECT id FROM fund WHERE fund_code = $1")
@@ -706,20 +736,22 @@ pub async fn items_remove(
     };
     let fund_id: Uuid = fund_row.get("id");
 
-    let res = match sqlx::query("DELETE FROM watchlist_item WHERE watchlist_id = $1 AND fund_id = $2")
-        .bind(id)
-        .bind(fund_id)
-        .execute(pool)
-        .await {
-        Ok(v) => v,
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                errors::internal_json(&state, e),
-            )
-                .into_response();
-        }
-    };
+    let res =
+        match sqlx::query("DELETE FROM watchlist_item WHERE watchlist_id = $1 AND fund_id = $2")
+            .bind(id)
+            .bind(fund_id)
+            .execute(pool)
+            .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    errors::internal_json(&state, e),
+                )
+                    .into_response();
+            }
+        };
 
     if res.rows_affected() == 0 {
         return (
@@ -781,7 +813,11 @@ pub async fn reorder(
         }
     };
     if !owned {
-        return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "detail": "Not found." })),
+        )
+            .into_response();
     }
 
     let fund_codes = body.fund_codes.unwrap_or_default();
@@ -807,15 +843,23 @@ pub async fn reorder(
             continue;
         };
         let fund_id: Uuid = fund_row.get("id");
-        let _ = sqlx::query("UPDATE watchlist_item SET \"order\" = $1 WHERE watchlist_id = $2 AND fund_id = $3")
-            .bind(idx as i32)
-            .bind(id)
-            .bind(fund_id)
-            .execute(pool)
-            .await;
+        let _ = sqlx::query(
+            "UPDATE watchlist_item SET \"order\" = $1 WHERE watchlist_id = $2 AND fund_id = $3",
+        )
+        .bind(idx as i32)
+        .bind(id)
+        .bind(fund_id)
+        .execute(pool)
+        .await;
     }
 
-    (StatusCode::OK, Json(MessageResponse { message: "排序已更新" })).into_response()
+    (
+        StatusCode::OK,
+        Json(MessageResponse {
+            message: "排序已更新",
+        }),
+    )
+        .into_response()
 }
 
 async fn load_items(
@@ -850,28 +894,28 @@ async fn load_items(
     {
         Ok(v) => v,
         Err(e) => {
-            return Err(
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    errors::internal_json(state, e),
-                )
-                    .into_response(),
-            );
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                errors::internal_json(state, e),
+            )
+                .into_response());
         }
     };
 
     let mut map: HashMap<Uuid, Vec<WatchlistItemResponse>> = HashMap::new();
     for row in rows {
         let watchlist_id: Uuid = row.get("watchlist_id");
-        map.entry(watchlist_id).or_default().push(WatchlistItemResponse {
-            id: row.get::<String, _>("id"),
-            fund: row.get::<String, _>("fund"),
-            fund_code: row.get::<String, _>("fund_code"),
-            fund_name: row.get::<String, _>("fund_name"),
-            fund_type: row.get::<Option<String>, _>("fund_type"),
-            order: row.get::<i32, _>("order"),
-            created_at: format_dt(row.get::<DateTime<Utc>, _>("created_at")),
-        });
+        map.entry(watchlist_id)
+            .or_default()
+            .push(WatchlistItemResponse {
+                id: row.get::<String, _>("id"),
+                fund: row.get::<String, _>("fund"),
+                fund_code: row.get::<String, _>("fund_code"),
+                fund_name: row.get::<String, _>("fund_name"),
+                fund_type: row.get::<Option<String>, _>("fund_type"),
+                order: row.get::<i32, _>("order"),
+                created_at: format_dt(row.get::<DateTime<Utc>, _>("created_at")),
+            });
     }
     Ok(map)
 }

@@ -8,7 +8,10 @@ fn danjuan_parses_nav_history_items() {
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].nav_date.to_string(), "2026-02-13");
     assert_eq!(rows[0].unit_nav.to_string(), "0.7037");
-    assert_eq!(rows[0].daily_growth.map(|v| v.to_string()), Some("0.03".to_string()));
+    assert_eq!(
+        rows[0].daily_growth.map(|v| v.to_string()),
+        Some("0.03".to_string())
+    );
 }
 
 #[test]

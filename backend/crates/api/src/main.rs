@@ -1,14 +1,16 @@
 use std::net::SocketAddr;
 
 use api::{app, state::AppState};
-use axum::http::{HeaderValue, Method};
 use axum::http::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE};
+use axum::http::{HeaderValue, Method};
 use sqlx::Error as SqlxError;
+use sqlx::migrate::Migrator;
 use sqlx::postgres::PgPoolOptions;
+use tower::make::Shared;
 use tower_http::cors::{AllowOrigin, Any, CorsLayer};
+use tower_http::normalize_path::NormalizePath;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
-use sqlx::migrate::Migrator;
 
 static MIGRATOR: Migrator = sqlx::migrate!("../../migrations");
 
@@ -38,9 +40,7 @@ fn is_placeholder_secret(secret: &str) -> bool {
 fn validate_secret_key(secret: &str, debug: bool) {
     if debug {
         if is_default_insecure_secret(secret) || is_placeholder_secret(secret) {
-            tracing::warn!(
-                "DEBUG=true 且 SECRET_KEY 看起来不安全；仅建议本地开发使用"
-            );
+            tracing::warn!("DEBUG=true 且 SECRET_KEY 看起来不安全；仅建议本地开发使用");
         }
         return;
     }
@@ -76,7 +76,9 @@ fn build_cors_layer(debug: bool) -> CorsLayer {
     // - 开发：如果未配置则放开，便于直接从浏览器请求后端
     let allow_origin = if raw.is_empty() {
         if debug {
-            tracing::warn!("未设置 CORS_ALLOW_ORIGINS 且 DEBUG=true：将使用宽松 CORS（仅建议本地开发）");
+            tracing::warn!(
+                "未设置 CORS_ALLOW_ORIGINS 且 DEBUG=true：将使用宽松 CORS（仅建议本地开发）"
+            );
             Any.into()
         } else {
             AllowOrigin::predicate(|_, _| false)
@@ -203,13 +205,15 @@ async fn main() {
                 if is_missing_database_error(&e) {
                     tracing::warn!(error = %e, "database does not exist, trying to create it");
                     match ensure_database_exists(url).await {
-                        Ok(()) => match PgPoolOptions::new().max_connections(5).connect(url).await {
-                            Ok(pool) => Some(pool),
-                            Err(e2) => {
-                                tracing::warn!(error = %e2, "failed to connect database after creation");
-                                None
+                        Ok(()) => {
+                            match PgPoolOptions::new().max_connections(5).connect(url).await {
+                                Ok(pool) => Some(pool),
+                                Err(e2) => {
+                                    tracing::warn!(error = %e2, "failed to connect database after creation");
+                                    None
+                                }
                             }
-                        },
+                        }
                         Err(e2) => {
                             tracing::warn!(error = %e2, "failed to create database");
                             None
@@ -245,9 +249,32 @@ async fn main() {
 
     let state = AppState::new(pool, config, jwt);
 
+    // Sniffer: daily DeepQ star sync + full-mirror to watchlist "嗅探（自动）"
+    if state.pool().is_some() {
+        let sniffer_state = state.clone();
+        tokio::spawn(async move {
+            // Cold-start: if no snapshot yet, try a one-off sync once (best-effort).
+            if let Some(pool) = sniffer_state.pool() {
+                match api::sniffer::latest_snapshot_id(pool).await {
+                    Ok(None) => {
+                        tracing::info!("sniffer: no snapshot found, running initial sync once");
+                        let _ = api::sniffer::run_sync_once(sniffer_state.clone()).await;
+                    }
+                    Ok(Some(_)) => {}
+                    Err(e) => {
+                        tracing::warn!(error=%e, "sniffer: failed to check latest snapshot");
+                    }
+                }
+            }
+
+            api::sniffer::run_scheduler_forever(sniffer_state).await;
+        });
+    }
+
     let cors = build_cors_layer(state.config().get_bool("debug", false));
 
-    let app = app(state).layer(TraceLayer::new_for_http()).layer(cors);
+    let router = app(state).layer(TraceLayer::new_for_http()).layer(cors);
+    let app = NormalizePath::trim_trailing_slash(router);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     tracing::info!(%addr, "backend listening");
@@ -255,5 +282,7 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .expect("bind listener");
-    axum::serve(listener, app).await.expect("serve");
+    axum::serve(listener, Shared::new(app))
+        .await
+        .expect("serve");
 }

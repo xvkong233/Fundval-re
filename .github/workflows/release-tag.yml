@@ -38,6 +38,26 @@ jobs:
         working-directory: backend
         run: cargo test -p api
 
+      # 防止镜像/二进制意外启用 sqlite（本项目 Docker/CI 仅支持 Postgres）
+      - name: Guard: backend must not enable sqlx sqlite
+        working-directory: backend
+        run: |
+          python - <<'PY'
+          import pathlib
+          import sys
+          import tomllib
+
+          data = tomllib.loads(pathlib.Path("Cargo.toml").read_text(encoding="utf-8"))
+          sqlx = (data.get("workspace") or {}).get("dependencies", {}).get("sqlx")
+          features = (sqlx or {}).get("features", []) if isinstance(sqlx, dict) else []
+
+          if any("sqlite" in str(feature) for feature in features):
+              print("ERROR: sqlx sqlite feature detected in backend/Cargo.toml:", features)
+              sys.exit(1)
+
+          print("OK: sqlx sqlite not enabled")
+          PY
+
   test-frontend:
     name: Test frontend
     runs-on: ubuntu-latest

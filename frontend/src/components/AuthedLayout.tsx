@@ -36,6 +36,7 @@ export function AuthedLayout({
     if (pathname.startsWith("/positions")) return ["positions"];
     if (pathname.startsWith("/settings")) return ["settings"];
     if (pathname.startsWith("/dashboard")) return ["dashboard"];
+    if (pathname.startsWith("/sniffer")) return ["sniffer"];
     return [];
   }, [pathname]);
 
@@ -67,6 +68,10 @@ export function AuthedLayout({
             {
               key: "watchlists",
               label: <Link href="/watchlists">自选</Link>,
+            },
+            {
+              key: "sniffer",
+              label: <Link href="/sniffer">嗅探</Link>,
             },
             {
               key: "settings",

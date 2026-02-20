@@ -35,6 +35,13 @@ export const getTushareTokenStatus = () => api.get("/settings/tushare_token/");
 
 export const setTushareToken = (token: string | null) => api.put("/settings/tushare_token/", { token });
 
+// sniffer
+export const getSnifferStatus = () => api.get("/sniffer/status/");
+
+export const getSnifferItems = () => api.get("/sniffer/items/");
+
+export const adminSnifferSync = () => api.post("/admin/sniffer/sync/", {});
+
 // sources
 export const listSources = () => publicApi.get("/sources/");
 

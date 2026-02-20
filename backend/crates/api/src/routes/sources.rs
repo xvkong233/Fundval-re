@@ -1,8 +1,8 @@
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
-    Json,
 };
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
@@ -12,8 +12,8 @@ use std::time::Instant;
 use tokio::{sync::Semaphore, task::JoinSet};
 use uuid::Uuid;
 
-use crate::eastmoney;
 use crate::accuracy;
+use crate::eastmoney;
 use crate::sources;
 use crate::state::AppState;
 use sqlx::Row;
@@ -31,7 +31,10 @@ pub async fn list(State(state): State<AppState>) -> impl IntoResponse {
     // 目标：返回“系统已知的数据源列表”。
     // - builtin：当前实现支持的数据源（eastmoney）
     // - db：如果数据库已连接，合并 estimate_accuracy 中出现过的 source_name（便于展示历史/扩展数据源）
-    let mut names: Vec<String> = builtin_sources().into_iter().map(|s| s.to_string()).collect();
+    let mut names: Vec<String> = builtin_sources()
+        .into_iter()
+        .map(|s| s.to_string())
+        .collect();
 
     if let Some(pool) = state.pool() {
         // 这张表在 migrations 中创建；若尚未 migrate 则忽略错误，回退 builtin。
@@ -59,7 +62,12 @@ pub async fn list(State(state): State<AppState>) -> impl IntoResponse {
 
     (
         StatusCode::OK,
-        Json(names.into_iter().map(|name| SourceItem { name }).collect::<Vec<_>>()),
+        Json(
+            names
+                .into_iter()
+                .map(|name| SourceItem { name })
+                .collect::<Vec<_>>(),
+        ),
     )
 }
 
@@ -75,7 +83,10 @@ pub async fn health(State(state): State<AppState>) -> impl IntoResponse {
     // 健康度用于“运维/可观测性”页面：主要衡量数据源（上游）是否可访问、响应是否可解析。
     // 注意：这里不依赖数据库；仅做上游连通性探测。
     // 这里复用 list 的“合并逻辑”，确保能展示出库里出现过的 source_name。
-    let mut names: Vec<String> = builtin_sources().into_iter().map(|s| s.to_string()).collect();
+    let mut names: Vec<String> = builtin_sources()
+        .into_iter()
+        .map(|s| s.to_string())
+        .collect();
     if let Some(pool) = state.pool() {
         if let Ok(rows) = sqlx::query("SELECT DISTINCT source_name FROM estimate_accuracy")
             .fetch_all(pool)
@@ -199,7 +210,10 @@ pub async fn health(State(state): State<AppState>) -> impl IntoResponse {
         } else if name == "tushare" {
             let start = Instant::now();
             let check = async {
-                let token = state.config().get_string("tushare_token").unwrap_or_default();
+                let token = state
+                    .config()
+                    .get_string("tushare_token")
+                    .unwrap_or_default();
                 if token.trim().is_empty() {
                     return Err("tushare token 未配置（请在“设置”页面填写）".to_string());
                 }
@@ -303,7 +317,9 @@ pub async fn accuracy(
     // 对齐 golden：这里以 number 返回。
     (
         StatusCode::OK,
-        Json(json!({ "avg_error_rate": avg.to_f64().unwrap_or(0.0), "record_count": record_count })),
+        Json(
+            json!({ "avg_error_rate": avg.to_f64().unwrap_or(0.0), "record_count": record_count }),
+        ),
     )
 }
 
@@ -436,7 +452,10 @@ pub async fn calculate_accuracy(
                 .into_response();
         }
     };
-    let tushare_token = state.config().get_string("tushare_token").unwrap_or_default();
+    let tushare_token = state
+        .config()
+        .get_string("tushare_token")
+        .unwrap_or_default();
 
     #[derive(Clone)]
     struct WorkItem {
@@ -465,21 +484,29 @@ pub async fn calculate_accuracy(
             let _permit = sem.acquire_owned().await.expect("semaphore");
 
             let actual_nav: Decimal = match source {
-                sources::SOURCE_TIANTIAN => match eastmoney::fetch_realtime_nav(&client, &item.fund_code).await {
-                    Ok(Some(v)) => {
-                        if v.nav_date != target_date {
-                            return Err(format!(
-                                "实际净值日期不匹配: got {} expect {}",
-                                v.nav_date, target_date
-                            ));
+                sources::SOURCE_TIANTIAN => {
+                    match eastmoney::fetch_realtime_nav(&client, &item.fund_code).await {
+                        Ok(Some(v)) => {
+                            if v.nav_date != target_date {
+                                return Err(format!(
+                                    "实际净值日期不匹配: got {} expect {}",
+                                    v.nav_date, target_date
+                                ));
+                            }
+                            v.nav
                         }
-                        v.nav
+                        Ok(None) => return Err("上游返回为空或解析失败".to_string()),
+                        Err(e) => return Err(e),
                     }
-                    Ok(None) => return Err("上游返回为空或解析失败".to_string()),
-                    Err(e) => return Err(e),
-                },
+                }
                 sources::SOURCE_DANJUAN => {
-                    let rows = sources::danjuan::fetch_nav_history(&client, &item.fund_code, Some(target_date), Some(target_date)).await?;
+                    let rows = sources::danjuan::fetch_nav_history(
+                        &client,
+                        &item.fund_code,
+                        Some(target_date),
+                        Some(target_date),
+                    )
+                    .await?;
                     let Some(r) = rows.into_iter().find(|r| r.nav_date == target_date) else {
                         return Err("未找到该日期的净值".to_string());
                     };
@@ -496,7 +523,14 @@ pub async fn calculate_accuracy(
                     if tushare_token.trim().is_empty() {
                         return Err("tushare token 未配置（请在“设置”页面填写）".to_string());
                     }
-                    let rows = sources::tushare::fetch_nav_history(&client, &tushare_token, &item.fund_code, Some(target_date), Some(target_date)).await?;
+                    let rows = sources::tushare::fetch_nav_history(
+                        &client,
+                        &tushare_token,
+                        &item.fund_code,
+                        Some(target_date),
+                        Some(target_date),
+                    )
+                    .await?;
                     let Some(r) = rows.into_iter().find(|r| r.nav_date == target_date) else {
                         return Err("未找到该日期的净值".to_string());
                     };
@@ -505,7 +539,8 @@ pub async fn calculate_accuracy(
                 _ => return Err(format!("数据源 {source} 不存在")),
             };
 
-            let Some(error_rate) = accuracy::compute_error_rate(item.estimate_nav, actual_nav) else {
+            let Some(error_rate) = accuracy::compute_error_rate(item.estimate_nav, actual_nav)
+            else {
                 return Err("actual_nav 无效".to_string());
             };
 

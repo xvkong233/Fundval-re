@@ -42,7 +42,9 @@ pub fn parse_nav_history_json(text: &str) -> Result<Vec<NavRow>, String> {
         return Err(format!("danjuan 上游错误: code={code} msg={msg}"));
     }
 
-    let data = resp.data.ok_or_else(|| "danjuan 响应缺少 data 字段".to_string())?;
+    let data = resp
+        .data
+        .ok_or_else(|| "danjuan 响应缺少 data 字段".to_string())?;
     let mut out: Vec<NavRow> = Vec::with_capacity(data.items.len());
 
     for item in data.items {
@@ -52,9 +54,9 @@ pub fn parse_nav_history_json(text: &str) -> Result<Vec<NavRow>, String> {
             Decimal::from_str_exact(item.nav.trim()).map_err(|e| format!("nav 解析失败: {e}"))?;
         let daily_growth = match item.percentage.as_deref().map(|s| s.trim()) {
             None | Some("") => None,
-            Some(v) => Some(
-                Decimal::from_str_exact(v).map_err(|e| format!("percentage 解析失败: {e}"))?,
-            ),
+            Some(v) => {
+                Some(Decimal::from_str_exact(v).map_err(|e| format!("percentage 解析失败: {e}"))?)
+            }
         };
 
         out.push(NavRow {

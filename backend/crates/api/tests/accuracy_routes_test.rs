@@ -9,7 +9,7 @@ async fn calculate_accuracy_requires_database() {
     config.set_system_initialized(false);
     let jwt = api::jwt::JwtService::from_secret("test-secret");
     let state = AppState::new(None, config, jwt);
-    let app = api::app(state);
+    let app = api::service(state);
 
     let res = app
         .oneshot(
@@ -25,4 +25,3 @@ async fn calculate_accuracy_requires_database() {
 
     assert_eq!(res.status(), 503);
 }
-

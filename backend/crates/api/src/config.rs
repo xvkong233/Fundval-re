@@ -5,7 +5,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use rand::{distributions::Alphanumeric, Rng};
+use rand::{Rng, distributions::Alphanumeric};
 use serde_json::Value;
 
 #[derive(Clone)]
@@ -29,7 +29,10 @@ impl ConfigStore {
         }
 
         // 环境变量覆盖（与 Python 行为保持一致）
-        if let Some(port) = std::env::var("PORT").ok().and_then(|s| s.parse::<i64>().ok()) {
+        if let Some(port) = std::env::var("PORT")
+            .ok()
+            .and_then(|s| s.parse::<i64>().ok())
+        {
             data.insert("port".into(), Value::Number(serde_json::Number::from(port)));
         }
         if let Ok(db_type) = std::env::var("DB_TYPE") {
@@ -162,7 +165,9 @@ impl ConfigStore {
 fn default_config() -> BTreeMap<String, Value> {
     let mut m = BTreeMap::new();
     m.insert("port".into(), Value::Number(8001.into()));
-    m.insert("db_type".into(), Value::String("sqlite".into()));
+    // 本仓库 Rust 移植版只使用 Postgres（sqlx 仅启用 postgres feature）。
+    // 该字段保留是为了对齐原项目配置结构，但默认值不应再指向 sqlite 以免误导。
+    m.insert("db_type".into(), Value::String("postgres".into()));
     m.insert("db_config".into(), Value::Object(Default::default()));
     m.insert("allow_register".into(), Value::Bool(false));
     m.insert("system_initialized".into(), Value::Bool(false));

@@ -106,13 +106,18 @@ fn parse_nav_rows_from_data(data: &TushareData) -> Result<Vec<NavRow>, String> {
         if unit_str.is_empty() {
             continue;
         }
-        let unit_nav = Decimal::from_str_exact(unit_str).map_err(|e| format!("unit_nav 解析失败: {e}"))?;
+        let unit_nav =
+            Decimal::from_str_exact(unit_str).map_err(|e| format!("unit_nav 解析失败: {e}"))?;
 
         let accumulated_nav = match acc_val {
             None | Some(Value::Null) => None,
             Some(Value::String(s)) => {
                 let t = s.trim();
-                if t.is_empty() { None } else { Decimal::from_str_exact(t).ok() }
+                if t.is_empty() {
+                    None
+                } else {
+                    Decimal::from_str_exact(t).ok()
+                }
             }
             Some(Value::Number(n)) => Decimal::from_str_exact(&n.to_string()).ok(),
             _ => None,
@@ -185,7 +190,9 @@ pub async fn fetch_nav_history(
                 .map_err(|e| e.to_string())?;
 
             if resp.code != 0 {
-                let msg = resp.msg.unwrap_or_else(|| "tushare 上游返回错误".to_string());
+                let msg = resp
+                    .msg
+                    .unwrap_or_else(|| "tushare 上游返回错误".to_string());
                 return Err(format!("tushare 上游错误: code={} msg={}", resp.code, msg));
             }
 
@@ -225,7 +232,11 @@ pub async fn fetch_realtime_nav(
         best = match best {
             None => Some(row),
             Some(cur) => {
-                if row.nav_date > cur.nav_date { Some(row) } else { Some(cur) }
+                if row.nav_date > cur.nav_date {
+                    Some(row)
+                } else {
+                    Some(cur)
+                }
             }
         };
     }
@@ -238,7 +249,7 @@ pub async fn fetch_realtime_nav(
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_nav_rows_from_data, TushareData};
+    use super::{TushareData, parse_nav_rows_from_data};
 
     #[test]
     fn parses_rows_by_field_names() {
@@ -260,7 +271,9 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].nav_date.to_string(), "2026-02-13");
         assert_eq!(rows[0].unit_nav.to_string(), "0.7037");
-        assert_eq!(rows[0].accumulated_nav.as_ref().unwrap().to_string(), "2.4198");
+        assert_eq!(
+            rows[0].accumulated_nav.as_ref().unwrap().to_string(),
+            "2.4198"
+        );
     }
 }
-

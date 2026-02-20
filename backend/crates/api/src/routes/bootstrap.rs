@@ -1,9 +1,9 @@
-use axum::{http::StatusCode, response::IntoResponse, Json};
+use axum::{Json, http::StatusCode, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 
+use crate::django_password;
 use crate::routes::errors;
 use crate::state::AppState;
-use crate::django_password;
 
 #[derive(Debug, Deserialize)]
 pub struct BootstrapVerifyRequest {

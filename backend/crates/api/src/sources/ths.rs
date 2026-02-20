@@ -30,7 +30,10 @@ pub fn latest_nav(rows: &[NavRow]) -> Option<RealtimeNavData> {
     })
 }
 
-pub async fn fetch_nav_series(client: &reqwest::Client, fund_code: &str) -> Result<Vec<NavRow>, String> {
+pub async fn fetch_nav_series(
+    client: &reqwest::Client,
+    fund_code: &str,
+) -> Result<Vec<NavRow>, String> {
     let url = dwjz_url(fund_code);
     let referer = format!("https://fund.10jqka.com.cn/{}/", fund_code.trim());
     let text = client
@@ -69,8 +72,12 @@ pub fn parse_nav_series_js(text: &str) -> Result<Vec<NavRow>, String> {
     let value: serde_json::Value = match serde_json::from_str(trimmed) {
         Ok(v) => v,
         Err(_) => {
-            let start = text.find('[').ok_or_else(|| "无法定位数组开始".to_string())?;
-            let end = text.rfind(']').ok_or_else(|| "无法定位数组结束".to_string())?;
+            let start = text
+                .find('[')
+                .ok_or_else(|| "无法定位数组开始".to_string())?;
+            let end = text
+                .rfind(']')
+                .ok_or_else(|| "无法定位数组结束".to_string())?;
             if end <= start {
                 return Err("数组范围无效".to_string());
             }

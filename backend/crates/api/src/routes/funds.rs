@@ -1,6 +1,6 @@
-use axum::{extract::Query, http::StatusCode, response::IntoResponse, Json};
+use axum::{Json, extract::Query, http::StatusCode, response::IntoResponse};
 use chrono::{DateTime, Datelike, Duration, NaiveDate, SecondsFormat, Utc};
-use rust_decimal::{prelude::ToPrimitive, Decimal};
+use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::Row;
@@ -137,7 +137,11 @@ pub async fn list(
 
     if let Some(search) = q.search.as_ref().and_then(|s| {
         let t = s.trim();
-        if t.is_empty() { None } else { Some(t.to_string()) }
+        if t.is_empty() {
+            None
+        } else {
+            Some(t.to_string())
+        }
     }) {
         where_sql.push_str(" WHERE (fund_code ILIKE $1 OR fund_name ILIKE $1)");
         binds.push(format!("%{search}%"));
@@ -145,7 +149,11 @@ pub async fn list(
 
     if let Some(ft) = q.fund_type.as_ref().and_then(|s| {
         let t = s.trim();
-        if t.is_empty() { None } else { Some(t.to_string()) }
+        if t.is_empty() {
+            None
+        } else {
+            Some(t.to_string())
+        }
     }) {
         let idx = binds.len() + 1;
         if where_sql.is_empty() {
@@ -267,12 +275,17 @@ pub async fn list(
 
         // 写入 DB 作为缓存（仅插入本页命中的结果）
         for it in &slice {
-            let _ = upsert_basic_fund(pool, &it.fund_code, &it.fund_name, Some(&it.fund_type)).await;
+            let _ =
+                upsert_basic_fund(pool, &it.fund_code, &it.fund_name, Some(&it.fund_type)).await;
         }
 
         // 从 DB 回读（补齐 id/时间字段）
-        let codes: Vec<String> = slice.iter().map(|it| it.fund_code.trim().to_string()).collect();
-        let mut by_code: std::collections::HashMap<String, FundItem> = std::collections::HashMap::new();
+        let codes: Vec<String> = slice
+            .iter()
+            .map(|it| it.fund_code.trim().to_string())
+            .collect();
+        let mut by_code: std::collections::HashMap<String, FundItem> =
+            std::collections::HashMap::new();
         if !codes.is_empty() {
             if let Ok(db_rows) = sqlx::query(
                 r#"
@@ -319,7 +332,14 @@ pub async fn list(
             }
         }
 
-        return (StatusCode::OK, Json(FundListResponse { count: remote_count, results })).into_response();
+        return (
+            StatusCode::OK,
+            Json(FundListResponse {
+                count: remote_count,
+                results,
+            }),
+        )
+            .into_response();
     }
 
     let results = rows
@@ -425,7 +445,11 @@ pub async fn retrieve(
 
     let Some(row) = row else {
         // 对齐 DRF 默认 404 响应格式
-        return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "detail": "Not found." })),
+        )
+            .into_response();
     };
 
     let item = FundItem {
@@ -499,7 +523,11 @@ pub async fn estimate(
     };
 
     let Some(row) = row else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "detail": "Not found." })),
+        )
+            .into_response();
     };
     let fund_id: Uuid = row.get("id");
     let fund_name: String = row.get("fund_name");
@@ -560,31 +588,40 @@ pub async fn estimate(
             )
                 .into_response(),
         },
-        sources::SOURCE_DANJUAN => match sources::danjuan::fetch_latest_row(&client, &fund_code).await {
-            Ok(Some(row)) => {
-                let estimate_date = row.nav_date;
-                let estimate_nav = row.unit_nav;
-                let _ = upsert_estimate_accuracy(pool, sources::SOURCE_DANJUAN, fund_id, estimate_date, estimate_nav).await;
+        sources::SOURCE_DANJUAN => {
+            match sources::danjuan::fetch_latest_row(&client, &fund_code).await {
+                Ok(Some(row)) => {
+                    let estimate_date = row.nav_date;
+                    let estimate_nav = row.unit_nav;
+                    let _ = upsert_estimate_accuracy(
+                        pool,
+                        sources::SOURCE_DANJUAN,
+                        fund_id,
+                        estimate_date,
+                        estimate_nav,
+                    )
+                    .await;
 
-                (
-                StatusCode::OK,
-                Json(json!({
-                  "fund_code": fund_code.as_str(),
-                  "fund_name": fund_name,
-                  "estimate_nav": row.unit_nav.to_string(),
-                  "estimate_growth": row.daily_growth.unwrap_or(Decimal::ZERO).to_string(),
-                  "estimate_time": format!("{}T15:00:00", row.nav_date)
-                })),
-            )
-                .into_response()
-            },
-            Ok(None) => (StatusCode::OK, Json(serde_json::Value::Null)).into_response(),
-            Err(e) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e })),
-            )
-                .into_response(),
-        },
+                    (
+                        StatusCode::OK,
+                        Json(json!({
+                          "fund_code": fund_code.as_str(),
+                          "fund_name": fund_name,
+                          "estimate_nav": row.unit_nav.to_string(),
+                          "estimate_growth": row.daily_growth.unwrap_or(Decimal::ZERO).to_string(),
+                          "estimate_time": format!("{}T15:00:00", row.nav_date)
+                        })),
+                    )
+                        .into_response()
+                }
+                Ok(None) => (StatusCode::OK, Json(serde_json::Value::Null)).into_response(),
+                Err(e) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": e })),
+                )
+                    .into_response(),
+            }
+        }
         sources::SOURCE_THS => {
             let series = match sources::ths::fetch_nav_series(&client, &fund_code).await {
                 Ok(v) => v,
@@ -623,16 +660,118 @@ pub async fn estimate(
                 }
             }
             let growth = prev
-                .and_then(|p| if p.unit_nav > Decimal::ZERO {
-                    Some(((latest.unit_nav - p.unit_nav) / p.unit_nav) * Decimal::from(100))
-                } else {
-                    None
+                .and_then(|p| {
+                    if p.unit_nav > Decimal::ZERO {
+                        Some(((latest.unit_nav - p.unit_nav) / p.unit_nav) * Decimal::from(100))
+                    } else {
+                        None
+                    }
                 })
                 .unwrap_or(Decimal::ZERO);
 
             let estimate_date = latest.nav_date;
             let estimate_nav = latest.unit_nav;
-            let _ = upsert_estimate_accuracy(pool, sources::SOURCE_THS, fund_id, estimate_date, estimate_nav).await;
+            let _ = upsert_estimate_accuracy(
+                pool,
+                sources::SOURCE_THS,
+                fund_id,
+                estimate_date,
+                estimate_nav,
+            )
+            .await;
+
+            (
+                StatusCode::OK,
+                Json(json!({
+                  "fund_code": fund_code.as_str(),
+                  "fund_name": fund_name,
+                  "estimate_nav": latest.unit_nav.to_string(),
+                  "estimate_growth": growth.round_dp(4).to_string(),
+                  "estimate_time": format!("{}T15:00:00", latest.nav_date)
+                })),
+            )
+                .into_response()
+        }
+        sources::SOURCE_TUSHARE => {
+            let token = state
+                .config()
+                .get_string("tushare_token")
+                .unwrap_or_default();
+            if token.trim().is_empty() {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({ "error": "tushare token 未配置（请在“设置”页面填写）" })),
+                )
+                    .into_response();
+            }
+
+            let end = Utc::now().date_naive();
+            let start = end - Duration::days(60);
+            let rows = match sources::tushare::fetch_nav_history(
+                &client,
+                &token,
+                &fund_code,
+                Some(start),
+                Some(end),
+            )
+            .await
+            {
+                Ok(v) => v,
+                Err(e) => {
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({ "error": e })),
+                    )
+                        .into_response();
+                }
+            };
+
+            if rows.is_empty() {
+                return (StatusCode::OK, Json(serde_json::Value::Null)).into_response();
+            }
+
+            // latest & previous
+            let mut latest = &rows[0];
+            for r in &rows[1..] {
+                if r.nav_date > latest.nav_date {
+                    latest = r;
+                }
+            }
+            let mut prev: Option<&eastmoney::NavRow> = None;
+            for r in &rows {
+                if r.nav_date < latest.nav_date {
+                    prev = match prev {
+                        None => Some(r),
+                        Some(p) => {
+                            if r.nav_date > p.nav_date {
+                                Some(r)
+                            } else {
+                                Some(p)
+                            }
+                        }
+                    };
+                }
+            }
+            let growth = prev
+                .and_then(|p| {
+                    if p.unit_nav > Decimal::ZERO {
+                        Some(((latest.unit_nav - p.unit_nav) / p.unit_nav) * Decimal::from(100))
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or(Decimal::ZERO);
+
+            let estimate_date = latest.nav_date;
+            let estimate_nav = latest.unit_nav;
+            let _ = upsert_estimate_accuracy(
+                pool,
+                sources::SOURCE_TUSHARE,
+                fund_id,
+                estimate_date,
+                estimate_nav,
+            )
+            .await;
 
             (
                 StatusCode::OK,
@@ -687,7 +826,11 @@ pub async fn accuracy(
     };
 
     if row.is_none() {
-        return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "detail": "Not found." })),
+        )
+            .into_response();
     }
 
     let fund_id: Uuid = row.unwrap().get("id");
@@ -728,7 +871,8 @@ pub async fn accuracy(
         records: Vec<serde_json::Value>,
     }
 
-    let mut by_source: std::collections::BTreeMap<String, Accum> = std::collections::BTreeMap::new();
+    let mut by_source: std::collections::BTreeMap<String, Accum> =
+        std::collections::BTreeMap::new();
     for row in rows {
         let source_name: String = row.get("source_name");
         let estimate_date: NaiveDate = row.get("estimate_date");
@@ -1191,7 +1335,10 @@ pub async fn batch_update_nav(
                 .into_response();
         }
     };
-    let tushare_token = state.config().get_string("tushare_token").unwrap_or_default();
+    let tushare_token = state
+        .config()
+        .get_string("tushare_token")
+        .unwrap_or_default();
 
     let sem = Arc::new(Semaphore::new(5));
     let mut set: JoinSet<(String, serde_json::Value)> = JoinSet::new();
@@ -1205,15 +1352,17 @@ pub async fn batch_update_nav(
             let _permit = sem.acquire_owned().await.expect("semaphore");
             let fetched = match source_name {
                 sources::SOURCE_TIANTIAN => eastmoney::fetch_realtime_nav(&client, &code).await,
-                sources::SOURCE_DANJUAN => match sources::danjuan::fetch_latest_row(&client, &code).await {
-                    Ok(Some(row)) => Ok(Some(eastmoney::RealtimeNavData {
-                        fund_code: code.clone(),
-                        nav: row.unit_nav,
-                        nav_date: row.nav_date,
-                    })),
-                    Ok(None) => Ok(None),
-                    Err(e) => Err(e),
-                },
+                sources::SOURCE_DANJUAN => {
+                    match sources::danjuan::fetch_latest_row(&client, &code).await {
+                        Ok(Some(row)) => Ok(Some(eastmoney::RealtimeNavData {
+                            fund_code: code.clone(),
+                            nav: row.unit_nav,
+                            nav_date: row.nav_date,
+                        })),
+                        Ok(None) => Ok(None),
+                        Err(e) => Err(e),
+                    }
+                }
                 sources::SOURCE_THS => sources::ths::fetch_realtime_nav(&client, &code).await,
                 sources::SOURCE_TUSHARE => {
                     if tushare_token.trim().is_empty() {
@@ -1334,9 +1483,9 @@ pub async fn query_nav(
         WHERE fund_code = $1
         "#,
     )
-        .bind(body.fund_code.trim())
-        .fetch_optional(pool)
-        .await;
+    .bind(body.fund_code.trim())
+    .fetch_optional(pool)
+    .await;
 
     let row = match row {
         Ok(v) => v,
@@ -1350,7 +1499,11 @@ pub async fn query_nav(
     };
 
     if row.is_none() {
-        return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "detail": "Not found." })),
+        )
+            .into_response();
     }
 
     let row = row.unwrap();
@@ -1370,9 +1523,7 @@ pub async fn query_nav(
 
     let query_date = if body.before_15 {
         // 15:00 前操作：查询 T-1 的最近交易日
-        let d = operation_date
-            .pred_opt()
-            .unwrap_or(operation_date);
+        let d = operation_date.pred_opt().unwrap_or(operation_date);
         get_last_trading_day(d)
     } else {
         // 15:00 后操作：查询 T 的最近交易日
@@ -1418,7 +1569,10 @@ pub async fn query_nav(
     }
 
     // 尝试同步单日净值（对齐 Python：缺失时同步后再查）
-    let tushare_token = state.config().get_string("tushare_token").unwrap_or_default();
+    let tushare_token = state
+        .config()
+        .get_string("tushare_token")
+        .unwrap_or_default();
     let _ = sync_nav_history_for_date(
         pool,
         source_name,
@@ -1633,17 +1787,27 @@ async fn sync_nav_history_for_date(
             eastmoney::fetch_nav_history(&client, fund_code, Some(nav_date), Some(nav_date)).await?
         }
         sources::SOURCE_DANJUAN => {
-            sources::danjuan::fetch_nav_history(&client, fund_code, Some(nav_date), Some(nav_date)).await?
+            sources::danjuan::fetch_nav_history(&client, fund_code, Some(nav_date), Some(nav_date))
+                .await?
         }
         sources::SOURCE_THS => {
             let all = sources::ths::fetch_nav_series(&client, fund_code).await?;
-            all.into_iter().filter(|r| r.nav_date == nav_date).collect::<Vec<_>>()
+            all.into_iter()
+                .filter(|r| r.nav_date == nav_date)
+                .collect::<Vec<_>>()
         }
         sources::SOURCE_TUSHARE => {
             if tushare_token.trim().is_empty() {
                 return Err("tushare token 未配置（请在“设置”页面填写）".to_string());
             }
-            sources::tushare::fetch_nav_history(&client, tushare_token, fund_code, Some(nav_date), Some(nav_date)).await?
+            sources::tushare::fetch_nav_history(
+                &client,
+                tushare_token,
+                fund_code,
+                Some(nav_date),
+                Some(nav_date),
+            )
+            .await?
         }
         _ => return Err(format!("数据源 {source_name} 不存在")),
     };

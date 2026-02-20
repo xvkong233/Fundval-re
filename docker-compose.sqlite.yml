@@ -1,0 +1,52 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    environment:
+      - PORT=8001
+      # SQLite 发行/本地方案：不依赖 Postgres 服务
+      - DATABASE_URL=sqlite:data/fundval.sqlite
+      - SECRET_KEY=${SECRET_KEY:-django-insecure-dev-only}
+      - CORS_ALLOW_ORIGINS=${CORS_ALLOW_ORIGINS:-}
+      - REQUIRE_SECURE_SECRET=${REQUIRE_SECURE_SECRET:-false}
+      - ALLOW_REGISTER=${ALLOW_REGISTER:-false}
+      - DEBUG=${DEBUG:-false}
+      - TZ=${TZ:-Asia/Shanghai}
+    volumes:
+      - config_data:/app/config
+      - sqlite_data:/app/data
+    ports:
+      - "${BACKEND_HOST_PORT:-8001}:8001"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8001/api/health/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - fundval
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        API_PROXY_TARGET: http://backend:8001
+    environment:
+      - API_PROXY_TARGET=http://backend:8001
+      - TZ=${TZ:-Asia/Shanghai}
+    ports:
+      - "${FRONTEND_HOST_PORT:-3000}:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - fundval
+
+volumes:
+  config_data:
+  sqlite_data:
+
+networks:
+  fundval:
+    driver: bridge
+

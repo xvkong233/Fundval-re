@@ -16,6 +16,13 @@ cp .env.example .env
 docker compose up --build
 ```
 
+如果你希望在 Docker 中使用 **SQLite**（不启动 Postgres），可以改用：
+
+```bash
+cp .env.example .env
+docker compose -f docker-compose.sqlite.yml up --build
+```
+
 访问：
 
 - 前端：`http://localhost:3000`
@@ -55,7 +62,9 @@ docker compose logs backend | grep "BOOTSTRAP KEY"
 
 ## 数据库（开箱即用）
 
-默认使用 Docker Postgres。
+默认（`docker-compose.yml`）使用 Docker Postgres。
+
+发行包/本地直接运行（不使用 Docker）时，若未设置 `DATABASE_URL`，后端会默认使用本地 **SQLite**（`./data/fundval.sqlite`）。
 
 若后端检测到 `DATABASE_URL` 指向的数据库不存在，会尝试自动创建并执行 migrations。
 

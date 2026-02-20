@@ -1,12 +1,10 @@
-use axum::{Json, http::StatusCode, response::IntoResponse};
-use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive;
+use axum::{http::StatusCode, response::IntoResponse, Json};
 use serde::{Deserialize, Serialize};
 
+use crate::state::AppState;
 use crate::django_password;
 use crate::routes::auth;
 use crate::routes::errors;
-use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
 pub struct RegisterRequest {
@@ -86,9 +84,7 @@ pub async fn register(
         return (
             StatusCode::BAD_REQUEST,
             Json(FieldErrors {
-                username: Some(vec![
-                    "Ensure this field has no more than 150 characters.".to_string(),
-                ]),
+                username: Some(vec!["Ensure this field has no more than 150 characters.".to_string()]),
                 password: None,
                 password_confirm: None,
             }),
@@ -116,9 +112,7 @@ pub async fn register(
             StatusCode::BAD_REQUEST,
             Json(FieldErrors {
                 username: None,
-                password: Some(vec![
-                    "Ensure this field has at least 8 characters.".to_string(),
-                ]),
+                password: Some(vec!["Ensure this field has at least 8 characters.".to_string()]),
                 password_confirm: None,
             }),
         )
@@ -284,7 +278,7 @@ pub async fn me_summary(
 
     let account_count = sqlx::query_scalar::<_, i64>(
         r#"
-        SELECT COUNT(*)::bigint
+        SELECT COUNT(*)
         FROM account
         WHERE user_id = $1
         "#,
@@ -295,7 +289,7 @@ pub async fn me_summary(
 
     let position_count = sqlx::query_scalar::<_, i64>(
         r#"
-        SELECT COUNT(*)::bigint
+        SELECT COUNT(*)
         FROM position p
         JOIN account a ON a.id = p.account_id
         WHERE a.user_id = $1
@@ -305,9 +299,9 @@ pub async fn me_summary(
     .fetch_one(pool)
     .await;
 
-    let total_cost = sqlx::query_scalar::<_, Decimal>(
+    let total_cost = sqlx::query_scalar::<_, f64>(
         r#"
-        SELECT COALESCE(SUM(p.holding_cost), 0)
+        SELECT COALESCE(CAST(SUM(CAST(p.holding_cost AS REAL)) AS REAL), 0.0)
         FROM position p
         JOIN account a ON a.id = p.account_id
         WHERE a.user_id = $1
@@ -317,9 +311,9 @@ pub async fn me_summary(
     .fetch_one(pool)
     .await;
 
-    let total_value = sqlx::query_scalar::<_, Decimal>(
+    let total_value = sqlx::query_scalar::<_, f64>(
         r#"
-        SELECT COALESCE(SUM(f.latest_nav * p.holding_share), 0)
+        SELECT COALESCE(CAST(SUM(CAST(f.latest_nav AS REAL) * CAST(p.holding_share AS REAL)) AS REAL), 0.0)
         FROM position p
         JOIN account a ON a.id = p.account_id
         JOIN fund f ON f.id = p.fund_id
@@ -330,9 +324,9 @@ pub async fn me_summary(
     .fetch_one(pool)
     .await;
 
-    let total_pnl = sqlx::query_scalar::<_, Decimal>(
+    let total_pnl = sqlx::query_scalar::<_, f64>(
         r#"
-        SELECT COALESCE(SUM((f.latest_nav - p.holding_nav) * p.holding_share), 0)
+        SELECT COALESCE(CAST(SUM((CAST(f.latest_nav AS REAL) - CAST(p.holding_nav AS REAL)) * CAST(p.holding_share AS REAL)) AS REAL), 0.0)
         FROM position p
         JOIN account a ON a.id = p.account_id
         JOIN fund f ON f.id = p.fund_id
@@ -371,9 +365,9 @@ pub async fn me_summary(
         Json(SummaryResponse {
             account_count,
             position_count,
-            total_cost: total_cost.to_f64().unwrap_or(0.0),
-            total_value: total_value.to_f64().unwrap_or(0.0),
-            total_pnl: total_pnl.to_f64().unwrap_or(0.0),
+            total_cost,
+            total_value,
+            total_pnl,
         }),
     )
         .into_response()

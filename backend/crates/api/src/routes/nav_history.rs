@@ -1,7 +1,8 @@
-use axum::{Json, extract::Query, http::StatusCode, response::IntoResponse};
-use chrono::{DateTime, NaiveDate, SecondsFormat, Utc};
+use axum::{extract::Query, http::StatusCode, response::IntoResponse, Json};
+use chrono::{NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use sqlx::any::AnyRow;
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -54,11 +55,7 @@ pub async fn list(
         Some(p) => p,
     };
 
-    let fund_code = q
-        .fund_code
-        .as_ref()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
+    let fund_code = q.fund_code.as_ref().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
     let start_date = q
         .start_date
         .as_ref()
@@ -84,15 +81,15 @@ pub async fn list(
     let mut sql = String::from(
         r#"
         SELECT
-          h.id::text as id,
+          CAST(h.id AS TEXT) as id,
           f.fund_code,
           f.fund_name,
-          h.nav_date::text as nav_date,
-          h.unit_nav::text as unit_nav,
-          h.accumulated_nav::text as accumulated_nav,
-          h.daily_growth::text as daily_growth,
-          h.created_at,
-          h.updated_at
+          CAST(h.nav_date AS TEXT) as nav_date,
+          CAST(h.unit_nav AS TEXT) as unit_nav,
+          CAST(h.accumulated_nav AS TEXT) as accumulated_nav,
+          CAST(h.daily_growth AS TEXT) as daily_growth,
+          CAST(h.created_at AS TEXT) as created_at,
+          CAST(h.updated_at AS TEXT) as updated_at
         FROM fund_nav_history h
         JOIN fund f ON f.id = h.fund_id
         WHERE 1=1
@@ -107,11 +104,11 @@ pub async fn list(
         bind_idx += 1;
     }
     if start_date.is_some() {
-        sql.push_str(&format!(" AND h.nav_date >= ${bind_idx}"));
+        sql.push_str(&format!(" AND h.nav_date >= CAST(${bind_idx} AS DATE)"));
         bind_idx += 1;
     }
     if end_date.is_some() {
-        sql.push_str(&format!(" AND h.nav_date <= ${bind_idx}"));
+        sql.push_str(&format!(" AND h.nav_date <= CAST(${bind_idx} AS DATE)"));
     }
     sql.push_str(" ORDER BY h.nav_date DESC");
 
@@ -121,10 +118,10 @@ pub async fn list(
         query = query.bind(code);
     }
     if let Some(sd) = start_date {
-        query = query.bind(sd);
+        query = query.bind(sd.to_string());
     }
     if let Some(ed) = end_date {
-        query = query.bind(ed);
+        query = query.bind(ed.to_string());
     }
 
     let rows = match query.fetch_all(pool).await {
@@ -162,21 +159,21 @@ pub async fn retrieve(
     let row = sqlx::query(
         r#"
         SELECT
-          h.id::text as id,
+          CAST(h.id AS TEXT) as id,
           f.fund_code,
           f.fund_name,
-          h.nav_date::text as nav_date,
-          h.unit_nav::text as unit_nav,
-          h.accumulated_nav::text as accumulated_nav,
-          h.daily_growth::text as daily_growth,
-          h.created_at,
-          h.updated_at
+          CAST(h.nav_date AS TEXT) as nav_date,
+          CAST(h.unit_nav AS TEXT) as unit_nav,
+          CAST(h.accumulated_nav AS TEXT) as accumulated_nav,
+          CAST(h.daily_growth AS TEXT) as daily_growth,
+          CAST(h.created_at AS TEXT) as created_at,
+          CAST(h.updated_at AS TEXT) as updated_at
         FROM fund_nav_history h
         JOIN fund f ON f.id = h.fund_id
-        WHERE h.id = $1
+        WHERE CAST(h.id AS TEXT) = $1
         "#,
     )
-    .bind(id)
+    .bind(id.to_string())
     .fetch_optional(pool)
     .await;
 
@@ -191,11 +188,7 @@ pub async fn retrieve(
         }
     };
     let Some(row) = row else {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(json!({ "detail": "Not found." })),
-        )
-            .into_response();
+        return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
     };
 
     (StatusCode::OK, Json(row_to_item(row))).into_response()
@@ -267,45 +260,56 @@ pub async fn batch_query(
     let mut sql = String::from(
         r#"
         SELECT
-          h.id::text as id,
+          CAST(h.id AS TEXT) as id,
           f.fund_code,
           f.fund_name,
-          h.nav_date::text as nav_date,
-          h.unit_nav::text as unit_nav,
-          h.accumulated_nav::text as accumulated_nav,
-          h.daily_growth::text as daily_growth,
-          h.created_at,
-          h.updated_at
+          CAST(h.nav_date AS TEXT) as nav_date,
+          CAST(h.unit_nav AS TEXT) as unit_nav,
+          CAST(h.accumulated_nav AS TEXT) as accumulated_nav,
+          CAST(h.daily_growth AS TEXT) as daily_growth,
+          CAST(h.created_at AS TEXT) as created_at,
+          CAST(h.updated_at AS TEXT) as updated_at
         FROM fund_nav_history h
         JOIN fund f ON f.id = h.fund_id
-        WHERE f.fund_code = ANY($1::text[])
-          AND h.source_name = $2
+        WHERE f.fund_code IN (
         "#,
     );
+    for (i, _) in fund_codes.iter().enumerate() {
+        if i > 0 {
+            sql.push_str(", ");
+        }
+        sql.push_str(&format!("${}", i + 1));
+    }
+    let mut bind_idx = fund_codes.len() + 1;
+    sql.push_str(&format!(") AND h.source_name = ${bind_idx}\n"));
+    bind_idx += 1;
 
-    let mut bind_idx = 3;
     if nav_date.is_some() {
-        sql.push_str(&format!(" AND h.nav_date = ${bind_idx}"));
+        sql.push_str(&format!(" AND h.nav_date = CAST(${bind_idx} AS DATE)"));
     } else {
         if start_date.is_some() {
-            sql.push_str(&format!(" AND h.nav_date >= ${bind_idx}"));
+            sql.push_str(&format!(" AND h.nav_date >= CAST(${bind_idx} AS DATE)"));
             bind_idx += 1;
         }
         if end_date.is_some() {
-            sql.push_str(&format!(" AND h.nav_date <= ${bind_idx}"));
+            sql.push_str(&format!(" AND h.nav_date <= CAST(${bind_idx} AS DATE)"));
         }
     }
     sql.push_str(" ORDER BY f.fund_code ASC, h.nav_date DESC");
 
-    let mut query = sqlx::query(&sql).bind(&fund_codes).bind(source_name);
+    let mut query = sqlx::query(&sql);
+    for code in &fund_codes {
+        query = query.bind(code);
+    }
+    query = query.bind(source_name);
     if let Some(nd) = nav_date {
-        query = query.bind(nd);
+        query = query.bind(nd.to_string());
     } else {
         if let Some(sd) = start_date {
-            query = query.bind(sd);
+            query = query.bind(sd.to_string());
         }
         if let Some(ed) = end_date {
-            query = query.bind(ed);
+            query = query.bind(ed.to_string());
         }
     }
 
@@ -413,24 +417,11 @@ pub async fn sync(
                 .into_response();
         }
     };
-    let tushare_token = state
-        .config()
-        .get_string("tushare_token")
-        .unwrap_or_default();
+    let tushare_token = state.config().get_string("tushare_token").unwrap_or_default();
 
     let mut results: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     for code in fund_codes {
-        match sync_one(
-            pool,
-            &client,
-            source_name,
-            &code,
-            start_date,
-            end_date,
-            &tushare_token,
-        )
-        .await
-        {
+        match sync_one(pool, &client, source_name, &code, start_date, end_date, &tushare_token).await {
             Ok(count) => {
                 results.insert(code, json!({ "success": true, "count": count }));
             }
@@ -487,7 +478,7 @@ async fn maybe_is_staff(
 }
 
 async fn sync_one(
-    pool: &sqlx::PgPool,
+    pool: &sqlx::AnyPool,
     client: &reqwest::Client,
     source_name: &str,
     fund_code: &str,
@@ -495,7 +486,7 @@ async fn sync_one(
     end_date: Option<NaiveDate>,
     tushare_token: &str,
 ) -> Result<i64, String> {
-    let fund_row = sqlx::query("SELECT id FROM fund WHERE fund_code = $1")
+    let fund_row = sqlx::query("SELECT CAST(id AS TEXT) as id FROM fund WHERE fund_code = $1")
         .bind(fund_code)
         .fetch_optional(pool)
         .await
@@ -504,38 +495,33 @@ async fn sync_one(
     let Some(fund_row) = fund_row else {
         return Err(format!("基金不存在：{fund_code}"));
     };
-    let fund_id: Uuid = fund_row.get("id");
+    let fund_id: String = fund_row.get("id");
 
     let mut effective_start = start_date;
     if effective_start.is_none() {
         let last = sqlx::query(
-            "SELECT nav_date FROM fund_nav_history WHERE source_name = $1 AND fund_id = $2 ORDER BY nav_date DESC LIMIT 1",
+            "SELECT CAST(nav_date AS TEXT) as nav_date FROM fund_nav_history WHERE source_name = $1 AND CAST(fund_id AS TEXT) = $2 ORDER BY nav_date DESC LIMIT 1",
         )
         .bind(source_name)
-        .bind(fund_id)
+        .bind(&fund_id)
         .fetch_optional(pool)
         .await
         .map_err(|e| e.to_string())?;
         if let Some(last) = last {
-            let d: NaiveDate = last.get("nav_date");
-            effective_start = Some(d.succ_opt().unwrap_or(d));
+            let raw: String = last.get("nav_date");
+            if let Ok(d) = NaiveDate::parse_from_str(raw.trim(), "%Y-%m-%d") {
+                effective_start = Some(d.succ_opt().unwrap_or(d));
+            }
         }
     }
     let effective_end = end_date.unwrap_or_else(|| Utc::now().date_naive());
 
     let data = match source_name {
         sources::SOURCE_TIANTIAN => {
-            eastmoney::fetch_nav_history(client, fund_code, effective_start, Some(effective_end))
-                .await?
+            eastmoney::fetch_nav_history(client, fund_code, effective_start, Some(effective_end)).await?
         }
         sources::SOURCE_DANJUAN => {
-            sources::danjuan::fetch_nav_history(
-                client,
-                fund_code,
-                effective_start,
-                Some(effective_end),
-            )
-            .await?
+            sources::danjuan::fetch_nav_history(client, fund_code, effective_start, Some(effective_end)).await?
         }
         sources::SOURCE_THS => {
             let all = sources::ths::fetch_nav_series(client, fund_code).await?;
@@ -557,14 +543,7 @@ async fn sync_one(
             if tushare_token.trim().is_empty() {
                 return Err("tushare token 未配置（请在“设置”页面填写）".to_string());
             }
-            sources::tushare::fetch_nav_history(
-                client,
-                tushare_token,
-                fund_code,
-                effective_start,
-                Some(effective_end),
-            )
-            .await?
+            sources::tushare::fetch_nav_history(client, tushare_token, fund_code, effective_start, Some(effective_end)).await?
         }
         _ => return Err(format!("数据源 {source_name} 不存在")),
     };
@@ -574,31 +553,56 @@ async fn sync_one(
 
     let mut inserted_count: i64 = 0;
     for item in data {
-        let inserted: bool = sqlx::query(
+        let exists = sqlx::query(
             r#"
-            INSERT INTO fund_nav_history (id, source_name, fund_id, nav_date, unit_nav, accumulated_nav, daily_growth, created_at, updated_at)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),NOW())
-            ON CONFLICT (source_name, fund_id, nav_date) DO UPDATE
-            SET unit_nav = EXCLUDED.unit_nav,
-                accumulated_nav = EXCLUDED.accumulated_nav,
-                daily_growth = EXCLUDED.daily_growth,
-                updated_at = NOW()
-            RETURNING (xmax = 0) as inserted
+            SELECT 1
+            FROM fund_nav_history
+            WHERE source_name = $1
+              AND CAST(fund_id AS TEXT) = $2
+              AND nav_date = CAST($3 AS DATE)
             "#,
         )
-        .bind(Uuid::new_v4())
         .bind(source_name)
-        .bind(fund_id)
-        .bind(item.nav_date)
-        .bind(item.unit_nav)
-        .bind(item.accumulated_nav)
-        .bind(item.daily_growth)
-        .fetch_one(pool)
+        .bind(fund_id.to_string())
+        .bind(item.nav_date.to_string())
+        .fetch_optional(pool)
         .await
         .map_err(|e| e.to_string())?
-        .get::<bool, _>("inserted");
+        .is_some();
 
-        if inserted {
+        sqlx::query(
+            r#"
+            INSERT INTO fund_nav_history (id, source_name, fund_id, nav_date, unit_nav, accumulated_nav, daily_growth, created_at, updated_at)
+            VALUES (
+              CAST($1 AS uuid),
+              $2,
+              CAST($3 AS uuid),
+              CAST($4 AS DATE),
+              CAST($5 AS NUMERIC),
+              CAST($6 AS NUMERIC),
+              CAST($7 AS NUMERIC),
+              CURRENT_TIMESTAMP,
+              CURRENT_TIMESTAMP
+            )
+            ON CONFLICT (source_name, fund_id, nav_date) DO UPDATE
+              SET unit_nav = CAST(EXCLUDED.unit_nav AS NUMERIC),
+                  accumulated_nav = CAST(EXCLUDED.accumulated_nav AS NUMERIC),
+                  daily_growth = CAST(EXCLUDED.daily_growth AS NUMERIC),
+                  updated_at = CURRENT_TIMESTAMP
+            "#,
+        )
+        .bind(Uuid::new_v4().to_string())
+        .bind(source_name)
+        .bind(fund_id.to_string())
+        .bind(item.nav_date.to_string())
+        .bind(item.unit_nav.to_string())
+        .bind(item.accumulated_nav.map(|v| v.to_string()))
+        .bind(item.daily_growth.map(|v| v.to_string()))
+        .execute(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        if !exists {
             inserted_count += 1;
         }
     }
@@ -606,7 +610,7 @@ async fn sync_one(
     Ok(inserted_count)
 }
 
-fn row_to_item(row: sqlx::postgres::PgRow) -> NavHistoryItem {
+fn row_to_item(row: AnyRow) -> NavHistoryItem {
     NavHistoryItem {
         id: row.get::<String, _>("id"),
         fund_code: row.get::<String, _>("fund_code"),
@@ -615,12 +619,7 @@ fn row_to_item(row: sqlx::postgres::PgRow) -> NavHistoryItem {
         unit_nav: row.get::<String, _>("unit_nav"),
         accumulated_nav: row.get::<Option<String>, _>("accumulated_nav"),
         daily_growth: row.get::<Option<String>, _>("daily_growth"),
-        created_at: format_dt(row.get::<DateTime<Utc>, _>("created_at")),
-        updated_at: format_dt(row.get::<DateTime<Utc>, _>("updated_at")),
+        created_at: crate::dbfmt::datetime_to_rfc3339(&row.get::<String, _>("created_at")),
+        updated_at: crate::dbfmt::datetime_to_rfc3339(&row.get::<String, _>("updated_at")),
     }
-}
-
-fn format_dt(dt: DateTime<Utc>) -> String {
-    // 对齐 DRF 常见输出（UTC 使用 Z 后缀）
-    dt.to_rfc3339_opts(SecondsFormat::AutoSi, true)
 }

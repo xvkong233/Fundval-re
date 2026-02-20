@@ -1,11 +1,10 @@
-use axum::{Json, http::StatusCode, response::IntoResponse};
-use chrono::{DateTime, Utc};
+use axum::{http::StatusCode, response::IntoResponse, Json};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
+use crate::{jwt::JwtService, state::AppState};
 use crate::django_password;
 use crate::routes::errors;
-use crate::{jwt::JwtService, state::AppState};
 
 #[derive(Debug, Deserialize)]
 pub struct LoginRequest {
@@ -100,7 +99,13 @@ pub async fn login(
 
     let row = sqlx::query(
         r#"
-        SELECT id::text as id, username, password, email, is_superuser, date_joined
+        SELECT
+          CAST(id AS TEXT) as id,
+          username,
+          password,
+          email,
+          is_superuser,
+          CAST(date_joined AS TEXT) as date_joined
         FROM auth_user
         WHERE username = $1
         "#,
@@ -230,9 +235,14 @@ pub async fn me(
 
     let row = sqlx::query(
         r#"
-        SELECT id::text as id, username, email, is_superuser, date_joined
+        SELECT
+          CAST(id AS TEXT) as id,
+          username,
+          email,
+          is_superuser,
+          CAST(date_joined AS TEXT) as date_joined
         FROM auth_user
-        WHERE id::text = $1
+        WHERE CAST(id AS TEXT) = $1
         "#,
     )
     .bind(&user_id)
@@ -254,7 +264,7 @@ pub async fn me(
         return invalid_token_response();
     };
 
-    let created_at: DateTime<Utc> = row.get("date_joined");
+    let created_at_raw: String = row.get("date_joined");
     (
         StatusCode::OK,
         Json(MeResponse {
@@ -266,7 +276,7 @@ pub async fn me(
             } else {
                 "user".to_string()
             },
-            created_at: created_at.to_rfc3339_opts(chrono::SecondsFormat::AutoSi, false),
+            created_at: crate::dbfmt::datetime_to_rfc3339(&created_at_raw),
         }),
     )
         .into_response()
@@ -299,7 +309,7 @@ pub async fn change_password(
         r#"
         SELECT password
         FROM auth_user
-        WHERE id::text = $1
+        WHERE CAST(id AS TEXT) = $1
         "#,
     )
     .bind(&user_id)
@@ -334,7 +344,7 @@ pub async fn change_password(
 
     let new_hash = django_password::hash_password(&body.new_password);
 
-    let updated = sqlx::query("UPDATE auth_user SET password = $1 WHERE id::text = $2")
+    let updated = sqlx::query("UPDATE auth_user SET password = $1 WHERE CAST(id AS TEXT) = $2")
         .bind(new_hash)
         .bind(&user_id)
         .execute(pool)
@@ -350,13 +360,7 @@ pub async fn change_password(
             .into_response();
     }
 
-    (
-        StatusCode::OK,
-        Json(MessageResponse {
-            message: "密码修改成功",
-        }),
-    )
-        .into_response()
+    (StatusCode::OK, Json(MessageResponse { message: "密码修改成功" })).into_response()
 }
 
 #[allow(clippy::result_large_err)]
@@ -365,13 +369,15 @@ pub(crate) fn authenticate(
     headers: &axum::http::HeaderMap,
 ) -> Result<String, axum::response::Response> {
     let Some(auth) = headers.get(axum::http::header::AUTHORIZATION) else {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            Json(NotAuthenticatedResponse {
-                detail: "Authentication credentials were not provided.",
-            }),
-        )
-            .into_response());
+        return Err(
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(NotAuthenticatedResponse {
+                    detail: "Authentication credentials were not provided.",
+                }),
+            )
+                .into_response(),
+        );
     };
 
     let auth_str = match auth.to_str() {

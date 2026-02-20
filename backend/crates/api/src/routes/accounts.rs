@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
-use axum::{Json, http::StatusCode, response::IntoResponse};
+use axum::{http::StatusCode, response::IntoResponse, Json};
 use chrono::{DateTime, SecondsFormat, Utc};
 use rust_decimal::{Decimal, RoundingStrategy};
 use serde::{Deserialize, Serialize};
@@ -87,12 +87,12 @@ struct ErrorResponse {
 
 #[derive(Clone, Debug)]
 struct AccountRow {
-    id: Uuid,
+    id: String,
     name: String,
-    parent_id: Option<Uuid>,
+    parent_id: Option<String>,
     is_default: bool,
-    created_at: DateTime<Utc>,
-    updated_at: DateTime<Utc>,
+    created_at: String,
+    updated_at: String,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -144,7 +144,13 @@ pub async fn list(
 
     let rows = match sqlx::query(
         r#"
-        SELECT id, name, parent_id, is_default, created_at, updated_at
+        SELECT
+          CAST(id AS TEXT) as id,
+          name,
+          CAST(parent_id AS TEXT) as parent_id,
+          is_default,
+          CAST(created_at AS TEXT) as created_at,
+          CAST(updated_at AS TEXT) as updated_at
         FROM account
         WHERE user_id = $1
         ORDER BY created_at ASC
@@ -167,25 +173,28 @@ pub async fn list(
     let mut accounts: Vec<AccountRow> = Vec::with_capacity(rows.len());
     for row in rows {
         accounts.push(AccountRow {
-            id: row.get::<Uuid, _>("id"),
+            id: row.get::<String, _>("id"),
             name: row.get::<String, _>("name"),
-            parent_id: row.get::<Option<Uuid>, _>("parent_id"),
+            parent_id: row.get::<Option<String>, _>("parent_id"),
             is_default: row.get::<bool, _>("is_default"),
-            created_at: row.get::<DateTime<Utc>, _>("created_at"),
-            updated_at: row.get::<DateTime<Utc>, _>("updated_at"),
+            created_at: row.get::<String, _>("created_at"),
+            updated_at: row.get::<String, _>("updated_at"),
         });
     }
 
-    let mut children_map: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
+    let mut children_map: HashMap<String, Vec<String>> = HashMap::new();
     for a in &accounts {
-        if let Some(parent_id) = a.parent_id {
-            children_map.entry(parent_id).or_default().push(a.id);
+        if let Some(parent_id) = a.parent_id.as_ref() {
+            children_map
+                .entry(parent_id.clone())
+                .or_default()
+                .push(a.id.clone());
         }
     }
 
     let child_ids = accounts
         .iter()
-        .filter_map(|a| a.parent_id.map(|_| a.id))
+        .filter_map(|a| a.parent_id.as_ref().map(|_| a.id.clone()))
         .collect::<Vec<_>>();
 
     let positions_by_account = match load_positions(&state, pool, &child_ids).await {
@@ -193,14 +202,14 @@ pub async fn list(
         Err(resp) => return resp,
     };
 
-    let mut summary_by_id: HashMap<Uuid, Summary> = HashMap::new();
+    let mut summary_by_id: HashMap<String, Summary> = HashMap::new();
     for a in &accounts {
         if a.parent_id.is_some() {
             let positions = positions_by_account
                 .get(&a.id)
                 .map(Vec::as_slice)
                 .unwrap_or(&[]);
-            summary_by_id.insert(a.id, compute_child_summary(positions));
+            summary_by_id.insert(a.id.clone(), compute_child_summary(positions));
         }
     }
 
@@ -211,12 +220,15 @@ pub async fn list(
                 .into_iter()
                 .flat_map(|v| v.iter())
                 .filter_map(|id| summary_by_id.get(id));
-            summary_by_id.insert(a.id, compute_parent_summary(child_summaries));
+            summary_by_id.insert(a.id.clone(), compute_parent_summary(child_summaries));
         }
     }
 
-    let row_by_id: HashMap<Uuid, AccountRow> =
-        accounts.iter().cloned().map(|a| (a.id, a)).collect();
+    let row_by_id: HashMap<String, AccountRow> = accounts
+        .iter()
+        .cloned()
+        .map(|a| (a.id.clone(), a))
+        .collect();
 
     let mut out: Vec<AccountResponse> = Vec::with_capacity(accounts.len());
     for a in accounts {
@@ -291,13 +303,15 @@ pub async fn create(
     };
 
     if let Some(parent_id) = body.parent {
-        match sqlx::query("SELECT parent_id FROM account WHERE id = $1")
-            .bind(parent_id)
+        match sqlx::query(
+            "SELECT CAST(parent_id AS TEXT) as parent_id FROM account WHERE CAST(id AS TEXT) = $1",
+        )
+            .bind(parent_id.to_string())
             .fetch_optional(pool)
             .await
         {
             Ok(Some(row)) => {
-                let pp: Option<Uuid> = row.get("parent_id");
+                let pp: Option<String> = row.get("parent_id");
                 if pp.is_some() {
                     return (
                         StatusCode::BAD_REQUEST,
@@ -346,7 +360,8 @@ pub async fn create(
             .into_response();
     }
 
-    let id = Uuid::new_v4();
+    let id = Uuid::new_v4().to_string();
+    let parent_id = body.parent.map(|v| v.to_string());
     let mut tx = match pool.begin().await {
         Ok(v) => v,
         Err(e) => {
@@ -359,12 +374,10 @@ pub async fn create(
     };
 
     if is_default
-        && let Err(e) = sqlx::query(
-            "UPDATE account SET is_default = FALSE WHERE user_id = $1 AND is_default = TRUE",
-        )
-        .bind(user_id_i64)
-        .execute(&mut *tx)
-        .await
+        && let Err(e) = sqlx::query("UPDATE account SET is_default = FALSE WHERE user_id = $1 AND is_default = TRUE")
+            .bind(user_id_i64)
+            .execute(&mut *tx)
+            .await
     {
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -376,13 +389,13 @@ pub async fn create(
     if let Err(e) = sqlx::query(
         r#"
         INSERT INTO account (id, user_id, name, parent_id, is_default, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+        VALUES (CAST($1 AS uuid), $2, $3, CAST($4 AS uuid), $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         "#,
     )
-    .bind(id)
+    .bind(&id)
     .bind(user_id_i64)
     .bind(&name)
-    .bind(body.parent)
+    .bind(parent_id.clone())
     .bind(is_default)
     .execute(&mut *tx)
     .await
@@ -406,10 +419,10 @@ pub async fn create(
     let row = AccountRow {
         id,
         name,
-        parent_id: body.parent,
+        parent_id,
         is_default,
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
+        created_at: format_now(Utc::now()),
+        updated_at: format_now(Utc::now()),
     };
 
     let summary = compute_child_summary(&[]);
@@ -450,12 +463,18 @@ pub async fn retrieve(
 
     let row = match sqlx::query(
         r#"
-        SELECT id, name, parent_id, is_default, created_at, updated_at
+        SELECT
+          CAST(id AS TEXT) as id,
+          name,
+          CAST(parent_id AS TEXT) as parent_id,
+          is_default,
+          CAST(created_at AS TEXT) as created_at,
+          CAST(updated_at AS TEXT) as updated_at
         FROM account
-        WHERE id = $1 AND user_id = $2
+        WHERE CAST(id AS TEXT) = $1 AND user_id = $2
         "#,
     )
-    .bind(id)
+    .bind(id.to_string())
     .bind(user_id_i64)
     .fetch_optional(pool)
     .await
@@ -471,48 +490,43 @@ pub async fn retrieve(
     };
 
     let Some(row) = row else {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(json!({ "detail": "Not found." })),
-        )
-            .into_response();
+        return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
     };
 
     let account = AccountRow {
-        id: row.get::<Uuid, _>("id"),
+        id: row.get::<String, _>("id"),
         name: row.get::<String, _>("name"),
-        parent_id: row.get::<Option<Uuid>, _>("parent_id"),
+        parent_id: row.get::<Option<String>, _>("parent_id"),
         is_default: row.get::<bool, _>("is_default"),
-        created_at: row.get::<DateTime<Utc>, _>("created_at"),
-        updated_at: row.get::<DateTime<Utc>, _>("updated_at"),
+        created_at: row.get::<String, _>("created_at"),
+        updated_at: row.get::<String, _>("updated_at"),
     };
 
     if account.parent_id.is_some() {
-        let positions_by_account = match load_positions(&state, pool, &[account.id]).await {
+        let positions_by_account = match load_positions(&state, pool, std::slice::from_ref(&account.id)).await {
             Ok(v) => v,
             Err(resp) => return resp,
         };
-        let positions = positions_by_account
-            .get(&account.id)
-            .map(Vec::as_slice)
-            .unwrap_or(&[]);
+        let positions = positions_by_account.get(&account.id).map(Vec::as_slice).unwrap_or(&[]);
         let summary = compute_child_summary(positions);
-        return (
-            StatusCode::OK,
-            Json(to_account_response(&account, &summary)),
-        )
-            .into_response();
+        return (StatusCode::OK, Json(to_account_response(&account, &summary))).into_response();
     }
 
     let child_rows = match sqlx::query(
         r#"
-        SELECT id, name, parent_id, is_default, created_at, updated_at
+        SELECT
+          CAST(id AS TEXT) as id,
+          name,
+          CAST(parent_id AS TEXT) as parent_id,
+          is_default,
+          CAST(created_at AS TEXT) as created_at,
+          CAST(updated_at AS TEXT) as updated_at
         FROM account
-        WHERE parent_id = $1
+        WHERE CAST(parent_id AS TEXT) = $1
         ORDER BY created_at ASC
         "#,
     )
-    .bind(account.id)
+    .bind(&account.id)
     .fetch_all(pool)
     .await
     {
@@ -529,16 +543,16 @@ pub async fn retrieve(
     let mut children: Vec<AccountRow> = Vec::with_capacity(child_rows.len());
     for r in child_rows {
         children.push(AccountRow {
-            id: r.get::<Uuid, _>("id"),
+            id: r.get::<String, _>("id"),
             name: r.get::<String, _>("name"),
-            parent_id: r.get::<Option<Uuid>, _>("parent_id"),
+            parent_id: r.get::<Option<String>, _>("parent_id"),
             is_default: r.get::<bool, _>("is_default"),
-            created_at: r.get::<DateTime<Utc>, _>("created_at"),
-            updated_at: r.get::<DateTime<Utc>, _>("updated_at"),
+            created_at: r.get::<String, _>("created_at"),
+            updated_at: r.get::<String, _>("updated_at"),
         });
     }
 
-    let child_ids = children.iter().map(|c| c.id).collect::<Vec<_>>();
+    let child_ids = children.iter().map(|c| c.id.clone()).collect::<Vec<_>>();
     let positions_by_account = match load_positions(&state, pool, &child_ids).await {
         Ok(v) => v,
         Err(resp) => return resp,
@@ -547,10 +561,7 @@ pub async fn retrieve(
     let mut child_responses: Vec<AccountResponse> = Vec::with_capacity(children.len());
     let mut child_summaries: Vec<Summary> = Vec::with_capacity(children.len());
     for c in &children {
-        let positions = positions_by_account
-            .get(&c.id)
-            .map(Vec::as_slice)
-            .unwrap_or(&[]);
+        let positions = positions_by_account.get(&c.id).map(Vec::as_slice).unwrap_or(&[]);
         let s = compute_child_summary(positions);
         child_summaries.push(s.clone());
         child_responses.push(to_account_response(c, &s));
@@ -626,12 +637,18 @@ async fn update_internal(
 
     let existing = match sqlx::query(
         r#"
-        SELECT id, name, parent_id, is_default, created_at, updated_at
+        SELECT
+          CAST(id AS TEXT) as id,
+          name,
+          CAST(parent_id AS TEXT) as parent_id,
+          is_default,
+          CAST(created_at AS TEXT) as created_at,
+          CAST(updated_at AS TEXT) as updated_at
         FROM account
-        WHERE id = $1 AND user_id = $2
+        WHERE CAST(id AS TEXT) = $1 AND user_id = $2
         "#,
     )
-    .bind(id)
+    .bind(id.to_string())
     .bind(user_id_i64)
     .fetch_optional(pool)
     .await
@@ -647,20 +664,16 @@ async fn update_internal(
     };
 
     let Some(row) = existing else {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(json!({ "detail": "Not found." })),
-        )
-            .into_response();
+        return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
     };
 
     let existing_row = AccountRow {
-        id: row.get::<Uuid, _>("id"),
+        id: row.get::<String, _>("id"),
         name: row.get::<String, _>("name"),
-        parent_id: row.get::<Option<Uuid>, _>("parent_id"),
+        parent_id: row.get::<Option<String>, _>("parent_id"),
         is_default: row.get::<bool, _>("is_default"),
-        created_at: row.get::<DateTime<Utc>, _>("created_at"),
-        updated_at: row.get::<DateTime<Utc>, _>("updated_at"),
+        created_at: row.get::<String, _>("created_at"),
+        updated_at: row.get::<String, _>("updated_at"),
     };
 
     let next_name = match body.name.as_ref() {
@@ -669,9 +682,9 @@ async fn update_internal(
         Some(v) => v.trim().to_string(),
     };
 
-    let next_parent = match body.parent {
-        None => existing_row.parent_id,
-        Some(v) => v,
+    let next_parent: Option<String> = match body.parent {
+        None => existing_row.parent_id.clone(),
+        Some(v) => v.map(|u| u.to_string()),
     };
 
     let next_is_default = body.is_default.unwrap_or(existing_row.is_default);
@@ -684,21 +697,23 @@ async fn update_internal(
             .into_response();
     }
 
-    if let Some(parent_id) = next_parent {
-        if parent_id == existing_row.id {
+    if let Some(parent_id) = next_parent.as_ref() {
+        if parent_id == &existing_row.id {
             return (
                 StatusCode::BAD_REQUEST,
                 Json(json!({ "parent": ["Invalid pk - object does not exist."] })),
             )
                 .into_response();
         }
-        match sqlx::query("SELECT parent_id FROM account WHERE id = $1")
+        match sqlx::query(
+            "SELECT CAST(parent_id AS TEXT) as parent_id FROM account WHERE CAST(id AS TEXT) = $1",
+        )
             .bind(parent_id)
             .fetch_optional(pool)
             .await
         {
             Ok(Some(row)) => {
-                let pp: Option<Uuid> = row.get("parent_id");
+                let pp: Option<String> = row.get("parent_id");
                 if pp.is_some() {
                     return (
                         StatusCode::BAD_REQUEST,
@@ -725,11 +740,11 @@ async fn update_internal(
     }
 
     let dup = match sqlx::query(
-        "SELECT 1 FROM account WHERE user_id = $1 AND name = $2 AND id <> $3 LIMIT 1",
+        "SELECT 1 FROM account WHERE user_id = $1 AND name = $2 AND CAST(id AS TEXT) <> $3 LIMIT 1",
     )
     .bind(user_id_i64)
     .bind(&next_name)
-    .bind(existing_row.id)
+    .bind(&existing_row.id)
     .fetch_optional(pool)
     .await
     {
@@ -763,10 +778,10 @@ async fn update_internal(
 
     if next_is_default
         && let Err(e) = sqlx::query(
-            "UPDATE account SET is_default = FALSE WHERE user_id = $1 AND is_default = TRUE AND id <> $2",
+            "UPDATE account SET is_default = FALSE WHERE user_id = $1 AND is_default = TRUE AND CAST(id AS TEXT) <> $2",
         )
         .bind(user_id_i64)
-        .bind(existing_row.id)
+        .bind(&existing_row.id)
         .execute(&mut *tx)
         .await
     {
@@ -780,14 +795,17 @@ async fn update_internal(
     if let Err(e) = sqlx::query(
         r#"
         UPDATE account
-        SET name = $1, parent_id = $2, is_default = $3, updated_at = NOW()
-        WHERE id = $4 AND user_id = $5
+        SET name = $1,
+            parent_id = CAST($2 AS uuid),
+            is_default = $3,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE CAST(id AS TEXT) = $4 AND user_id = $5
         "#,
     )
     .bind(&next_name)
-    .bind(next_parent)
+    .bind(next_parent.clone())
     .bind(next_is_default)
-    .bind(existing_row.id)
+    .bind(&existing_row.id)
     .bind(user_id_i64)
     .execute(&mut *tx)
     .await
@@ -808,12 +826,8 @@ async fn update_internal(
             .into_response();
     }
 
-    retrieve(
-        axum::extract::State(state),
-        headers,
-        axum::extract::Path(existing_row.id),
-    )
-    .await
+    let id_uuid = Uuid::parse_str(&existing_row.id).unwrap_or(id);
+    retrieve(axum::extract::State(state), headers, axum::extract::Path(id_uuid)).await
 }
 
 pub async fn destroy(
@@ -843,8 +857,8 @@ pub async fn destroy(
         Some(p) => p,
     };
 
-    let res = match sqlx::query("DELETE FROM account WHERE id = $1 AND user_id = $2")
-        .bind(id)
+    let res = match sqlx::query("DELETE FROM account WHERE CAST(id AS TEXT) = $1 AND user_id = $2")
+        .bind(id.to_string())
         .bind(user_id_i64)
         .execute(pool)
         .await
@@ -860,11 +874,7 @@ pub async fn destroy(
     };
 
     if res.rows_affected() == 0 {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(json!({ "detail": "Not found." })),
-        )
-            .into_response();
+        return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
     }
 
     StatusCode::NO_CONTENT.into_response()
@@ -897,8 +907,8 @@ pub async fn positions(
         Some(p) => p,
     };
 
-    let account_row = match sqlx::query("SELECT name FROM account WHERE id = $1 AND user_id = $2")
-        .bind(id)
+    let account_row = match sqlx::query("SELECT name FROM account WHERE CAST(id AS TEXT) = $1 AND user_id = $2")
+        .bind(id.to_string())
         .bind(user_id_i64)
         .fetch_optional(pool)
         .await
@@ -913,38 +923,34 @@ pub async fn positions(
         }
     };
     let Some(account_row) = account_row else {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(json!({ "detail": "Not found." })),
-        )
-            .into_response();
+        return (StatusCode::NOT_FOUND, Json(json!({ "detail": "Not found." }))).into_response();
     };
     let account_name: String = account_row.get("name");
 
     let rows = match sqlx::query(
         r#"
         SELECT
-          p.id::text as id,
-          p.account_id::text as account,
-          p.holding_share::text as holding_share,
-          p.holding_cost::text as holding_cost,
-          p.holding_nav::text as holding_nav,
-          p.updated_at as updated_at,
+          CAST(p.id AS TEXT) as id,
+          CAST(p.account_id AS TEXT) as account,
+          CAST(p.holding_share AS TEXT) as holding_share,
+          CAST(p.holding_cost AS TEXT) as holding_cost,
+          CAST(p.holding_nav AS TEXT) as holding_nav,
+          CAST(p.updated_at AS TEXT) as updated_at,
           f.fund_code,
           f.fund_name,
           f.fund_type,
-          f.latest_nav::text as latest_nav,
-          f.latest_nav_date::text as latest_nav_date,
-          f.estimate_nav::text as estimate_nav,
-          f.estimate_growth::text as estimate_growth,
-          f.estimate_time::text as estimate_time
+          CAST(f.latest_nav AS TEXT) as latest_nav,
+          CAST(f.latest_nav_date AS TEXT) as latest_nav_date,
+          CAST(f.estimate_nav AS TEXT) as estimate_nav,
+          CAST(f.estimate_growth AS TEXT) as estimate_growth,
+          CAST(f.estimate_time AS TEXT) as estimate_time
         FROM position p
         JOIN fund f ON f.id = p.fund_id
-        WHERE p.account_id = $1
+        WHERE CAST(p.account_id AS TEXT) = $1
         ORDER BY f.fund_code ASC
         "#,
     )
-    .bind(id)
+    .bind(id.to_string())
     .fetch_all(pool)
     .await
     {
@@ -963,9 +969,7 @@ pub async fn positions(
         let holding_share = parse_decimal(row.get::<String, _>("holding_share"));
         let holding_cost = parse_decimal(row.get::<String, _>("holding_cost"));
         let holding_nav = parse_decimal(row.get::<String, _>("holding_nav"));
-        let latest_nav = row
-            .get::<Option<String>, _>("latest_nav")
-            .map(parse_decimal);
+        let latest_nav = row.get::<Option<String>, _>("latest_nav").map(parse_decimal);
 
         let pnl_dec = match latest_nav {
             None => Decimal::ZERO,
@@ -1004,7 +1008,7 @@ pub async fn positions(
             holding_cost: fmt_decimal_fixed(holding_cost, 2),
             holding_nav: fmt_decimal_fixed(holding_nav, 4),
             pnl: fmt_decimal_fixed(pnl_dec, 2),
-            updated_at: format_dt(row.get::<DateTime<Utc>, _>("updated_at")),
+            updated_at: crate::dbfmt::datetime_to_rfc3339(&row.get::<String, _>("updated_at")),
         });
     }
 
@@ -1013,59 +1017,68 @@ pub async fn positions(
 
 async fn load_positions(
     state: &AppState,
-    pool: &sqlx::PgPool,
-    account_ids: &[Uuid],
-) -> Result<HashMap<Uuid, Vec<PositionAggRow>>, axum::response::Response> {
+    pool: &sqlx::AnyPool,
+    account_ids: &[String],
+) -> Result<HashMap<String, Vec<PositionAggRow>>, axum::response::Response> {
     if account_ids.is_empty() {
         return Ok(HashMap::new());
     }
 
-    let rows = sqlx::query(
+    let mut sql = String::from(
         r#"
         SELECT
-          p.account_id,
-          p.holding_share::text as holding_share,
-          p.holding_cost::text as holding_cost,
-          f.latest_nav::text as latest_nav,
-          f.estimate_nav::text as estimate_nav
+          CAST(p.account_id AS TEXT) as account_id,
+          CAST(p.holding_share AS TEXT) as holding_share,
+          CAST(p.holding_cost AS TEXT) as holding_cost,
+          CAST(f.latest_nav AS TEXT) as latest_nav,
+          CAST(f.estimate_nav AS TEXT) as estimate_nav
         FROM position p
         JOIN fund f ON f.id = p.fund_id
-        WHERE p.account_id = ANY($1::uuid[])
+        WHERE CAST(p.account_id AS TEXT) IN (
         "#,
-    )
-    .bind(account_ids)
-    .fetch_all(pool)
-    .await;
+    );
+    for (i, _) in account_ids.iter().enumerate() {
+        if i > 0 {
+            sql.push_str(", ");
+        }
+        sql.push_str(&format!("${}", i + 1));
+    }
+    sql.push_str(")\n");
+    let mut q = sqlx::query(&sql);
+    for id in account_ids {
+        q = q.bind(id);
+    }
+    let rows = q.fetch_all(pool).await;
 
     let rows = match rows {
         Ok(v) => v,
         Err(e) => {
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                errors::internal_json(state, e),
-            )
-                .into_response());
+            return Err(
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    errors::internal_json(state, e),
+                )
+                    .into_response(),
+            );
         }
     };
 
-    let mut map: HashMap<Uuid, Vec<PositionAggRow>> = HashMap::new();
+    let mut map: HashMap<String, Vec<PositionAggRow>> = HashMap::new();
     for row in rows {
-        let account_id = row.get::<Uuid, _>("account_id");
+        let account_id = row.get::<String, _>("account_id");
         let holding_share = parse_decimal(row.get::<String, _>("holding_share"));
         let holding_cost = parse_decimal(row.get::<String, _>("holding_cost"));
-        let latest_nav = row
-            .get::<Option<String>, _>("latest_nav")
-            .map(parse_decimal);
-        let estimate_nav = row
-            .get::<Option<String>, _>("estimate_nav")
-            .map(parse_decimal);
+        let latest_nav = row.get::<Option<String>, _>("latest_nav").map(parse_decimal);
+        let estimate_nav = row.get::<Option<String>, _>("estimate_nav").map(parse_decimal);
 
-        map.entry(account_id).or_default().push(PositionAggRow {
-            holding_share,
-            holding_cost,
-            latest_nav,
-            estimate_nav,
-        });
+        map.entry(account_id)
+            .or_default()
+            .push(PositionAggRow {
+                holding_share,
+                holding_cost,
+                latest_nav,
+                estimate_nav,
+            });
     }
     Ok(map)
 }
@@ -1092,8 +1105,7 @@ fn compute_child_summary(positions: &[PositionAggRow]) -> Summary {
             match p.estimate_nav {
                 None => estimate_value = None,
                 Some(estimate) => {
-                    estimate_value =
-                        Some(estimate_value.unwrap_or_default() + estimate * p.holding_share)
+                    estimate_value = Some(estimate_value.unwrap_or_default() + estimate * p.holding_share)
                 }
             }
         }
@@ -1101,8 +1113,7 @@ fn compute_child_summary(positions: &[PositionAggRow]) -> Summary {
         if today_pnl.is_some() {
             match (p.estimate_nav, p.latest_nav) {
                 (Some(estimate), Some(latest)) => {
-                    today_pnl =
-                        Some(today_pnl.unwrap_or_default() + p.holding_share * (estimate - latest));
+                    today_pnl = Some(today_pnl.unwrap_or_default() + p.holding_share * (estimate - latest));
                 }
                 _ => today_pnl = None,
             }
@@ -1184,9 +1195,9 @@ fn finalize_summary(
 
 fn to_account_response(row: &AccountRow, s: &Summary) -> AccountResponse {
     AccountResponse {
-        id: row.id.to_string(),
+        id: row.id.clone(),
         name: row.name.clone(),
-        parent: row.parent_id.map(|v| v.to_string()),
+        parent: row.parent_id.clone(),
         is_default: row.is_default,
 
         holding_cost: fmt_decimal_fixed(s.holding_cost, 2),
@@ -1200,8 +1211,8 @@ fn to_account_response(row: &AccountRow, s: &Summary) -> AccountResponse {
         today_pnl_rate: s.today_pnl_rate.map(|d| fmt_decimal_fixed(d, 4)),
 
         children: None,
-        created_at: format_dt(row.created_at),
-        updated_at: format_dt(row.updated_at),
+        created_at: crate::dbfmt::datetime_to_rfc3339(&row.created_at),
+        updated_at: crate::dbfmt::datetime_to_rfc3339(&row.updated_at),
     }
 }
 
@@ -1220,6 +1231,6 @@ fn fmt_decimal_fixed(value: Decimal, dp: u32) -> String {
     v.to_string()
 }
 
-fn format_dt(dt: DateTime<Utc>) -> String {
+fn format_now(dt: DateTime<Utc>) -> String {
     dt.to_rfc3339_opts(SecondsFormat::AutoSi, false)
 }

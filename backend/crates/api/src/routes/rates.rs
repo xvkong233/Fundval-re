@@ -5,9 +5,9 @@ use serde_json::json;
 use sqlx::Row;
 
 use crate::dbfmt;
+use crate::rates::treasury_3m;
 use crate::routes::auth;
 use crate::routes::errors;
-use crate::rates::treasury_3m;
 use crate::state::AppState;
 
 #[derive(Debug, Deserialize, Default)]
@@ -45,12 +45,7 @@ pub async fn risk_free(
         Some(p) => p,
     };
 
-    let tenor = q
-        .tenor
-        .as_deref()
-        .unwrap_or("3M")
-        .trim()
-        .to_string();
+    let tenor = q.tenor.as_deref().unwrap_or("3M").trim().to_string();
     if tenor.is_empty() {
         return (
             StatusCode::BAD_REQUEST,
@@ -150,9 +145,9 @@ pub async fn admin_sync_risk_free(
         WHERE id = $1
         "#,
     )
-        .bind(user_id_i64)
-        .fetch_optional(pool)
-        .await;
+    .bind(user_id_i64)
+    .fetch_optional(pool)
+    .await;
     let row = match row {
         Ok(v) => v,
         Err(e) => {

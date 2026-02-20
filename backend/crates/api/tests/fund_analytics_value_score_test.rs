@@ -44,7 +44,13 @@ async fn fund_analytics_includes_value_score_and_ce_with_gamma() {
         .expect("seed fund");
     }
 
-    let dates = ["2026-02-10", "2026-02-11", "2026-02-12", "2026-02-13", "2026-02-14"];
+    let dates = [
+        "2026-02-10",
+        "2026-02-11",
+        "2026-02-12",
+        "2026-02-13",
+        "2026-02-14",
+    ];
     let navs_a = ["1.0000", "1.0100", "1.0050", "1.0200", "1.0300"];
     let navs_b = ["1.0000", "0.9950", "1.0000", "0.9900", "1.0000"];
     let navs_c = ["1.0000", "1.0020", "1.0010", "1.0030", "1.0025"];
@@ -115,4 +121,3 @@ async fn fund_analytics_includes_value_score_and_ce_with_gamma() {
     assert!(v.get("ce").is_some());
     assert_eq!(v["ce"]["gamma"], 5.0);
 }
-

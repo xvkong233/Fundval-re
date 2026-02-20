@@ -83,6 +83,10 @@ async fn risk_free_rate_returns_cached_row_when_present() {
     assert_eq!(v["rate_date"], "2026-02-14");
     assert_eq!(v["rate_percent"], "1.3428");
     assert_eq!(v["source"], "chinabond");
-    assert!(v["fetched_at"].as_str().unwrap_or("").contains("2026-02-14"));
+    assert!(
+        v["fetched_at"]
+            .as_str()
+            .unwrap_or("")
+            .contains("2026-02-14")
+    );
 }
-

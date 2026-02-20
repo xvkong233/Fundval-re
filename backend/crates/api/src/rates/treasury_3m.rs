@@ -47,7 +47,10 @@ pub fn parse_chinabond_curve_json(raw: &str) -> Result<Treasury3mRate, String> {
     })
 }
 
-pub async fn fetch_chinabond_3m(client: &reqwest::Client, url: &str) -> Result<Treasury3mRate, String> {
+pub async fn fetch_chinabond_3m(
+    client: &reqwest::Client,
+    url: &str,
+) -> Result<Treasury3mRate, String> {
     let url = url.trim();
     if url.is_empty() {
         return Err("missing url".to_string());

@@ -50,7 +50,9 @@ pub fn compute_value_score(
     target_fund_code: &str,
     weights: &ValueScoreWeights,
 ) -> Option<ValueScoreResult> {
-    let idx = samples.iter().position(|s| s.fund_code == target_fund_code)?;
+    let idx = samples
+        .iter()
+        .position(|s| s.fund_code == target_fund_code)?;
     let target = &samples[idx];
 
     let mut comps: Vec<ValueScoreComponent> = Vec::new();
@@ -61,11 +63,25 @@ pub fn compute_value_score(
     // 越大越好：sharpe / calmar / ann_return
     if let Some(v) = target.sharpe {
         let p = percentile_high_better(samples.iter().filter_map(|s| s.sharpe), v);
-        push_comp(&mut comps, "sharpe", p, weights.sharpe, &mut total_weight, &mut total_weighted);
+        push_comp(
+            &mut comps,
+            "sharpe",
+            p,
+            weights.sharpe,
+            &mut total_weight,
+            &mut total_weighted,
+        );
     }
     if let Some(v) = target.calmar {
         let p = percentile_high_better(samples.iter().filter_map(|s| s.calmar), v);
-        push_comp(&mut comps, "calmar", p, weights.calmar, &mut total_weight, &mut total_weighted);
+        push_comp(
+            &mut comps,
+            "calmar",
+            p,
+            weights.calmar,
+            &mut total_weight,
+            &mut total_weighted,
+        );
     }
     if let Some(v) = target.ann_return {
         let p = percentile_high_better(samples.iter().filter_map(|s| s.ann_return), v);
@@ -93,7 +109,14 @@ pub fn compute_value_score(
     }
     if let Some(v) = target.ann_vol {
         let p = percentile_low_better(samples.iter().filter_map(|s| s.ann_vol), v);
-        push_comp(&mut comps, "ann_vol", p, weights.ann_vol, &mut total_weight, &mut total_weighted);
+        push_comp(
+            &mut comps,
+            "ann_vol",
+            p,
+            weights.ann_vol,
+            &mut total_weight,
+            &mut total_weighted,
+        );
     }
 
     if total_weight <= 0.0 {
@@ -123,7 +146,11 @@ pub fn compute_value_score(
     })
 }
 
-fn compute_value_score_one(samples: &[SampleMetrics], target: &SampleMetrics, weights: &ValueScoreWeights) -> Option<f64> {
+fn compute_value_score_one(
+    samples: &[SampleMetrics],
+    target: &SampleMetrics,
+    weights: &ValueScoreWeights,
+) -> Option<f64> {
     let mut total_weight = 0.0_f64;
     let mut total_weighted = 0.0_f64;
 

@@ -109,4 +109,3 @@ async fn fund_analytics_includes_short_term_strategy() {
     assert!(v.get("short_term").is_some());
     assert!(v["short_term"]["combined"]["bucket"].is_string());
 }
-

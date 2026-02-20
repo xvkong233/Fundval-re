@@ -30,4 +30,3 @@ async fn fetch_chinabond_3m_reads_json_and_parses() {
     assert_eq!(got.rate_date, "2026-02-14");
     assert!((got.rate_percent - 1.3428).abs() < 1e-9);
 }
-

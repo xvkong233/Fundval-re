@@ -1,4 +1,4 @@
-use axum::{Json, Router, routing::get, body::Body, http::Request};
+use axum::{Json, Router, body::Body, http::Request, routing::get};
 use serde_json::json;
 use sqlx::Row;
 use tower::ServiceExt;

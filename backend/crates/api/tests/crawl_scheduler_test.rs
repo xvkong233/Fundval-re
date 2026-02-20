@@ -23,7 +23,13 @@ async fn enqueue_tick_prioritizes_watchlists_then_positions_then_all_funds() {
     .await
     .expect("seed user");
 
-    for (id, code) in [("f-a", "A"), ("f-b", "B"), ("f-c", "C"), ("f-d", "D"), ("f-e", "E")] {
+    for (id, code) in [
+        ("f-a", "A"),
+        ("f-b", "B"),
+        ("f-c", "C"),
+        ("f-d", "D"),
+        ("f-e", "E"),
+    ] {
         sqlx::query(
             r#"
             INSERT INTO fund (id, fund_code, fund_name, fund_type, created_at, updated_at)
@@ -51,10 +57,12 @@ async fn enqueue_tick_prioritizes_watchlists_then_positions_then_all_funds() {
         .await
         .expect("watchlist item");
 
-    sqlx::query("INSERT INTO account (id, user_id, name, is_default) VALUES ('acc-1', 1, '默认', 1)")
-        .execute(&pool)
-        .await
-        .expect("account");
+    sqlx::query(
+        "INSERT INTO account (id, user_id, name, is_default) VALUES ('acc-1', 1, '默认', 1)",
+    )
+    .execute(&pool)
+    .await
+    .expect("account");
     sqlx::query("INSERT INTO position (id, account_id, fund_id) VALUES ('pos-1','acc-1','f-c')")
         .execute(&pool)
         .await
@@ -88,4 +96,3 @@ async fn enqueue_tick_prioritizes_watchlists_then_positions_then_all_funds() {
     assert_eq!(got[2].0, "C");
     assert!(got[0].1 >= got[2].1);
 }
-

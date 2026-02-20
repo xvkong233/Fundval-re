@@ -1,4 +1,4 @@
-use api::analytics::value_score::{compute_value_score, SampleMetrics, ValueScoreWeights};
+use api::analytics::value_score::{SampleMetrics, ValueScoreWeights, compute_value_score};
 
 #[test]
 fn value_score_ranks_better_sharpe_and_lower_risk_higher() {
@@ -43,4 +43,3 @@ fn value_score_ranks_better_sharpe_and_lower_risk_higher() {
     assert!(a.percentile_0_100 > b.percentile_0_100);
     assert!(b.percentile_0_100 > c.percentile_0_100);
 }
-

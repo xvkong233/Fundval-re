@@ -26,4 +26,3 @@ async fn sqlite_migrations_create_crawl_tables() {
         .await
         .expect("crawl_state exists");
 }
-

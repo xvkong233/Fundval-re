@@ -11,7 +11,11 @@ pub fn compute_ce_from_navs(navs: &[f64], rf_annual_percent: f64, gamma: f64) ->
     if navs.len() < 2 {
         return None;
     }
-    let gamma = if gamma.is_finite() && gamma > 0.0 { gamma } else { 3.0 };
+    let gamma = if gamma.is_finite() && gamma > 0.0 {
+        gamma
+    } else {
+        3.0
+    };
 
     let mut daily: Vec<f64> = Vec::with_capacity(navs.len().saturating_sub(1));
     for i in 1..navs.len() {
@@ -43,4 +47,3 @@ pub fn compute_ce_from_navs(navs: &[f64], rf_annual_percent: f64, gamma: f64) ->
         gamma,
     })
 }
-

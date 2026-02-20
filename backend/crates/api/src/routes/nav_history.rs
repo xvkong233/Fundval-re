@@ -613,7 +613,9 @@ pub(crate) async fn sync_one(
             Err(e) => return Err(e),
         };
 
-        if let Err(e) = nav_history_upsert(pool, prefer_postgres, source_name, &fund_id, &item).await {
+        if let Err(e) =
+            nav_history_upsert(pool, prefer_postgres, source_name, &fund_id, &item).await
+        {
             if prefer_postgres {
                 prefer_postgres = false;
                 nav_history_upsert(pool, prefer_postgres, source_name, &fund_id, &item).await?;

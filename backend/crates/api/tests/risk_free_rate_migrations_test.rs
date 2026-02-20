@@ -22,4 +22,3 @@ async fn sqlite_migrations_create_risk_free_rate_daily_table() {
         .await
         .expect("risk_free_rate_daily exists");
 }
-

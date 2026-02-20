@@ -2,7 +2,11 @@ use chrono::{DateTime, Duration, Utc};
 use sqlx::Row;
 use uuid::Uuid;
 
-pub async fn enqueue_tick(pool: &sqlx::AnyPool, max_jobs: i64, source_name: &str) -> Result<i64, String> {
+pub async fn enqueue_tick(
+    pool: &sqlx::AnyPool,
+    max_jobs: i64,
+    source_name: &str,
+) -> Result<i64, String> {
     let max_jobs = max_jobs.clamp(0, 5000);
     if max_jobs == 0 {
         return Ok(0);
@@ -346,7 +350,11 @@ async fn enqueue_nav_for_all_funds_round_robin(
         inserted += 1;
     }
 
-    let new_offset = if rows.is_empty() { 0 } else { offset + rows.len() as i64 };
+    let new_offset = if rows.is_empty() {
+        0
+    } else {
+        offset + rows.len() as i64
+    };
     let _ = sqlx::query(
         r#"
         INSERT INTO crawl_state (key, value, updated_at)

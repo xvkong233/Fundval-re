@@ -10,4 +10,3 @@ fn parse_chinabond_curve_json_extracts_3m_rate_and_date() {
     assert_eq!(got.rate_date, "2026-02-14");
     assert!((got.rate_percent - 1.3428).abs() < 1e-9);
 }
-

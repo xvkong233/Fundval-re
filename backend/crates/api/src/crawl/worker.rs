@@ -68,7 +68,16 @@ async fn exec_one(
         return Err(format!("unknown source: {source_raw}"));
     };
 
-    let _inserted = nav_history::sync_one(pool, client, source_name, &fund_code, None, None, tushare_token).await?;
+    let _inserted = nav_history::sync_one(
+        pool,
+        client,
+        source_name,
+        &fund_code,
+        None,
+        None,
+        tushare_token,
+    )
+    .await?;
 
     if per_job_delay_ms > 0 {
         tokio::time::sleep(Duration::from_millis(per_job_delay_ms)).await;

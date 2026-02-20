@@ -1,4 +1,4 @@
-use api::analytics::short_term::{compute_short_term_signals, CombinedBucket};
+use api::analytics::short_term::{CombinedBucket, compute_short_term_signals};
 
 #[test]
 fn trend_priority_overrides_mean_reversion_when_trend_strong() {
@@ -16,7 +16,9 @@ fn trend_priority_overrides_mean_reversion_when_trend_strong() {
 #[test]
 fn mean_reversion_applies_when_trend_weak_and_drawdown_deep() {
     // 走势横盘后出现明显回撤：combined 应输出偏低（可分批布局）
-    let navs = vec![1.0, 1.01, 1.00, 1.02, 1.01, 0.95, 0.94, 0.92, 0.91, 0.90, 0.89, 0.895];
+    let navs = vec![
+        1.0, 1.01, 1.00, 1.02, 1.01, 0.95, 0.94, 0.92, 0.91, 0.90, 0.89, 0.895,
+    ];
 
     let s = compute_short_term_signals(&navs).expect("signals");
     assert_eq!(s.combined.bucket, CombinedBucket::Low);

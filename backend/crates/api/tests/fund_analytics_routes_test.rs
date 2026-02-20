@@ -58,7 +58,10 @@ async fn fund_analytics_returns_metrics_from_seeded_nav_history() {
     .await
     .expect("seed fund");
 
-    for (i, d) in ["2026-02-12", "2026-02-13", "2026-02-14"].iter().enumerate() {
+    for (i, d) in ["2026-02-12", "2026-02-13", "2026-02-14"]
+        .iter()
+        .enumerate()
+    {
         sqlx::query(
             r#"
             INSERT INTO fund_nav_history (id, source_name, fund_id, nav_date, unit_nav, created_at, updated_at)
@@ -119,4 +122,3 @@ async fn fund_analytics_returns_metrics_from_seeded_nav_history() {
     assert_eq!(v["metrics"]["ann_vol"], "0");
     assert_eq!(v["metrics"]["sharpe"], Value::Null);
 }
-

@@ -43,6 +43,7 @@ pub struct FundAnalyticsOut {
     pub metrics: MetricsOut,
     pub value_score: Option<ValueScoreOut>,
     pub ce: Option<CeOut>,
+    pub short_term: Option<ShortTermOut>,
     pub computed_at: String,
 }
 
@@ -70,6 +71,34 @@ pub struct CeOut {
     pub ann_excess: f64,
     pub ann_var: f64,
     pub percentile_0_100: f64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ShortTermTrendOut {
+    pub direction: String,
+    pub strength_0_1: f64,
+    pub reasons: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ShortTermMeanReversionOut {
+    pub bucket: String,
+    pub score_0_1: f64,
+    pub reasons: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ShortTermCombinedOut {
+    pub bucket: String,
+    pub action_hint: String,
+    pub rationale: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ShortTermOut {
+    pub trend: ShortTermTrendOut,
+    pub mean_reversion: ShortTermMeanReversionOut,
+    pub combined: ShortTermCombinedOut,
 }
 
 fn parse_trading_days(raw: Option<&str>) -> Result<i64, String> {
@@ -233,6 +262,23 @@ pub async fn retrieve(
     };
 
     let metrics = analytics::metrics::compute_metrics_from_navs(&navs, rf_percent).unwrap();
+    let short_term = analytics::short_term::compute_short_term_signals(&navs).map(|s| ShortTermOut {
+        trend: ShortTermTrendOut {
+            direction: s.trend.direction,
+            strength_0_1: s.trend.strength_0_1,
+            reasons: s.trend.reasons,
+        },
+        mean_reversion: ShortTermMeanReversionOut {
+            bucket: s.mean_reversion.bucket.as_str().to_string(),
+            score_0_1: s.mean_reversion.score_0_1,
+            reasons: s.mean_reversion.reasons,
+        },
+        combined: ShortTermCombinedOut {
+            bucket: s.combined.bucket.as_str().to_string(),
+            action_hint: s.combined.action_hint,
+            rationale: s.combined.rationale,
+        },
+    });
 
     let fund_type_row = sqlx::query("SELECT fund_type FROM fund WHERE fund_code = $1 LIMIT 1")
         .bind(code)
@@ -270,6 +316,7 @@ pub async fn retrieve(
             },
             value_score: value_score_out,
             ce: ce_out,
+            short_term,
             computed_at: Utc::now().to_rfc3339_opts(SecondsFormat::AutoSi, false),
         }),
     )

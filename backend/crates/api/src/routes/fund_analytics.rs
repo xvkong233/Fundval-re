@@ -318,9 +318,7 @@ pub async fn retrieve(
         }
     };
 
-    let mut value_scores: Vec<ValueScoreOut> = Vec::new();
-    let mut best_value_score: Option<ValueScoreOut> = None;
-    let mut best_ce: Option<CeOut> = None;
+    let mut candidates: Vec<(ValueScoreOut, Option<CeOut>)> = Vec::new();
     let ctx = PeerComputeCtx {
         source_name,
         n,
@@ -342,15 +340,7 @@ pub async fn retrieve(
                     .await;
 
             if let Some(vs) = vs {
-                let should_replace = match best_value_score.as_ref() {
-                    None => true,
-                    Some(cur) => vs.score_0_100 > cur.score_0_100,
-                };
-                if should_replace {
-                    best_ce = ce.clone();
-                    best_value_score = Some(vs.clone());
-                }
-                value_scores.push(vs);
+                candidates.push((vs, ce));
             }
         }
     } else {
@@ -372,18 +362,20 @@ pub async fn retrieve(
 
         if !fund_type.trim().is_empty() {
             let (vs, ce) = compute_value_score_and_ce_by_fund_type(pool, &fund_type, &ctx).await;
-            best_value_score = vs.clone();
-            best_ce = ce.clone();
             if let Some(vs) = vs {
-                value_scores.push(vs);
+                candidates.push((vs, ce));
             }
         }
     }
 
-    let value_scores_out = if value_scores.is_empty() {
+    let scores: Vec<ValueScoreOut> = candidates.iter().map(|(vs, _)| vs.clone()).collect();
+    let best_idx = pick_best_by_sample_threshold(&scores, 100);
+    let best_value_score = best_idx.map(|i| scores[i].clone());
+    let best_ce = best_idx.and_then(|i| candidates[i].1.clone());
+    let value_scores_out = if scores.is_empty() {
         None
     } else {
-        Some(value_scores)
+        Some(scores)
     };
 
     (
@@ -735,4 +727,76 @@ fn percentile_high_better(values: &[f64], target: f64) -> f64 {
         }
     }
     (rank as f64) / (n - 1.0).max(1.0) * 100.0
+}
+
+fn pick_best_by_sample_threshold(scores: &[ValueScoreOut], min_sample_size: i64) -> Option<usize> {
+    if scores.is_empty() {
+        return None;
+    }
+
+    let eligible: Vec<usize> = scores
+        .iter()
+        .enumerate()
+        .filter_map(|(i, s)| {
+            if s.sample_size >= min_sample_size {
+                Some(i)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let pool: Box<dyn Iterator<Item = usize>> = if !eligible.is_empty() {
+        Box::new(eligible.into_iter())
+    } else {
+        Box::new(0..scores.len())
+    };
+
+    let mut best_i: Option<usize> = None;
+    let mut best_score: f64 = f64::NEG_INFINITY;
+    for i in pool {
+        let s = scores[i].score_0_100;
+        let s = if s.is_finite() { s } else { f64::NEG_INFINITY };
+        if best_i.is_none() || s > best_score {
+            best_i = Some(i);
+            best_score = s;
+        }
+    }
+    best_i
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ValueScoreOut, pick_best_by_sample_threshold};
+
+    fn vs(name: &str, score: f64, sample_size: i64) -> ValueScoreOut {
+        ValueScoreOut {
+            peer_kind: "sector".to_string(),
+            peer_name: name.to_string(),
+            peer_code: Some("BK000000".to_string()),
+            fund_type: name.to_string(),
+            score_0_100: score,
+            percentile_0_100: 50.0,
+            sample_size,
+            components: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn pick_best_prefers_eligible_when_present() {
+        let a = vs("A", 99.0, 10);
+        let b = vs("B", 60.0, 100);
+        let c = vs("C", 80.0, 90);
+        let idx = pick_best_by_sample_threshold(&[a, b, c], 100).unwrap();
+        assert_eq!(idx, 1);
+    }
+
+    #[test]
+    fn pick_best_falls_back_to_overall_when_no_eligible() {
+        let a = vs("A", 10.0, 10);
+        let b = vs("B", 60.0, 99);
+        let c = vs("C", 80.0, 90);
+        let idx = pick_best_by_sample_threshold(&[a, b, c], 100).unwrap();
+        assert_eq!(idx, 2);
+    }
 }

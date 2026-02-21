@@ -42,6 +42,21 @@ pub struct FundSignalsOut {
     pub computed_at: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct BatchFundSignalsBody {
+    pub fund_codes: Vec<String>,
+    pub source: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FundSignalsLiteOut {
+    pub fund_code: String,
+    pub source: String,
+    pub as_of_date: Option<String>,
+    pub best_peer: Option<PeerSignalsOut>,
+    pub computed_at: String,
+}
+
 pub async fn retrieve(
     axum::extract::State(state): axum::extract::State<AppState>,
     headers: axum::http::HeaderMap,
@@ -233,6 +248,194 @@ pub async fn retrieve(
         }),
     )
         .into_response()
+}
+
+pub async fn batch(
+    axum::extract::State(state): axum::extract::State<AppState>,
+    headers: axum::http::HeaderMap,
+    Json(body): Json<BatchFundSignalsBody>,
+) -> axum::response::Response {
+    let _user_id = match auth::authenticate(&state, &headers) {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+
+    let pool = match state.pool() {
+        None => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "database not configured" })),
+            )
+                .into_response();
+        }
+        Some(p) => p,
+    };
+
+    let source_raw = body.source.as_deref().unwrap_or(sources::SOURCE_TIANTIAN);
+    let Some(source_name) = sources::normalize_source_name(source_raw) else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": format!("unknown source: {source_raw}") })),
+        )
+            .into_response();
+    };
+
+    let mut codes: Vec<String> = Vec::new();
+    for c in body.fund_codes {
+        let s = c.trim();
+        if s.is_empty() {
+            continue;
+        }
+        if !codes.contains(&s.to_string()) {
+            codes.push(s.to_string());
+        }
+    }
+    codes.truncate(50);
+
+    let mut out: Vec<FundSignalsLiteOut> = Vec::with_capacity(codes.len());
+    for code in &codes {
+        let as_of_date = latest_nav_date(pool, code, source_name)
+            .await
+            .ok()
+            .flatten();
+
+        let peer_rows = sqlx::query(
+            r#"
+            SELECT sec_code, sec_name
+            FROM fund_relate_theme
+            WHERE fund_code = $1
+            GROUP BY sec_code, sec_name
+            ORDER BY sec_code ASC
+            LIMIT 4
+            "#,
+        )
+        .bind(code)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+
+        let mut peers: Vec<PeerSignalsOut> = Vec::new();
+        for r in peer_rows {
+            let peer_code: String = r.get("sec_code");
+            let peer_name: String = r.get("sec_name");
+
+            // batch 场景不做训练兜底，避免刷爆
+            let _ = ml::compute::compute_and_store_fund_snapshot_with_opts(
+                pool,
+                code,
+                &peer_code,
+                source_name,
+                ml::compute::ComputeOpts {
+                    train_if_missing: false,
+                },
+            )
+            .await;
+
+            let snap = if let Some(ref d) = as_of_date {
+                sqlx::query(
+                    r#"
+                    SELECT
+                      position_percentile_0_100,
+                      position_bucket,
+                      dip_buy_proba_5t,
+                      dip_buy_proba_20t,
+                      magic_rebound_proba_5t,
+                      magic_rebound_proba_20t,
+                      CAST(computed_at AS TEXT) as computed_at
+                    FROM fund_signal_snapshot
+                    WHERE fund_code = $1 AND peer_code = $2 AND as_of_date = $3
+                    "#,
+                )
+                .bind(code)
+                .bind(&peer_code)
+                .bind(d)
+                .fetch_optional(pool)
+                .await
+                .ok()
+                .flatten()
+            } else {
+                None
+            };
+
+            let (position_percentile_0_100, position_bucket, dip_buy, magic_rebound, computed_at) =
+                if let Some(s) = snap {
+                    (
+                        s.try_get::<Option<f64>, _>("position_percentile_0_100")
+                            .ok()
+                            .flatten(),
+                        s.try_get::<Option<String>, _>("position_bucket")
+                            .ok()
+                            .flatten(),
+                        HorizonProbaOut {
+                            p_5t: s
+                                .try_get::<Option<f64>, _>("dip_buy_proba_5t")
+                                .ok()
+                                .flatten(),
+                            p_20t: s
+                                .try_get::<Option<f64>, _>("dip_buy_proba_20t")
+                                .ok()
+                                .flatten(),
+                        },
+                        HorizonProbaOut {
+                            p_5t: s
+                                .try_get::<Option<f64>, _>("magic_rebound_proba_5t")
+                                .ok()
+                                .flatten(),
+                            p_20t: s
+                                .try_get::<Option<f64>, _>("magic_rebound_proba_20t")
+                                .ok()
+                                .flatten(),
+                        },
+                        s.try_get::<Option<String>, _>("computed_at").ok().flatten(),
+                    )
+                } else {
+                    (
+                        None,
+                        None,
+                        HorizonProbaOut {
+                            p_5t: None,
+                            p_20t: None,
+                        },
+                        HorizonProbaOut {
+                            p_5t: None,
+                            p_20t: None,
+                        },
+                        None,
+                    )
+                };
+
+            let model_sample_size_20t =
+                ml_sector_sample_size(pool, &peer_code).await.ok().flatten();
+
+            peers.push(PeerSignalsOut {
+                peer_code,
+                peer_name,
+                position_percentile_0_100,
+                position_bucket,
+                dip_buy,
+                magic_rebound,
+                model_sample_size_20t,
+                computed_at,
+            });
+        }
+
+        let best_peer_code = pick_best_peer(&peers);
+        let best_peer = best_peer_code.as_deref().and_then(|c| {
+            peers
+                .into_iter()
+                .find(|p| String::as_str(&p.peer_code) == c)
+        });
+
+        out.push(FundSignalsLiteOut {
+            fund_code: code.to_string(),
+            source: source_name.to_string(),
+            as_of_date,
+            best_peer,
+            computed_at: Utc::now().to_rfc3339_opts(SecondsFormat::AutoSi, false),
+        });
+    }
+
+    (StatusCode::OK, Json(out)).into_response()
 }
 
 async fn latest_nav_date(

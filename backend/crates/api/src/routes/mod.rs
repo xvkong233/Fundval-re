@@ -77,6 +77,10 @@ pub fn router(state: AppState) -> Router<AppState> {
             axum::routing::get(fund_signals::retrieve),
         )
         .route(
+            "/api/funds/signals/batch",
+            axum::routing::post(fund_signals::batch),
+        )
+        .route(
             "/api/funds/{fund_code}/accuracy",
             axum::routing::get(funds::accuracy),
         )

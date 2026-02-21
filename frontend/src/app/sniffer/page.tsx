@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  Affix,
+  Badge,
   Button,
   Card,
   Col,
@@ -12,8 +14,11 @@ import {
   Select,
   Space,
   Spin,
+  Statistic,
   Table,
   Tag,
+  Tabs,
+  Tooltip,
   Typography,
   message,
 } from "antd";
@@ -21,9 +26,11 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ReloadOutlined, SyncOutlined } from "@ant-design/icons";
 import { AuthedLayout } from "../../components/AuthedLayout";
-import { adminSnifferSync, getFundSignals, getSnifferItems, getSnifferStatus } from "../../lib/api";
+import { adminSnifferSync, batchFundSignals, getSnifferItems, getSnifferStatus } from "../../lib/api";
 import { useAuth } from "../../contexts/AuthContext";
-import { buildSnifferAdvice } from "../../lib/snifferAdvice";
+import { buildSnifferAdvice, type SnifferSignalsSummary } from "../../lib/snifferAdvice";
+import { selectSnifferSignalCandidateCodes } from "../../lib/snifferSignalCandidates";
+import { liteListToSignalsSummaryByFund } from "../../lib/snifferSignals";
 
 const { Paragraph, Text, Title } = Typography;
 
@@ -72,14 +79,6 @@ function bucketLabel(bucket: any) {
   return { text: "中等", color: "gold" as const };
 }
 
-function pickBestPeerSignals(signals: any | null) {
-  const peers = Array.isArray(signals?.peers) ? (signals.peers as any[]) : [];
-  if (!peers.length) return null;
-  const bestCode = String(signals?.best_peer_code ?? "");
-  const best = peers.find((p) => String(p?.peer_code ?? "") === bestCode);
-  return best ?? peers[0];
-}
-
 export default function SnifferPage() {
   const { user } = useAuth();
   const isAdmin = String(user?.role ?? "") === "admin";
@@ -95,7 +94,7 @@ export default function SnifferPage() {
   const [search, setSearch] = useState("");
 
   const [signalsLoading, setSignalsLoading] = useState(false);
-  const [signalsByFund, setSignalsByFund] = useState<Record<string, any | null>>({});
+  const [signalsByFund, setSignalsByFund] = useState<Record<string, SnifferSignalsSummary | null>>({});
 
   const load = async () => {
     setLoading(true);
@@ -148,14 +147,27 @@ export default function SnifferPage() {
     });
   }, [itemsResp, sector, tags, search]);
 
-  const advice = useMemo(() => buildSnifferAdvice(itemsResp?.items ?? []), [itemsResp]);
-  const focusList = useMemo(() => advice.focus.slice(0, 10), [advice.focus]);
-  const dipBuyList = useMemo(() => advice.dipBuy.slice(0, 10), [advice.dipBuy]);
+  const advice = useMemo(() => buildSnifferAdvice(filteredItems, signalsByFund), [filteredItems, signalsByFund]);
+  const buyList = useMemo(() => advice.buy.slice(0, 10), [advice.buy]);
+  const watchList = useMemo(() => advice.watch.slice(0, 10), [advice.watch]);
+  const avoidList = useMemo(() => advice.avoid.slice(0, 10), [advice.avoid]);
+
+  const signalCandidateKey = useMemo(
+    () => selectSnifferSignalCandidateCodes(filteredItems, 50).join(","),
+    [filteredItems]
+  );
+  const signalCandidateCount = useMemo(
+    () => (signalCandidateKey ? signalCandidateKey.split(",").filter(Boolean).length : 0),
+    [signalCandidateKey]
+  );
+  const signalsLoadedCount = useMemo(() => Object.keys(signalsByFund).length, [signalsByFund]);
+  const signalsNonNullCount = useMemo(
+    () => Object.values(signalsByFund).filter((x) => x !== null).length,
+    [signalsByFund]
+  );
 
   useEffect(() => {
-    const codes = Array.from(
-      new Set([...focusList, ...dipBuyList].map((it) => String(it.fund_code ?? "").trim()).filter(Boolean))
-    ).slice(0, 20);
+    const codes = signalCandidateKey ? signalCandidateKey.split(",").filter(Boolean) : [];
     if (!codes.length) {
       setSignalsByFund({});
       return;
@@ -165,20 +177,10 @@ export default function SnifferPage() {
     const run = async () => {
       setSignalsLoading(true);
       try {
-        const res = await Promise.all(
-          codes.map(async (code) => {
-            try {
-              const r = await getFundSignals(code, { source: "tiantian" });
-              return [code, r?.data ?? null] as const;
-            } catch {
-              return [code, null] as const;
-            }
-          })
-        );
-
+        const r = await batchFundSignals({ fund_codes: codes, source: "tiantian" }).catch(() => null);
         if (cancelled) return;
-        const next: Record<string, any | null> = {};
-        for (const [code, data] of res) next[code] = data;
+        const list = Array.isArray(r?.data) ? (r?.data as any[]) : [];
+        const next = liteListToSignalsSummaryByFund(list);
         setSignalsByFund(next);
       } finally {
         if (!cancelled) setSignalsLoading(false);
@@ -189,7 +191,7 @@ export default function SnifferPage() {
     return () => {
       cancelled = true;
     };
-  }, [focusList, dipBuyList]);
+  }, [signalCandidateKey]);
 
   const lastRun = statusResp?.last_run ?? null;
   const lastRunOk = lastRun ? Boolean(lastRun.ok) : null;
@@ -198,27 +200,71 @@ export default function SnifferPage() {
   return (
     <AuthedLayout title="嗅探">
       <Space direction="vertical" size="large" style={{ width: "100%" }}>
-        <Card>
-          <Title level={3} style={{ marginTop: 0 }}>
-            嗅探（自动）
-          </Title>
+        <Card
+          styles={{ body: { padding: 16 } }}
+          title={
+            <Space size={10} wrap>
+              <Title level={3} style={{ margin: 0 }}>
+                嗅探
+              </Title>
+              <Tag>自动</Tag>
+              <Badge
+                status={signalsLoading ? "processing" : "default"}
+                text={signalsLoading ? "信号加载中" : `信号 ${signalsLoadedCount}/${signalCandidateCount}`}
+              />
+              {signalsNonNullCount > 0 ? <Tag color="blue">有效信号 {signalsNonNullCount}</Tag> : null}
+            </Space>
+          }
+          extra={
+            <Space wrap>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                来源：<Text code>{itemsResp?.source_url || "https://sq.deepq.tech/star/api/data"}</Text>
+              </Text>
+              <Button onClick={() => void load()} loading={loading}>
+                刷新
+              </Button>
+              {isAdmin ? (
+                <Button type="primary" icon={<SyncOutlined />} onClick={() => void triggerAdminSync()} loading={syncing}>
+                  立即同步
+                </Button>
+              ) : null}
+            </Space>
+          }
+        >
           <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            系统每天 03:10（Asia/Shanghai）自动从 DeepQ 星标数据源采集，并全量镜像同步到所有用户的自选组
-            <Text code style={{ marginLeft: 8 }}>
-              嗅探（自动）
-            </Text>
-            。
-          </Paragraph>
-          <Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
-            数据源：<Text code>{itemsResp?.source_url || "https://sq.deepq.tech/star/api/data"}</Text>
+            系统每天 03:10（Asia/Shanghai）自动采集星标快照，并镜像同步到所有用户自选组；页面右侧为“中性”购买建议（叠加
+            ML 位置/抄底/反转信号），仅供参考。
           </Paragraph>
           <Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
             你也可以在 <Link href="/watchlists">自选</Link> 中查看同步后的分组。
           </Paragraph>
         </Card>
 
+        <Row gutter={[12, 12]}>
+          <Col xs={24} md={6}>
+            <Card styles={{ body: { padding: 12 } }}>
+              <Statistic title="总基金数" value={itemsResp?.item_count ?? 0} />
+            </Card>
+          </Col>
+          <Col xs={24} md={6}>
+            <Card styles={{ body: { padding: 12 } }}>
+              <Statistic title="筛选后" value={filteredItems.length} />
+            </Card>
+          </Col>
+          <Col xs={24} md={6}>
+            <Card styles={{ body: { padding: 12 } }}>
+              <Statistic title="板块数" value={(itemsResp?.sectors ?? []).length} />
+            </Card>
+          </Col>
+          <Col xs={24} md={6}>
+            <Card styles={{ body: { padding: 12 } }}>
+              <Statistic title="标签数" value={(itemsResp?.tags ?? []).length} />
+            </Card>
+          </Col>
+        </Row>
+
         <Row gutter={[16, 16]}>
-          <Col xs={24} lg={16}>
+          <Col xs={24} lg={17}>
             <Card
               title="筛选与结果"
               extra={
@@ -227,19 +273,16 @@ export default function SnifferPage() {
                     {lastRunOk === true ? "最近运行：成功" : lastRunOk === false ? "最近运行：失败" : "最近运行：-"}
                   </Tag>
                   {lastRunError ? <Tag color="red">{lastRunError.slice(0, 30)}</Tag> : null}
-                  {isAdmin ? (
-                    <Button type="primary" icon={<SyncOutlined />} onClick={() => void triggerAdminSync()} loading={syncing}>
-                      立即同步
-                    </Button>
-                  ) : null}
+                  {itemsResp?.fetched_at ? <Tag>快照：{String(itemsResp.fetched_at).slice(0, 19)}</Tag> : null}
                 </Space>
               }
+              styles={{ body: { padding: 12 } }}
             >
-              <Space wrap style={{ width: "100%", justifyContent: "space-between" }}>
-                <Space wrap>
+              <Space wrap style={{ width: "100%", justifyContent: "space-between" }} size={[8, 8]}>
+                <Space wrap size={[8, 8]}>
                   <Select
                     allowClear
-                    style={{ width: 180 }}
+                    style={{ width: 200 }}
                     placeholder="板块"
                     value={sector ?? undefined}
                     onChange={(v) => setSector(v ? String(v) : null)}
@@ -248,7 +291,7 @@ export default function SnifferPage() {
                   <Select
                     mode="multiple"
                     allowClear
-                    style={{ width: 260 }}
+                    style={{ width: 320 }}
                     placeholder="标签（多选）"
                     value={tags}
                     onChange={(v) => setTags(Array.isArray(v) ? (v as string[]).map(String) : [])}
@@ -259,6 +302,7 @@ export default function SnifferPage() {
                     style={{ width: 260 }}
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
+                    allowClear
                   />
                 </Space>
                 <Space wrap>
@@ -271,9 +315,6 @@ export default function SnifferPage() {
                     }}
                   >
                     清空筛选
-                  </Button>
-                  <Button onClick={() => void load()} loading={loading}>
-                    刷新
                   </Button>
                 </Space>
               </Space>
@@ -320,6 +361,32 @@ export default function SnifferPage() {
                           </Space>
                         ),
                         sorter: (a, b) => String(a.fund_code).localeCompare(String(b.fund_code)),
+                      },
+                      {
+                        title: "信号（ML）",
+                        key: "signals",
+                        width: 320,
+                        render: (_, r) => {
+                          const s = signalsByFund[r.fund_code] ?? null;
+                          if (!s) return <Text type="secondary">-</Text>;
+                          const b = bucketLabel(s.position_bucket);
+                          const dip20 = typeof s.dip_buy_p_20t === "number" ? s.dip_buy_p_20t * 100 : null;
+                          const reb20 = typeof s.magic_rebound_p_20t === "number" ? s.magic_rebound_p_20t * 100 : null;
+                          return (
+                            <Space size={[4, 4]} wrap>
+                              <Tag color={b.color}>{b.text}</Tag>
+                              <Tooltip title="抄底概率（20个交易日）">
+                                <Tag>抄底 {dip20 !== null ? dip20.toFixed(1) : "-"}%</Tag>
+                              </Tooltip>
+                              <Tooltip title="反转概率（20个交易日）">
+                                <Tag>反转 {reb20 !== null ? reb20.toFixed(1) : "-"}%</Tag>
+                              </Tooltip>
+                              <Text type="secondary" style={{ fontSize: 12 }}>
+                                {String(s.peer_name ?? "-")}
+                              </Text>
+                            </Space>
+                          );
+                        },
                       },
                       {
                         title: "板块",
@@ -386,114 +453,166 @@ export default function SnifferPage() {
             </Card>
           </Col>
 
-          <Col xs={24} lg={8}>
-            <Card
-              title="购买建议"
-              extra={
-                <Space size={8}>
-                  <Tag color="green">ML 信号版（试运行）</Tag>
-                  {signalsLoading ? <Tag>加载信号…</Tag> : null}
-                </Space>
-              }
-            >
-              <Paragraph type="secondary" style={{ marginBottom: 12 }}>
-                建议展示优先基于嗅探源（星级/回撤/涨幅）排序，同时叠加 ML 信号（位置/抄底/反转）供参考；不构成投资建议。
-              </Paragraph>
+          <Col xs={24} lg={7}>
+            <Affix offsetTop={80}>
+              <Card
+                title="购买建议"
+                extra={
+                  <Space size={8} wrap>
+                    <Tag color="green">中性</Tag>
+                    {signalsLoading ? <Tag>加载信号…</Tag> : null}
+                  </Space>
+                }
+                styles={{ body: { padding: 12 } }}
+              >
+                <Paragraph type="secondary" style={{ marginBottom: 12 }}>
+                  结合位置（20/60/20）、抄底/反转概率（20T/5T）与星级/回撤，给出“买入候选/观望/回避”的中性分桶。
+                </Paragraph>
 
-              <Title level={5} style={{ marginTop: 0 }}>
-                优先关注
-              </Title>
-              <List
-                size="small"
-                dataSource={focusList}
-                locale={{ emptyText: "暂无数据" }}
-                renderItem={(it) => (
-                  <List.Item>
-                    <Space direction="vertical" size={0} style={{ width: "100%" }}>
-                      <Space style={{ justifyContent: "space-between", width: "100%" }}>
-                        <Link href={`/funds/${encodeURIComponent(it.fund_code)}`}>{it.fund_name}</Link>
-                        <Text type="secondary">{starsText(it.star_count)}</Text>
-                      </Space>
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        {it.fund_code} · 年涨幅 {it.year_growth ?? "-"}% · 最大回撤 {it.max_drawdown ?? "-"}%
-                      </Text>
-                      {(() => {
-                        const signals = signalsByFund[it.fund_code] ?? null;
-                        const best = pickBestPeerSignals(signals);
-                        if (!best) return null;
-                        const b = bucketLabel(best?.position_bucket);
-                        const dip20 =
-                          typeof best?.dip_buy?.p_20t === "number" ? (best.dip_buy.p_20t as number) * 100 : null;
-                        const reb20 =
-                          typeof best?.magic_rebound?.p_20t === "number"
-                            ? (best.magic_rebound.p_20t as number) * 100
-                            : null;
-                        return (
-                          <Space size={[4, 4]} wrap style={{ marginTop: 6 }}>
-                            <Tag color={b.color}>{b.text}</Tag>
-                            <Tag>抄底 {dip20 !== null ? dip20.toFixed(1) : "-"}%</Tag>
-                            <Tag>反转 {reb20 !== null ? reb20.toFixed(1) : "-"}%</Tag>
-                            <Text type="secondary" style={{ fontSize: 12 }}>
-                              同类：{String(best?.peer_name ?? "-")}
-                            </Text>
-                          </Space>
-                        );
-                      })()}
-                    </Space>
-                  </List.Item>
-                )}
-              />
+                <Tabs
+                  size="small"
+                  items={[
+                    {
+                      key: "buy",
+                      label: `买入候选 (${buyList.length})`,
+                      children: (
+                        <List
+                          size="small"
+                          dataSource={buyList}
+                          locale={{ emptyText: "暂无数据" }}
+                          renderItem={(it) => {
+                            const s = signalsByFund[it.fund_code] ?? null;
+                            const b = bucketLabel(s?.position_bucket);
+                            const dip20 = typeof s?.dip_buy_p_20t === "number" ? s.dip_buy_p_20t * 100 : null;
+                            const dip5 = typeof s?.dip_buy_p_5t === "number" ? s.dip_buy_p_5t * 100 : null;
+                            const reb20 = typeof s?.magic_rebound_p_20t === "number" ? s.magic_rebound_p_20t * 100 : null;
+                            const reb5 = typeof s?.magic_rebound_p_5t === "number" ? s.magic_rebound_p_5t * 100 : null;
+                            return (
+                              <List.Item>
+                                <Space direction="vertical" size={0} style={{ width: "100%" }}>
+                                  <Space style={{ justifyContent: "space-between", width: "100%" }}>
+                                    <Link href={`/funds/${encodeURIComponent(it.fund_code)}`}>{it.fund_name}</Link>
+                                    <Text type="secondary">{starsText(it.star_count)}</Text>
+                                  </Space>
+                                  <Text type="secondary" style={{ fontSize: 12 }}>
+                                    {it.fund_code} · 年涨幅 {it.year_growth ?? "-"}% · 最大回撤 {it.max_drawdown ?? "-"}%
+                                  </Text>
+                                  {"reasons" in (it as any) ? (
+                                    <Text type="secondary" style={{ fontSize: 12, marginTop: 6 }}>
+                                      {(it as any).reasons.slice(0, 2).join(" · ")}
+                                    </Text>
+                                  ) : null}
+                                  {s ? (
+                                    <Space size={[4, 4]} wrap style={{ marginTop: 6 }}>
+                                      <Tag color={b.color}>{b.text}</Tag>
+                                      <Tooltip title="抄底概率（20/5 个交易日）">
+                                        <Tag>
+                                          抄底 {dip20 !== null ? dip20.toFixed(1) : "-"}% / {dip5 !== null ? dip5.toFixed(1) : "-"}%
+                                        </Tag>
+                                      </Tooltip>
+                                      <Tooltip title="反转概率（20/5 个交易日）">
+                                        <Tag>
+                                          反转 {reb20 !== null ? reb20.toFixed(1) : "-"}% / {reb5 !== null ? reb5.toFixed(1) : "-"}%
+                                        </Tag>
+                                      </Tooltip>
+                                      <Text type="secondary" style={{ fontSize: 12 }}>
+                                        同类：{String(s.peer_name ?? "-")}
+                                      </Text>
+                                    </Space>
+                                  ) : null}
+                                </Space>
+                              </List.Item>
+                            );
+                          }}
+                        />
+                      ),
+                    },
+                    {
+                      key: "watch",
+                      label: `观望 (${watchList.length})`,
+                      children: (
+                        <List
+                          size="small"
+                          dataSource={watchList}
+                          locale={{ emptyText: "暂无数据" }}
+                          renderItem={(it) => {
+                            const s = signalsByFund[it.fund_code] ?? null;
+                            const b = bucketLabel(s?.position_bucket);
+                            const dip20 = typeof s?.dip_buy_p_20t === "number" ? s.dip_buy_p_20t * 100 : null;
+                            const dip5 = typeof s?.dip_buy_p_5t === "number" ? s.dip_buy_p_5t * 100 : null;
+                            return (
+                              <List.Item>
+                                <Space direction="vertical" size={0} style={{ width: "100%" }}>
+                                  <Space style={{ justifyContent: "space-between", width: "100%" }}>
+                                    <Link href={`/funds/${encodeURIComponent(it.fund_code)}`}>{it.fund_name}</Link>
+                                    <Text type="secondary">{starsText(it.star_count)}</Text>
+                                  </Space>
+                                  <Text type="secondary" style={{ fontSize: 12 }}>
+                                    {it.fund_code} · 最大回撤 {it.max_drawdown ?? "-"}% · 年涨幅 {it.year_growth ?? "-"}%
+                                  </Text>
+                                  {"reasons" in (it as any) ? (
+                                    <Text type="secondary" style={{ fontSize: 12, marginTop: 6 }}>
+                                      {(it as any).reasons.slice(0, 2).join(" · ")}
+                                    </Text>
+                                  ) : null}
+                                  {s ? (
+                                    <Space size={[4, 4]} wrap style={{ marginTop: 6 }}>
+                                      <Tag color={b.color}>{b.text}</Tag>
+                                      <Tooltip title="抄底概率（20/5 个交易日）">
+                                        <Tag>
+                                          抄底 {dip20 !== null ? dip20.toFixed(1) : "-"}% / {dip5 !== null ? dip5.toFixed(1) : "-"}%
+                                        </Tag>
+                                      </Tooltip>
+                                      <Text type="secondary" style={{ fontSize: 12 }}>
+                                        同类：{String(s.peer_name ?? "-")}
+                                      </Text>
+                                    </Space>
+                                  ) : null}
+                                </Space>
+                              </List.Item>
+                            );
+                          }}
+                        />
+                      ),
+                    },
+                    {
+                      key: "avoid",
+                      label: `回避 (${avoidList.length})`,
+                      children: (
+                        <List
+                          size="small"
+                          dataSource={avoidList}
+                          locale={{ emptyText: "暂无数据" }}
+                          renderItem={(it) => (
+                            <List.Item>
+                              <Space direction="vertical" size={0} style={{ width: "100%" }}>
+                                <Space style={{ justifyContent: "space-between", width: "100%" }}>
+                                  <Link href={`/funds/${encodeURIComponent(it.fund_code)}`}>{it.fund_name}</Link>
+                                  <Text type="secondary">{starsText(it.star_count)}</Text>
+                                </Space>
+                                <Text type="secondary" style={{ fontSize: 12 }}>
+                                  {it.fund_code} · 年涨幅 {it.year_growth ?? "-"}% · 最大回撤 {it.max_drawdown ?? "-"}%
+                                </Text>
+                                {"reasons" in (it as any) ? (
+                                  <Text type="secondary" style={{ fontSize: 12, marginTop: 6 }}>
+                                    {(it as any).reasons.slice(0, 2).join(" · ")}
+                                  </Text>
+                                ) : null}
+                              </Space>
+                            </List.Item>
+                          )}
+                        />
+                      ),
+                    },
+                  ]}
+                />
 
-              <Divider style={{ margin: "12px 0" }} />
-
-              <Title level={5} style={{ marginTop: 0 }}>
-                回撤抄底候选
-              </Title>
-              <List
-                size="small"
-                dataSource={dipBuyList}
-                locale={{ emptyText: "暂无候选" }}
-                renderItem={(it) => (
-                  <List.Item>
-                    <Space direction="vertical" size={0} style={{ width: "100%" }}>
-                      <Space style={{ justifyContent: "space-between", width: "100%" }}>
-                        <Link href={`/funds/${encodeURIComponent(it.fund_code)}`}>{it.fund_name}</Link>
-                        <Text type="secondary">{starsText(it.star_count)}</Text>
-                      </Space>
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        {it.fund_code} · 最大回撤 {it.max_drawdown ?? "-"}% · 年涨幅 {it.year_growth ?? "-"}%
-                      </Text>
-                      {(() => {
-                        const signals = signalsByFund[it.fund_code] ?? null;
-                        const best = pickBestPeerSignals(signals);
-                        if (!best) return null;
-                        const b = bucketLabel(best?.position_bucket);
-                        const dip20 =
-                          typeof best?.dip_buy?.p_20t === "number" ? (best.dip_buy.p_20t as number) * 100 : null;
-                        const dip5 =
-                          typeof best?.dip_buy?.p_5t === "number" ? (best.dip_buy.p_5t as number) * 100 : null;
-                        return (
-                          <Space size={[4, 4]} wrap style={{ marginTop: 6 }}>
-                            <Tag color={b.color}>{b.text}</Tag>
-                            <Tag>抄底 {dip20 !== null ? dip20.toFixed(1) : "-"}%（20T）</Tag>
-                            <Tag>{dip5 !== null ? dip5.toFixed(1) : "-"}%（5T）</Tag>
-                            <Text type="secondary" style={{ fontSize: 12 }}>
-                              同类：{String(best?.peer_name ?? "-")}
-                            </Text>
-                          </Space>
-                        );
-                      })()}
-                    </Space>
-                  </List.Item>
-                )}
-              />
-
-              <div style={{ marginTop: 12 }}>
+                <Divider style={{ margin: "12px 0" }} />
                 <Text type="secondary" style={{ fontSize: 12 }}>
                   风险提示：所有建议均不构成投资建议；请结合你的持有周期（自然日/交易日）与风险承受能力。
                 </Text>
-              </div>
-            </Card>
+              </Card>
+            </Affix>
           </Col>
         </Row>
       </Space>

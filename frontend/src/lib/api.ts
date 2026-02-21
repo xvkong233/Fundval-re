@@ -90,6 +90,9 @@ export const getFundAnalytics = (
 export const getFundSignals = (fundCode: string, params?: { source?: string }) =>
   api.get(`/funds/${encodeURIComponent(fundCode)}/signals/`, { params });
 
+export const batchFundSignals = (payload: { fund_codes: string[]; source?: string }) =>
+  api.post("/funds/signals/batch", payload);
+
 export const batchEstimate = (fundCodes: string[], source?: string) =>
   api.post("/funds/batch_estimate/", { fund_codes: fundCodes, ...(source ? { source } : {}) });
 

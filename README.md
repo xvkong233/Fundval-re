@@ -1,6 +1,6 @@
-# Fundval（二次开发版）
+# Fundval
 
-> 中文为主 / English version: `README.en.md`
+> 中文 `README.md`/ English version: `README.en.md`
 
 Fundval 是一个面向基金投资者与研究者的「估值 + 指标 + 信号 + 缓存爬取 + 运维可观测」系统。
 

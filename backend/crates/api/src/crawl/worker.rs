@@ -1,8 +1,11 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use sqlx::Row;
+
 use crate::crawl::scheduler::{self, CrawlJob};
 use crate::eastmoney;
+use crate::ml;
 use crate::routes::nav_history;
 use crate::sources;
 use crate::state::AppState;
@@ -174,6 +177,7 @@ async fn exec_one(
             };
 
             let mut last_err: Option<String> = None;
+            let mut ok_source: Option<&str> = None;
             let mut tried: Vec<&str> = Vec::new();
             tried.push(source_name);
             for fb in source_fallbacks {
@@ -189,6 +193,7 @@ async fn exec_one(
                 {
                     Ok(_) => {
                         last_err = None;
+                        ok_source = Some(s);
                         break;
                     }
                     Err(e) => {
@@ -200,6 +205,39 @@ async fn exec_one(
 
             if let Some(e) = last_err {
                 return Err(e);
+            }
+
+            // best-effort：净值同步后顺便计算信号快照（不强制训练，避免拖慢爬取节奏）。
+            if let Some(source_used) = ok_source {
+                let peer_rows = sqlx::query(
+                    r#"
+                    SELECT sec_code
+                    FROM fund_relate_theme
+                    WHERE fund_code = $1
+                    GROUP BY sec_code
+                    ORDER BY sec_code ASC
+                    LIMIT 2
+                    "#,
+                )
+                .bind(&fund_code)
+                .fetch_all(pool)
+                .await;
+
+                if let Ok(rows) = peer_rows {
+                    for r in rows {
+                        let peer_code: String = r.get("sec_code");
+                        let _ = ml::compute::compute_and_store_fund_snapshot_with_opts(
+                            pool,
+                            &fund_code,
+                            &peer_code,
+                            source_used,
+                            ml::compute::ComputeOpts {
+                                train_if_missing: false,
+                            },
+                        )
+                        .await;
+                    }
+                }
             }
         }
         "relate_theme_sync" => {

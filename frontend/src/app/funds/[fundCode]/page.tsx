@@ -26,6 +26,7 @@ import {
   getFundDetail,
   getFundAnalytics,
   getFundEstimate,
+  getFundSignals,
   listNavHistory,
   listPositionOperations,
   listPositions,
@@ -83,6 +84,10 @@ export default function FundDetailPage() {
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analytics, setAnalytics] = useState<any | null>(null);
   const [analyticsError, setAnalyticsError] = useState<string | null>(null);
+
+  const [signalsLoading, setSignalsLoading] = useState(false);
+  const [signals, setSignals] = useState<any | null>(null);
+  const [signalsError, setSignalsError] = useState<string | null>(null);
 
   const [gamma, setGamma] = useState<number>(() => {
     if (typeof window === "undefined") return 3;
@@ -259,6 +264,31 @@ export default function FundDetailPage() {
   useEffect(() => {
     if (!fundCode) return;
     if (navHistory.length < 2) {
+      setSignals(null);
+      return;
+    }
+
+    const load = async () => {
+      setSignalsLoading(true);
+      setSignalsError(null);
+      try {
+        const res = await getFundSignals(fundCode, { source });
+        setSignals(res?.data ?? null);
+      } catch (e: any) {
+        const msg = e?.response?.data?.error || e?.response?.data?.detail || "加载预测信号失败";
+        setSignals(null);
+        setSignalsError(String(msg));
+      } finally {
+        setSignalsLoading(false);
+      }
+    };
+
+    void load();
+  }, [fundCode, source, navHistory.length]);
+
+  useEffect(() => {
+    if (!fundCode) return;
+    if (navHistory.length < 2) {
       setAnalytics(null);
       return;
     }
@@ -329,6 +359,14 @@ export default function FundDetailPage() {
     window.addEventListener("resize", update);
     return () => window.removeEventListener("resize", update);
   }, []);
+
+  const bestPeerSignals = useMemo(() => {
+    const peers = Array.isArray(signals?.peers) ? (signals.peers as any[]) : [];
+    if (!peers.length) return null;
+    const bestCode = String(signals?.best_peer_code ?? "");
+    const best = peers.find((p) => String(p?.peer_code ?? "") === bestCode);
+    return best ?? peers[0];
+  }, [signals]);
 
   if (loading) {
     return (
@@ -492,6 +530,124 @@ export default function FundDetailPage() {
           <div style={{ marginTop: 12 }}>
             <Text type="secondary" style={{ fontSize: 12 }}>
               说明：Sharpe 使用 3M 国债利率作为无风险利率（rf），指标随净值数据与数据源变化；不构成投资建议。
+            </Text>
+          </div>
+        </Card>
+
+        <Card
+          title="预测信号（ML）"
+          loading={signalsLoading}
+          extra={
+            <Space wrap>
+              <Tag color="geekblue">两套窗口：5T + 20T（默认 20T）</Tag>
+              {bestPeerSignals ? (
+                <Popover
+                  title="关联板块（同类）"
+                  content={
+                    <Space direction="vertical" size={6}>
+                      {(Array.isArray(signals?.peers) ? (signals?.peers as any[]) : []).map((p) => {
+                        const name = String(p?.peer_name ?? "-");
+                        const code = String(p?.peer_code ?? "-");
+                        const dip20 = typeof p?.dip_buy?.p_20t === "number" ? (p.dip_buy.p_20t as number) * 100 : null;
+                        const dip5 = typeof p?.dip_buy?.p_5t === "number" ? (p.dip_buy.p_5t as number) * 100 : null;
+                        return (
+                          <Space key={`${code}-${name}`} style={{ justifyContent: "space-between", width: 360 }}>
+                            <Text>{name}</Text>
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                              抄底 {dip20 !== null ? dip20.toFixed(1) : "-"}%（20T）/{" "}
+                              {dip5 !== null ? dip5.toFixed(1) : "-"}%（5T）
+                            </Text>
+                          </Space>
+                        );
+                      })}
+                    </Space>
+                  }
+                >
+                  <Tag color="blue" style={{ cursor: "pointer" }}>
+                    同类：{String(bestPeerSignals?.peer_name ?? "-")}
+                  </Tag>
+                </Popover>
+              ) : (
+                <Tag>同类：-</Tag>
+              )}
+              {signals?.as_of_date ? <Tag color="default">as_of：{String(signals.as_of_date)}</Tag> : null}
+            </Space>
+          }
+        >
+          {signalsError ? (
+            <Result status="warning" title="预测信号暂不可用" subTitle={signalsError} />
+          ) : bestPeerSignals ? (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                gap: 16,
+              }}
+            >
+              <div>
+                <div style={{ marginBottom: 8 }}>
+                  <Text type="secondary">位置（同类分桶）</Text>
+                </div>
+                {(() => {
+                  const b = bucketLabel(bestPeerSignals?.position_bucket);
+                  const p =
+                    typeof bestPeerSignals?.position_percentile_0_100 === "number"
+                      ? (bestPeerSignals.position_percentile_0_100 as number)
+                      : null;
+                  return (
+                    <Space wrap>
+                      <Tag color={b.color}>{b.text}</Tag>
+                      <Text type="secondary">{p !== null ? `分位 ${p.toFixed(0)}%` : "分位 -"}</Text>
+                    </Space>
+                  );
+                })()}
+              </div>
+
+              <Statistic
+                title="回撤抄底概率（20T）"
+                value={
+                  typeof bestPeerSignals?.dip_buy?.p_20t === "number" ? (bestPeerSignals.dip_buy.p_20t as number) * 100 : "-"
+                }
+                precision={typeof bestPeerSignals?.dip_buy?.p_20t === "number" ? 1 : 0}
+                suffix={typeof bestPeerSignals?.dip_buy?.p_20t === "number" ? "%" : ""}
+                valueStyle={{ color: token.colorPrimary }}
+              />
+              <Statistic
+                title="回撤抄底概率（5T）"
+                value={
+                  typeof bestPeerSignals?.dip_buy?.p_5t === "number" ? (bestPeerSignals.dip_buy.p_5t as number) * 100 : "-"
+                }
+                precision={typeof bestPeerSignals?.dip_buy?.p_5t === "number" ? 1 : 0}
+                suffix={typeof bestPeerSignals?.dip_buy?.p_5t === "number" ? "%" : ""}
+              />
+              <Statistic
+                title="神奇反转概率（20T）"
+                value={
+                  typeof bestPeerSignals?.magic_rebound?.p_20t === "number"
+                    ? (bestPeerSignals.magic_rebound.p_20t as number) * 100
+                    : "-"
+                }
+                precision={typeof bestPeerSignals?.magic_rebound?.p_20t === "number" ? 1 : 0}
+                suffix={typeof bestPeerSignals?.magic_rebound?.p_20t === "number" ? "%" : ""}
+              />
+              <Statistic
+                title="神奇反转概率（5T）"
+                value={
+                  typeof bestPeerSignals?.magic_rebound?.p_5t === "number"
+                    ? (bestPeerSignals.magic_rebound.p_5t as number) * 100
+                    : "-"
+                }
+                precision={typeof bestPeerSignals?.magic_rebound?.p_5t === "number" ? 1 : 0}
+                suffix={typeof bestPeerSignals?.magic_rebound?.p_5t === "number" ? "%" : ""}
+              />
+            </div>
+          ) : (
+            <Empty description="暂无信号（需要先同步净值与关联板块缓存）" />
+          )}
+
+          <div style={{ marginTop: 12 }}>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              说明：信号与概率为模型输出，仅用于辅助理解当前“位置/回撤后的反弹概率”，不构成投资建议；模型会随数据源、板块同类样本与训练数据变化而变化。
             </Text>
           </div>
         </Card>

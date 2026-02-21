@@ -44,6 +44,30 @@ async fn fund_analytics_includes_value_score_and_ce_with_gamma() {
         .expect("seed fund");
     }
 
+    // Seed relate themes (peer group): same sector for all, plus an extra sector for fund-1.
+    for (code, sec_code, sec_name) in [
+        ("000001", "BK000156", "国防军工"),
+        ("000002", "BK000156", "国防军工"),
+        ("000003", "BK000156", "国防军工"),
+        ("000001", "BK000158", "航空装备"),
+    ] {
+        sqlx::query(
+            r#"
+            INSERT INTO fund_relate_theme (fund_code, sec_code, sec_name, corr_1y, ol2top, source, fetched_at, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            "#,
+        )
+        .bind(code)
+        .bind(sec_code)
+        .bind(sec_name)
+        .bind(80.0_f64)
+        .bind(80.0_f64)
+        .bind("tiantian_h5")
+        .execute(&pool)
+        .await
+        .expect("seed relate theme");
+    }
+
     let dates = [
         "2026-02-10",
         "2026-02-11",
@@ -115,8 +139,13 @@ async fn fund_analytics_includes_value_score_and_ce_with_gamma() {
     assert_eq!(v["source"], "tiantian");
 
     assert!(v.get("value_score").is_some());
-    assert_eq!(v["value_score"]["fund_type"], "股票型");
+    assert_eq!(v["value_score"]["peer_kind"], "sector");
+    assert_eq!(v["value_score"]["peer_name"], "国防军工");
     assert_eq!(v["value_score"]["sample_size"], 3);
+
+    assert!(v.get("value_scores").is_some());
+    assert!(v["value_scores"].is_array());
+    assert!(v["value_scores"].as_array().unwrap().len() >= 1);
 
     assert!(v.get("ce").is_some());
     assert_eq!(v["ce"]["gamma"], 5.0);

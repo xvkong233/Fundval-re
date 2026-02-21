@@ -7,6 +7,11 @@ pub fn daily_counter_key(job_type: &str, source_name: &str, kind: &str) -> Strin
     format!("crawl_{job_type}_{source_name}_{kind}_{day}")
 }
 
+pub fn daily_counter_key_all(source_name: &str, kind: &str) -> String {
+    let day = Utc::now().format("%Y%m%d").to_string();
+    format!("crawl_all_{source_name}_{kind}_{day}")
+}
+
 pub async fn get_counter(pool: &sqlx::AnyPool, key: &str) -> Result<i64, String> {
     let row = sqlx::query("SELECT value FROM crawl_state WHERE key = $1")
         .bind(key)
@@ -79,6 +84,23 @@ pub async fn enqueue_tick(
     }
 
     remaining -= enqueue_nav_for_all_funds_round_robin(pool, remaining, source_name).await?;
+    if remaining <= 0 {
+        return Ok(max_jobs);
+    }
+
+    // 关联板块（relate theme）也做分批同步：自选/持仓优先，其余慢速覆盖。
+    remaining -= enqueue_relate_theme_for_watchlists(pool, remaining, source_name).await?;
+    if remaining <= 0 {
+        return Ok(max_jobs);
+    }
+
+    remaining -= enqueue_relate_theme_for_positions(pool, remaining, source_name).await?;
+    if remaining <= 0 {
+        return Ok(max_jobs);
+    }
+
+    remaining -=
+        enqueue_relate_theme_for_all_funds_round_robin(pool, remaining, source_name).await?;
 
     Ok(max_jobs - remaining)
 }
@@ -146,6 +168,7 @@ where
 
         let source = job.source_name.as_deref().unwrap_or("unknown");
         let _ = bump_counter(pool, &daily_counter_key(&job.job_type, source, "run"), 1).await;
+        let _ = bump_counter(pool, &daily_counter_key_all(source, "run"), 1).await;
 
         let attempt_now = job.attempt + 1;
         match exec(job.clone()).await {
@@ -153,12 +176,14 @@ where
                 mark_ok(pool, &job.id, next_at(success_delay_seconds(job.priority))).await?;
                 let _ =
                     bump_counter(pool, &daily_counter_key(&job.job_type, source, "ok"), 1).await;
+                let _ = bump_counter(pool, &daily_counter_key_all(source, "ok"), 1).await;
             }
             Err(e) => {
                 let backoff = backoff_seconds(attempt_now);
                 mark_error(pool, &job.id, &e, next_at(backoff)).await?;
                 let _ =
                     bump_counter(pool, &daily_counter_key(&job.job_type, source, "err"), 1).await;
+                let _ = bump_counter(pool, &daily_counter_key_all(source, "err"), 1).await;
             }
         }
 
@@ -335,6 +360,41 @@ async fn enqueue_nav_for_watchlists(
     Ok(inserted)
 }
 
+async fn enqueue_relate_theme_for_watchlists(
+    pool: &sqlx::AnyPool,
+    max_jobs: i64,
+    source_name: &str,
+) -> Result<i64, String> {
+    if max_jobs <= 0 {
+        return Ok(0);
+    }
+
+    let rows = sqlx::query(
+        r#"
+        SELECT DISTINCT f.fund_code as fund_code
+        FROM watchlist_item wi
+        JOIN fund f ON f.id = wi.fund_id
+        ORDER BY f.fund_code ASC
+        LIMIT $1
+        "#,
+    )
+    .bind(max_jobs)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let mut inserted = 0_i64;
+    for r in rows {
+        let code: String = r.get("fund_code");
+        if code.trim().is_empty() {
+            continue;
+        }
+        upsert_relate_theme_job(pool, code.trim(), source_name, 90).await?;
+        inserted += 1;
+    }
+    Ok(inserted)
+}
+
 async fn enqueue_nav_for_positions(
     pool: &sqlx::AnyPool,
     max_jobs: i64,
@@ -365,6 +425,41 @@ async fn enqueue_nav_for_positions(
             continue;
         }
         upsert_nav_job(pool, code.trim(), source_name, 80).await?;
+        inserted += 1;
+    }
+    Ok(inserted)
+}
+
+async fn enqueue_relate_theme_for_positions(
+    pool: &sqlx::AnyPool,
+    max_jobs: i64,
+    source_name: &str,
+) -> Result<i64, String> {
+    if max_jobs <= 0 {
+        return Ok(0);
+    }
+
+    let rows = sqlx::query(
+        r#"
+        SELECT DISTINCT f.fund_code as fund_code
+        FROM position p
+        JOIN fund f ON f.id = p.fund_id
+        ORDER BY f.fund_code ASC
+        LIMIT $1
+        "#,
+    )
+    .bind(max_jobs)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let mut inserted = 0_i64;
+    for r in rows {
+        let code: String = r.get("fund_code");
+        if code.trim().is_empty() {
+            continue;
+        }
+        upsert_relate_theme_job(pool, code.trim(), source_name, 70).await?;
         inserted += 1;
     }
     Ok(inserted)
@@ -412,6 +507,47 @@ async fn enqueue_nav_for_all_funds_round_robin(
     Ok(inserted)
 }
 
+async fn enqueue_relate_theme_for_all_funds_round_robin(
+    pool: &sqlx::AnyPool,
+    max_jobs: i64,
+    source_name: &str,
+) -> Result<i64, String> {
+    if max_jobs <= 0 {
+        return Ok(0);
+    }
+
+    let rows = sqlx::query(
+        r#"
+        SELECT f.fund_code as fund_code
+        FROM fund f
+        LEFT JOIN crawl_job cj
+          ON cj.job_type = 'relate_theme_sync'
+         AND cj.fund_code = f.fund_code
+         AND cj.source_name = $2
+        WHERE cj.id IS NULL
+        ORDER BY f.fund_code ASC
+        LIMIT $1
+        "#,
+    )
+    .bind(max_jobs)
+    .bind(source_name)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let mut inserted = 0_i64;
+    for r in &rows {
+        let code: String = r.get("fund_code");
+        if code.trim().is_empty() {
+            continue;
+        }
+        upsert_relate_theme_job(pool, code.trim(), source_name, 5).await?;
+        inserted += 1;
+    }
+
+    Ok(inserted)
+}
+
 async fn upsert_nav_job(
     pool: &sqlx::AnyPool,
     fund_code: &str,
@@ -442,6 +578,69 @@ async fn upsert_nav_job(
     let sql_any = r#"
         INSERT INTO crawl_job (id, job_type, fund_code, source_name, priority, not_before, status, attempt, created_at, updated_at)
         VALUES ($1, 'nav_history_sync', $2, $3, $4, CURRENT_TIMESTAMP, 'queued', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT (job_type, fund_code, source_name) DO UPDATE
+          SET priority = EXCLUDED.priority,
+              not_before = CASE
+                WHEN crawl_job.not_before > CURRENT_TIMESTAMP THEN CURRENT_TIMESTAMP
+                ELSE crawl_job.not_before
+              END,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE EXCLUDED.priority > crawl_job.priority
+    "#;
+
+    let r = sqlx::query(sql_pg)
+        .bind(&id)
+        .bind(code)
+        .bind(source)
+        .bind(priority)
+        .execute(pool)
+        .await;
+
+    if r.is_ok() {
+        return Ok(());
+    }
+
+    sqlx::query(sql_any)
+        .bind(&id)
+        .bind(code)
+        .bind(source)
+        .bind(priority)
+        .execute(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+async fn upsert_relate_theme_job(
+    pool: &sqlx::AnyPool,
+    fund_code: &str,
+    source_name: &str,
+    priority: i64,
+) -> Result<(), String> {
+    let id = Uuid::new_v4().to_string();
+    let code = fund_code.trim();
+    let source = source_name.trim();
+    if code.is_empty() || source.is_empty() {
+        return Ok(());
+    }
+
+    let sql_pg = r#"
+        INSERT INTO crawl_job (id, job_type, fund_code, source_name, priority, not_before, status, attempt, created_at, updated_at)
+        VALUES (($1)::uuid, 'relate_theme_sync', $2, $3, $4, CURRENT_TIMESTAMP, 'queued', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT (job_type, fund_code, source_name) DO UPDATE
+          SET priority = EXCLUDED.priority,
+              not_before = CASE
+                WHEN crawl_job.not_before > CURRENT_TIMESTAMP THEN CURRENT_TIMESTAMP
+                ELSE crawl_job.not_before
+              END,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE EXCLUDED.priority > crawl_job.priority
+    "#;
+
+    let sql_any = r#"
+        INSERT INTO crawl_job (id, job_type, fund_code, source_name, priority, not_before, status, attempt, created_at, updated_at)
+        VALUES ($1, 'relate_theme_sync', $2, $3, $4, CURRENT_TIMESTAMP, 'queued', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         ON CONFLICT (job_type, fund_code, source_name) DO UPDATE
           SET priority = EXCLUDED.priority,
               not_before = CASE

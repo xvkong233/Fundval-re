@@ -6,6 +6,7 @@ import {
   Card,
   Descriptions,
   Empty,
+  Popover,
   Result,
   Select,
   Slider,
@@ -535,14 +536,52 @@ export default function FundDetailPage() {
                   const d = row?.data;
                   if (!d || d.__error) return <Text type="secondary">-</Text>;
                   const vs = d.value_score;
-                  if (!vs) return <Text type="secondary">-</Text>;
+                  const list = Array.isArray(d.value_scores) ? d.value_scores : [];
+                  if (!vs && list.length === 0) return <Text type="secondary">-</Text>;
+
+                  const best = vs ?? list[0];
+                  const bestName = String(best?.peer_name ?? best?.fund_type ?? "-");
+                  const bestScore = Number(best?.score_0_100);
+                  const bestPct = Number(best?.percentile_0_100);
+                  const bestSample = best?.sample_size ?? "-";
+
+                  const popContent =
+                    list.length > 0 ? (
+                      <Space direction="vertical" size={4}>
+                        {list.map((x: any) => {
+                          const name = String(x?.peer_name ?? x?.fund_type ?? "-");
+                          const s = Number(x?.score_0_100);
+                          const p = Number(x?.percentile_0_100);
+                          const n = x?.sample_size ?? "-";
+                          return (
+                            <Text key={name} style={{ fontSize: 12 }}>
+                              {name}：{Number.isFinite(s) ? s.toFixed(1) : "-"} / 100（
+                              {Number.isFinite(p) ? p.toFixed(0) : "-"}%）样本 {String(n)}
+                            </Text>
+                          );
+                        })}
+                      </Space>
+                    ) : null;
+
                   return (
                     <Space direction="vertical" size={0}>
                       <span>
-                        {Number(vs.score_0_100).toFixed(1)} / 100（{Number(vs.percentile_0_100).toFixed(0)}%）
+                        {Number.isFinite(bestScore) ? bestScore.toFixed(1) : "-"} / 100（
+                        {Number.isFinite(bestPct) ? bestPct.toFixed(0) : "-"}%）
                       </span>
                       <Text type="secondary" style={{ fontSize: 12 }}>
-                        同类：{String(vs.fund_type || "-")}（样本 {String(vs.sample_size ?? "-")}）
+                        同类（板块）：
+                        {list.length > 0 ? (
+                          <Popover placement="bottomLeft" content={popContent} title="关联板块分位（同类比较）">
+                            <span style={{ cursor: "pointer" }}>
+                              {bestName}（样本 {String(bestSample)}，点击查看全部）
+                            </span>
+                          </Popover>
+                        ) : (
+                          <span>
+                            {bestName}（样本 {String(bestSample)}）
+                          </span>
+                        )}
                       </Text>
                     </Space>
                   );
@@ -590,7 +629,7 @@ export default function FundDetailPage() {
 
           <div style={{ marginTop: 12 }}>
             <Text type="secondary" style={{ fontSize: 12 }}>
-              说明：同类分位综合分按 fund_type 同类比较；CE 为确定性等价（超额收益 - 0.5*γ*方差），γ 越大越保守；短线策略为“趋势优先 + 均值回归”并行，仅供参考，不构成投资建议。
+              说明：同类分位综合分优先按“关联板块（天天基金基金详情页）”同类比较；若板块缓存缺失则回退按 fund_type；CE 为确定性等价（超额收益 - 0.5*γ*方差），γ 越大越保守；短线策略为“趋势优先 + 均值回归”并行，仅供参考，不构成投资建议。
             </Text>
           </div>
         </Card>

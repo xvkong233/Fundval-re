@@ -273,7 +273,8 @@ async fn enqueue_tick_all_funds_stops_when_all_seeded() {
     let n1 = api::crawl::scheduler::enqueue_tick(&pool, 100, "tiantian")
         .await
         .expect("enqueue tick 1");
-    assert_eq!(n1, 2);
+    // 2 nav_history_sync + 2 relate_theme_sync
+    assert_eq!(n1, 4);
 
     let n2 = api::crawl::scheduler::enqueue_tick(&pool, 100, "tiantian")
         .await

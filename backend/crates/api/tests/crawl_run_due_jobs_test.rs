@@ -144,6 +144,10 @@ async fn run_due_jobs_updates_daily_counters() {
     let key_ok = format!("crawl_nav_history_sync_tiantian_ok_{day}");
     let key_err = format!("crawl_nav_history_sync_tiantian_err_{day}");
 
+    let key_all_run = format!("crawl_all_tiantian_run_{day}");
+    let key_all_ok = format!("crawl_all_tiantian_ok_{day}");
+    let key_all_err = format!("crawl_all_tiantian_err_{day}");
+
     let run_row = sqlx::query("SELECT value FROM crawl_state WHERE key = $1")
         .bind(&key_run)
         .fetch_one(&pool)
@@ -160,11 +164,34 @@ async fn run_due_jobs_updates_daily_counters() {
         .await
         .expect("err counter");
 
+    let all_run_row = sqlx::query("SELECT value FROM crawl_state WHERE key = $1")
+        .bind(&key_all_run)
+        .fetch_one(&pool)
+        .await
+        .expect("all run counter");
+    let all_ok_row = sqlx::query("SELECT value FROM crawl_state WHERE key = $1")
+        .bind(&key_all_ok)
+        .fetch_one(&pool)
+        .await
+        .expect("all ok counter");
+    let all_err_row = sqlx::query("SELECT value FROM crawl_state WHERE key = $1")
+        .bind(&key_all_err)
+        .fetch_one(&pool)
+        .await
+        .expect("all err counter");
+
     let run_v: String = run_row.get("value");
     let ok_v: String = ok_row.get("value");
     let err_v: String = err_row.get("value");
+    let all_run_v: String = all_run_row.get("value");
+    let all_ok_v: String = all_ok_row.get("value");
+    let all_err_v: String = all_err_row.get("value");
 
     assert_eq!(run_v.trim(), "2");
     assert_eq!(ok_v.trim(), "1");
     assert_eq!(err_v.trim(), "1");
+
+    assert_eq!(all_run_v.trim(), "2");
+    assert_eq!(all_ok_v.trim(), "1");
+    assert_eq!(all_err_v.trim(), "1");
 }

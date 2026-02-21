@@ -1,11 +1,15 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use sqlx::Row;
+
 use crate::crawl::scheduler::{self, CrawlJob};
 use crate::eastmoney;
+use crate::ml;
 use crate::routes::nav_history;
 use crate::sources;
 use crate::state::AppState;
+use crate::tiantian_h5;
 
 fn parse_source_list(raw: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
@@ -103,7 +107,7 @@ pub async fn background_task(state: AppState) {
             .get_i64("crawl_daily_run_limit", 3000)
             .clamp(0, 1_000_000);
         if daily_limit > 0 && run_max > 0 {
-            let key = scheduler::daily_counter_key("nav_history_sync", source_name, "run");
+            let key = scheduler::daily_counter_key_all(source_name, "run");
             if let Ok(used) = scheduler::get_counter(&pool, &key).await {
                 let remaining = (daily_limit - used).max(0);
                 if remaining <= 0 {
@@ -157,47 +161,92 @@ async fn exec_one(
     source_fallbacks: &[String],
     job: CrawlJob,
 ) -> Result<(), String> {
-    if job.job_type != "nav_history_sync" {
-        return Err(format!("unknown job_type: {}", job.job_type));
-    }
     let fund_code = job
         .fund_code
         .clone()
         .ok_or_else(|| "missing fund_code".to_string())?;
 
-    let source_raw = job
-        .source_name
-        .as_deref()
-        .unwrap_or(sources::SOURCE_TIANTIAN);
-    let Some(source_name) = sources::normalize_source_name(source_raw) else {
-        return Err(format!("unknown source: {source_raw}"));
-    };
+    match job.job_type.as_str() {
+        "nav_history_sync" => {
+            let source_raw = job
+                .source_name
+                .as_deref()
+                .unwrap_or(sources::SOURCE_TIANTIAN);
+            let Some(source_name) = sources::normalize_source_name(source_raw) else {
+                return Err(format!("unknown source: {source_raw}"));
+            };
 
-    let mut last_err: Option<String> = None;
-    let mut tried: Vec<&str> = Vec::new();
-    tried.push(source_name);
-    for fb in source_fallbacks {
-        if tried.contains(&fb.as_str()) {
-            continue;
-        }
-        tried.push(fb);
-    }
-
-    for s in tried {
-        match nav_history::sync_one(pool, client, s, &fund_code, None, None, tushare_token).await {
-            Ok(_) => {
-                last_err = None;
-                break;
+            let mut last_err: Option<String> = None;
+            let mut ok_source: Option<&str> = None;
+            let mut tried: Vec<&str> = Vec::new();
+            tried.push(source_name);
+            for fb in source_fallbacks {
+                if tried.contains(&fb.as_str()) {
+                    continue;
+                }
+                tried.push(fb);
             }
-            Err(e) => {
-                last_err = Some(e);
-                continue;
+
+            for s in tried {
+                match nav_history::sync_one(pool, client, s, &fund_code, None, None, tushare_token)
+                    .await
+                {
+                    Ok(_) => {
+                        last_err = None;
+                        ok_source = Some(s);
+                        break;
+                    }
+                    Err(e) => {
+                        last_err = Some(e);
+                        continue;
+                    }
+                }
+            }
+
+            if let Some(e) = last_err {
+                return Err(e);
+            }
+
+            // best-effort：净值同步后顺便计算信号快照（不强制训练，避免拖慢爬取节奏）。
+            if let Some(source_used) = ok_source {
+                let peer_rows = sqlx::query(
+                    r#"
+                    SELECT sec_code
+                    FROM fund_relate_theme
+                    WHERE fund_code = $1
+                    GROUP BY sec_code
+                    ORDER BY sec_code ASC
+                    LIMIT 2
+                    "#,
+                )
+                .bind(&fund_code)
+                .fetch_all(pool)
+                .await;
+
+                if let Ok(rows) = peer_rows {
+                    for r in rows {
+                        let peer_code: String = r.get("sec_code");
+                        let _ = ml::compute::compute_and_store_fund_snapshot_with_opts(
+                            pool,
+                            &fund_code,
+                            &peer_code,
+                            source_used,
+                            ml::compute::ComputeOpts {
+                                train_if_missing: false,
+                            },
+                        )
+                        .await;
+                    }
+                }
             }
         }
-    }
-
-    if let Some(e) = last_err {
-        return Err(e);
+        "relate_theme_sync" => {
+            let themes = tiantian_h5::fetch_fund_relate_themes(client, &fund_code).await?;
+            let _ =
+                tiantian_h5::upsert_fund_relate_themes(pool, &fund_code, "tiantian_h5", &themes)
+                    .await?;
+        }
+        _ => return Err(format!("unknown job_type: {}", job.job_type)),
     }
 
     if per_job_delay_ms > 0 {

@@ -21,7 +21,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ReloadOutlined, SyncOutlined } from "@ant-design/icons";
 import { AuthedLayout } from "../../components/AuthedLayout";
-import { adminSnifferSync, getSnifferItems, getSnifferStatus } from "../../lib/api";
+import { adminSnifferSync, getFundSignals, getSnifferItems, getSnifferStatus } from "../../lib/api";
 import { useAuth } from "../../contexts/AuthContext";
 import { buildSnifferAdvice } from "../../lib/snifferAdvice";
 
@@ -65,6 +65,21 @@ function starsText(count: number | null | undefined) {
   return n ? "★".repeat(n) : "-";
 }
 
+function bucketLabel(bucket: any) {
+  const s = String(bucket ?? "").toLowerCase();
+  if (s === "low") return { text: "偏低", color: "green" as const };
+  if (s === "high") return { text: "偏高", color: "red" as const };
+  return { text: "中等", color: "gold" as const };
+}
+
+function pickBestPeerSignals(signals: any | null) {
+  const peers = Array.isArray(signals?.peers) ? (signals.peers as any[]) : [];
+  if (!peers.length) return null;
+  const bestCode = String(signals?.best_peer_code ?? "");
+  const best = peers.find((p) => String(p?.peer_code ?? "") === bestCode);
+  return best ?? peers[0];
+}
+
 export default function SnifferPage() {
   const { user } = useAuth();
   const isAdmin = String(user?.role ?? "") === "admin";
@@ -78,6 +93,9 @@ export default function SnifferPage() {
   const [sector, setSector] = useState<string | null>(null);
   const [tags, setTags] = useState<string[]>([]);
   const [search, setSearch] = useState("");
+
+  const [signalsLoading, setSignalsLoading] = useState(false);
+  const [signalsByFund, setSignalsByFund] = useState<Record<string, any | null>>({});
 
   const load = async () => {
     setLoading(true);
@@ -133,6 +151,45 @@ export default function SnifferPage() {
   const advice = useMemo(() => buildSnifferAdvice(itemsResp?.items ?? []), [itemsResp]);
   const focusList = useMemo(() => advice.focus.slice(0, 10), [advice.focus]);
   const dipBuyList = useMemo(() => advice.dipBuy.slice(0, 10), [advice.dipBuy]);
+
+  useEffect(() => {
+    const codes = Array.from(
+      new Set([...focusList, ...dipBuyList].map((it) => String(it.fund_code ?? "").trim()).filter(Boolean))
+    ).slice(0, 20);
+    if (!codes.length) {
+      setSignalsByFund({});
+      return;
+    }
+
+    let cancelled = false;
+    const run = async () => {
+      setSignalsLoading(true);
+      try {
+        const res = await Promise.all(
+          codes.map(async (code) => {
+            try {
+              const r = await getFundSignals(code, { source: "tiantian" });
+              return [code, r?.data ?? null] as const;
+            } catch {
+              return [code, null] as const;
+            }
+          })
+        );
+
+        if (cancelled) return;
+        const next: Record<string, any | null> = {};
+        for (const [code, data] of res) next[code] = data;
+        setSignalsByFund(next);
+      } finally {
+        if (!cancelled) setSignalsLoading(false);
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [focusList, dipBuyList]);
 
   const lastRun = statusResp?.last_run ?? null;
   const lastRunOk = lastRun ? Boolean(lastRun.ok) : null;
@@ -245,8 +302,10 @@ export default function SnifferPage() {
                   <Table<SnifferItem>
                     rowKey={(r) => r.fund_code}
                     dataSource={filteredItems}
+                    size="small"
                     pagination={{ pageSize: 50, showSizeChanger: true }}
-                    scroll={{ x: "max-content" }}
+                    scroll={{ x: "max-content", y: 640 }}
+                    sticky
                     columns={[
                       {
                         title: "基金",
@@ -328,9 +387,17 @@ export default function SnifferPage() {
           </Col>
 
           <Col xs={24} lg={8}>
-            <Card title="购买建议" extra={<Tag color="gold">规则版（占位）</Tag>}>
+            <Card
+              title="购买建议"
+              extra={
+                <Space size={8}>
+                  <Tag color="green">ML 信号版（试运行）</Tag>
+                  {signalsLoading ? <Tag>加载信号…</Tag> : null}
+                </Space>
+              }
+            >
               <Paragraph type="secondary" style={{ marginBottom: 12 }}>
-                这里的建议暂基于“星级/回撤/涨幅”的规则排序生成；后续会替换为 ML 信号（波段/抄底/反转）与同类性价比分位。
+                建议展示优先基于嗅探源（星级/回撤/涨幅）排序，同时叠加 ML 信号（位置/抄底/反转）供参考；不构成投资建议。
               </Paragraph>
 
               <Title level={5} style={{ marginTop: 0 }}>
@@ -350,6 +417,28 @@ export default function SnifferPage() {
                       <Text type="secondary" style={{ fontSize: 12 }}>
                         {it.fund_code} · 年涨幅 {it.year_growth ?? "-"}% · 最大回撤 {it.max_drawdown ?? "-"}%
                       </Text>
+                      {(() => {
+                        const signals = signalsByFund[it.fund_code] ?? null;
+                        const best = pickBestPeerSignals(signals);
+                        if (!best) return null;
+                        const b = bucketLabel(best?.position_bucket);
+                        const dip20 =
+                          typeof best?.dip_buy?.p_20t === "number" ? (best.dip_buy.p_20t as number) * 100 : null;
+                        const reb20 =
+                          typeof best?.magic_rebound?.p_20t === "number"
+                            ? (best.magic_rebound.p_20t as number) * 100
+                            : null;
+                        return (
+                          <Space size={[4, 4]} wrap style={{ marginTop: 6 }}>
+                            <Tag color={b.color}>{b.text}</Tag>
+                            <Tag>抄底 {dip20 !== null ? dip20.toFixed(1) : "-"}%</Tag>
+                            <Tag>反转 {reb20 !== null ? reb20.toFixed(1) : "-"}%</Tag>
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                              同类：{String(best?.peer_name ?? "-")}
+                            </Text>
+                          </Space>
+                        );
+                      })()}
                     </Space>
                   </List.Item>
                 )}
@@ -374,6 +463,26 @@ export default function SnifferPage() {
                       <Text type="secondary" style={{ fontSize: 12 }}>
                         {it.fund_code} · 最大回撤 {it.max_drawdown ?? "-"}% · 年涨幅 {it.year_growth ?? "-"}%
                       </Text>
+                      {(() => {
+                        const signals = signalsByFund[it.fund_code] ?? null;
+                        const best = pickBestPeerSignals(signals);
+                        if (!best) return null;
+                        const b = bucketLabel(best?.position_bucket);
+                        const dip20 =
+                          typeof best?.dip_buy?.p_20t === "number" ? (best.dip_buy.p_20t as number) * 100 : null;
+                        const dip5 =
+                          typeof best?.dip_buy?.p_5t === "number" ? (best.dip_buy.p_5t as number) * 100 : null;
+                        return (
+                          <Space size={[4, 4]} wrap style={{ marginTop: 6 }}>
+                            <Tag color={b.color}>{b.text}</Tag>
+                            <Tag>抄底 {dip20 !== null ? dip20.toFixed(1) : "-"}%（20T）</Tag>
+                            <Tag>{dip5 !== null ? dip5.toFixed(1) : "-"}%（5T）</Tag>
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                              同类：{String(best?.peer_name ?? "-")}
+                            </Text>
+                          </Space>
+                        );
+                      })()}
                     </Space>
                   </List.Item>
                 )}

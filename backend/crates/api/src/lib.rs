@@ -7,12 +7,14 @@ pub mod dbfmt;
 pub mod django_password;
 pub mod eastmoney;
 pub mod jwt;
+pub mod ml;
 pub mod position_history;
 pub mod rates;
 pub mod routes;
 pub mod sniffer;
 pub mod sources;
 pub mod state;
+pub mod tiantian_h5;
 
 use axum::Router;
 use tower_http::normalize_path::NormalizePath;

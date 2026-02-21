@@ -112,7 +112,11 @@ Thumbs.db
 *.bak
 *.backup
 
+# Ignore most markdown by default (kept from earlier workflow),
+# but allow top-level READMEs and plan docs to be committed.
 *.md
+!README.md
+!README.en.md
 __pycache__
 .pytest_cache
 .venv

@@ -1,13 +1,26 @@
-# Fundval（Rust + Next.js 移植版）
+# Fundval（二次开发版）
 
-盘中基金实时估值与逻辑审计系统：基于持仓穿透与实时行情加权计算，提供估值、净值、历史净值与运维可观测能力。
+> 中文为主 / English version: `README.en.md`
 
-本仓库主分支仅保留移植后的实现：
+Fundval 是一个面向基金投资者与研究者的「估值 + 指标 + 信号 + 缓存爬取 + 运维可观测」系统。
 
-- `backend/`：Rust（axum/sqlx）
-- `frontend/`：Next.js
+本仓库为 **二次开发版本**：在原始思路与开源基础上持续演进，重点加入了更专业的风控/收益指标、基于经济学的性价比评分、批量缓存与机器学习信号，以及更数据密集的嗅探与购买建议 UI。
 
-对照参考代码保留在分支 `reference/golden`（用于对比验证/回溯）。
+## 你能做什么（Highlights）
+
+- **基金详情页专业指标**：最大回撤、年化波动率、夏普比率等，并提供 **同类分位综合分（`value_score`）** 与 **经济学确定性等价（CE，支持 `gamma`）**。
+- **短线策略（趋势优先）**：输出更短期的交易策略提示（适合与持有周期配合使用）。
+- **ML 预测信号（板块同类）**：基于「关联板块（同类）」做 20/60/20 位置分桶，并输出 **抄底/反转概率（5T + 20T）**。
+- **嗅探页（深度重构）**：数据密集型仪表盘布局，表格同屏展示 ML 信号，并给出 **中性** 的“买入候选 / 观望 / 回避”分桶与原因。
+- **缓存爬取（防封锁）**：支持分批次、节流、抖动、每日上限与多数据源 fallback，优先覆盖自选/持仓，再尽可能遍历全量基金。
+- **发布与部署**：Docker 一键启动（Postgres/SQLite），GitHub Actions 打 Tag 自动发布镜像与跨平台附件。
+
+## 目录结构
+
+- `backend/`：Rust（axum/sqlx）后端 API
+- `frontend/`：Next.js 前端（Ant Design + ECharts）
+- `packaging/`：跨平台打包模板（portable、Windows 安装器等）
+- `docs/`：计划与文档（包含接口/实现规划）
 
 ## 快速开始（Docker，推荐）
 
@@ -45,7 +58,7 @@ docker compose logs backend | grep "BOOTSTRAP KEY"
 
 然后访问 `http://localhost:3000/initialize` 完成初始化。
 
-## 数据源（估值/净值）
+## 数据源（估值/净值/关联板块）
 
 内置支持以下数据源（用于基金估值、净值与历史净值同步）：
 
@@ -55,6 +68,8 @@ docker compose logs backend | grep "BOOTSTRAP KEY"
 - `tushare`：Tushare（需在“设置”页面配置 Token）
 
 前端页面支持选择数据源（基金详情 / 基金列表 / 自选），选择后会把 `source` 透传给后端 API。
+
+关联板块（同类）信号优先基于数据源页面的“关联板块信息”（例如国防军工等），用于同类分位与 ML 信号计算。
 
 ## 运维（健康度/准确率）
 
@@ -67,6 +82,13 @@ docker compose logs backend | grep "BOOTSTRAP KEY"
 发行包/本地直接运行（不使用 Docker）时，若未设置 `DATABASE_URL`，后端会默认使用本地 **SQLite**（`./data/fundval.sqlite`）。
 
 若后端检测到 `DATABASE_URL` 指向的数据库不存在，会尝试自动创建并执行 migrations。
+
+## 核心页面
+
+- `http://localhost:3000/funds/[fundCode]`：基金详情（指标 + ML 信号 + 同类分位/性价比）
+- `http://localhost:3000/sniffer`：嗅探（筛选 + 信号 + 购买建议）
+- `http://localhost:3000/settings`：设置（含 Tushare Token）
+- `http://localhost:3000/server-config`：管理员爬虫配置（批次/节流/抖动/每日上限等）
 
 ## 技术栈
 
@@ -91,6 +113,8 @@ PostgreSQL
 - 后端 `cargo test -p api`
 - 前端 `npm test` + `npm run build`
 - 构建并推送 Docker 镜像到 GHCR（`ghcr.io`）
+- （可选）推送镜像到 Docker Hub（需配置 secrets）
+- 从 `CHANGELOG.md` 抽取对应版本段落生成 Release Notes，并上传跨平台附件
 
 镜像命名规则：
 
@@ -102,10 +126,10 @@ PostgreSQL
 - Actions 允许工作流使用 `GITHUB_TOKEN` 写入 Packages（GHCR）。
 - 若你的仓库/组织策略禁止默认 token 推送镜像，可自行改用 PAT，并写入 Secrets。
 
-如需推送到 Docker Hub/私有 Registry，请在仓库 Secrets 中配置并相应修改工作流：
+如需推送到 Docker Hub，请在 GitHub 仓库 Secrets 中配置（已支持多种常见命名）：
 
-- `DOCKER_USERNAME`
-- `DOCKER_PASSWORD`（建议用 Token）
+- 用户名：`DOCKERHUB_USERNAME`（或 `DOCKERHUB_USER` / `DOCKER_USERNAME`）
+- Token：`DOCKERHUB_TOKEN`（或 `DOCKERHUB_ACCESS_TOKEN` / `DOCKER_PASSWORD`）
 
 ## 开源协议
 
@@ -117,4 +141,4 @@ PostgreSQL
 
 ## 致谢
 
-本项目移植自开源项目 **FundVal-Live**，原作者 **Ye-Yu-Mo**。感谢原作者与所有贡献者的工作与分享。
+本项目基于开源项目 **FundVal-Live** 的思路与早期实现持续二次开发而来。感谢原作者 **Ye-Yu-Mo** 与所有贡献者的工作与分享。

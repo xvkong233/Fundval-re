@@ -7,7 +7,7 @@ use api::state::AppState;
 async fn funds_list_requires_database() {
     let config = api::config::ConfigStore::load();
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(None, config, jwt);
+    let state = AppState::new(None, config, jwt, api::db::DatabaseKind::Sqlite);
     let app = api::service(state);
 
     let res = app
@@ -27,7 +27,7 @@ async fn funds_list_requires_database() {
 async fn funds_retrieve_requires_database() {
     let config = api::config::ConfigStore::load();
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(None, config, jwt);
+    let state = AppState::new(None, config, jwt, api::db::DatabaseKind::Sqlite);
     let app = api::service(state);
 
     let res = app

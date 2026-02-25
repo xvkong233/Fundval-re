@@ -2,7 +2,7 @@
 
 import api, { publicApi } from "./http";
 
-export const healthCheck = () => api.get("/health/");
+export const healthCheck = () => api.get("/health");
 
 export const verifyBootstrapKey = (key: string) =>
   publicApi.post("/admin/bootstrap/verify", { bootstrap_key: key });
@@ -18,7 +18,7 @@ export const login = (username: string, password: string) =>
   publicApi.post("/auth/login", { username, password });
 
 export const register = (username: string, password: string, passwordConfirm: string) =>
-  publicApi.post("/users/register/", { username, password, password_confirm: passwordConfirm });
+  publicApi.post("/users/register", { username, password, password_confirm: passwordConfirm });
 
 export const refreshToken = (refreshTokenValue: string) =>
   publicApi.post("/auth/refresh", { refresh_token: refreshTokenValue });
@@ -28,12 +28,12 @@ export const getCurrentUser = () => api.get("/auth/me");
 export const changePassword = (oldPassword: string, newPassword: string) =>
   api.put("/auth/password", { old_password: oldPassword, new_password: newPassword });
 
-export const getMySummary = () => api.get("/users/me/summary/");
+export const getMySummary = () => api.get("/users/me/summary");
 
 // settings (admin)
-export const getTushareTokenStatus = () => api.get("/settings/tushare_token/");
+export const getTushareTokenStatus = () => api.get("/settings/tushare_token");
 
-export const setTushareToken = (token: string | null) => api.put("/settings/tushare_token/", { token });
+export const setTushareToken = (token: string | null) => api.put("/settings/tushare_token", { token });
 
 export type CrawlConfig = {
   crawl_enabled: boolean;
@@ -47,24 +47,24 @@ export type CrawlConfig = {
   crawl_source_fallbacks: string;
 };
 
-export const getCrawlConfig = () => api.get("/admin/crawl/config/");
+export const getCrawlConfig = () => api.get("/admin/crawl/config");
 
-export const setCrawlConfig = (payload: Partial<CrawlConfig>) => api.put("/admin/crawl/config/", payload);
+export const setCrawlConfig = (payload: Partial<CrawlConfig>) => api.put("/admin/crawl/config", payload);
 
 // sniffer
-export const getSnifferStatus = () => api.get("/sniffer/status/");
+export const getSnifferStatus = () => api.get("/sniffer/status");
 
-export const getSnifferItems = () => api.get("/sniffer/items/");
+export const getSnifferItems = () => api.get("/sniffer/items");
 
-export const adminSnifferSync = () => api.post("/admin/sniffer/sync/", {});
+export const adminSnifferSync = () => api.post("/admin/sniffer/sync", {});
 
 // sources
-export const listSources = () => publicApi.get("/sources/");
+export const listSources = () => publicApi.get("/sources");
 
-export const listSourcesHealth = () => publicApi.get("/sources/health/");
+export const listSourcesHealth = () => publicApi.get("/sources/health");
 
 export const getSourceAccuracy = (sourceName: string, days?: number) =>
-  publicApi.get(`/sources/${encodeURIComponent(sourceName)}/accuracy/`, {
+  publicApi.get(`/sources/${encodeURIComponent(sourceName)}/accuracy`, {
     params: typeof days === "number" ? { days } : {},
   });
 
@@ -74,37 +74,140 @@ export const listFunds = (params: {
   page_size?: number;
   search?: string;
   fund_type?: string;
-}) => api.get("/funds/", { params });
+}) => api.get("/funds", { params });
 
-export const getFundDetail = (fundCode: string) => api.get(`/funds/${encodeURIComponent(fundCode)}/`);
+export const getFundDetail = (fundCode: string) => api.get(`/funds/${encodeURIComponent(fundCode)}`);
 
 export const getFundEstimate = (fundCode: string, source?: string) =>
-  api.get(`/funds/${encodeURIComponent(fundCode)}/estimate/`, { params: source ? { source } : {} });
+  api.get(`/funds/${encodeURIComponent(fundCode)}/estimate`, { params: source ? { source } : {} });
 
 export const getFundAnalytics = (
   fundCode: string,
   params?: { range?: string; source?: string; gamma?: number }
 ) =>
-  api.get(`/funds/${encodeURIComponent(fundCode)}/analytics/`, { params });
+  api.get(`/funds/${encodeURIComponent(fundCode)}/analytics`, { params });
+
+export type FundAnalysisV2Snapshot = {
+  fund_code: string;
+  source: string;
+  profile: string;
+  refer_index_code: string;
+  as_of_date?: string | null;
+  result: any;
+  last_task_id?: string | null;
+  updated_at: string;
+};
+
+export const getFundAnalysisV2 = (
+  fundCode: string,
+  params?: { source?: string; profile?: string; refer_index_code?: string }
+) => api.get(`/funds/${encodeURIComponent(fundCode)}/analysis_v2`, { params });
+
+export const computeFundAnalysisV2 = (
+  fundCode: string,
+  payload?: {
+    source?: string;
+    profile?: string;
+    windows?: number[];
+    risk_free_annual?: number;
+    grid_step_pct?: number;
+    every_n?: number;
+    amount?: number;
+    refer_index_code?: string;
+  }
+) => api.post(`/funds/${encodeURIComponent(fundCode)}/analysis_v2/compute`, payload ?? {});
 
 export const getFundSignals = (fundCode: string, params?: { source?: string }) =>
-  api.get(`/funds/${encodeURIComponent(fundCode)}/signals/`, { params });
+  api.get(`/funds/${encodeURIComponent(fundCode)}/signals`, { params });
 
-export const batchFundSignals = (payload: { fund_codes: string[]; source?: string }) =>
+export const enqueueBatchFundSignals = (payload: { fund_codes: string[]; source?: string }) =>
   api.post("/funds/signals/batch", payload);
 
-export const batchEstimate = (fundCodes: string[], source?: string) =>
-  api.post("/funds/batch_estimate/", { fund_codes: fundCodes, ...(source ? { source } : {}) });
+export const getBatchFundSignalsPage = (
+  taskId: string,
+  params?: { page?: number; page_size?: number }
+) => api.get(`/funds/signals/batch_async/${encodeURIComponent(taskId)}`, { params });
+
+// tasks
+export const getTasksOverview = (params?: { queued_limit?: number; running_limit?: number; recent_limit?: number }) =>
+  api.get("/tasks/overview", { params });
+
+export const getTaskRunLogs = (runId: string, params?: { limit?: number }) =>
+  api.get(`/tasks/runs/${encodeURIComponent(runId)}/logs`, { params });
+
+export const getTaskJobDetail = (jobId: string) => api.get(`/tasks/jobs/${encodeURIComponent(jobId)}`);
+
+export const getTaskJobRuns = (jobId: string, params?: { limit?: number }) =>
+  api.get(`/tasks/jobs/${encodeURIComponent(jobId)}/runs`, { params });
+
+export const getTaskJobLogs = (jobId: string, params?: { limit?: number }) =>
+  api.get(`/tasks/jobs/${encodeURIComponent(jobId)}/logs`, { params });
+
+export const trainForecastModel = (payload?: {
+  source?: string;
+  model_name?: string;
+  horizon?: number;
+  lag_k?: number;
+  priority?: number;
+}) => api.post("/forecast/model/train", payload ?? {});
+
+// quant (Qbot migration)
+export const compareFundStrategies = (payload: {
+  fund_series: { date: string; val?: number; netvalue?: number }[];
+  shangzheng_series?: { date: string; val: number }[];
+  refer_index_points?: any[];
+  strategies: { name: string; cfg: Record<string, any> }[];
+}) => api.post("/quant/fund-strategies/compare", payload);
+
+export const listPytraderStrategies = () => api.get("/quant/pytrader/strategies");
+
+export const pytraderBacktest = (payload: {
+  strategy: string;
+  totmoney: number;
+  series: { date: string; val: number }[];
+  params?: Record<string, any>;
+  fees?: { buy_fee_rate?: number; sell_fee_rate?: number; round_label?: number };
+}) => api.post("/quant/pytrader/backtest", payload);
+
+export const batchEstimate = (
+  fundCodes: string[],
+  source?: string,
+  opts?: {
+    enqueue_refresh?: boolean;
+  }
+) =>
+  api.post("/funds/batch_estimate", {
+    fund_codes: fundCodes,
+    ...(source ? { source } : {}),
+    ...(opts && typeof opts.enqueue_refresh === "boolean" ? { enqueue_refresh: opts.enqueue_refresh } : {}),
+  });
 
 export const batchUpdateNav = (fundCodes: string[], source?: string) =>
-  api.post("/funds/batch_update_nav/", { fund_codes: fundCodes, ...(source ? { source } : {}) });
+  api.post("/funds/batch_update_nav", { fund_codes: fundCodes, ...(source ? { source } : {}) });
+
+export const refreshPricesBatchAsync = (fundCodes: string[], source?: string, priority?: number) =>
+  api.post("/funds/prices/refresh_batch_async", {
+    fund_codes: fundCodes,
+    ...(source ? { source } : {}),
+    ...(typeof priority === "number" ? { priority } : {}),
+  });
 
 // nav history
 export const listNavHistory = (fundCode: string, params: Record<string, any> = {}) =>
-  api.get("/nav-history/", { params: { fund_code: fundCode, ...params } });
+  api.get("/nav-history", { params: { fund_code: fundCode, ...params } });
+
+// indexes
+export type IndexDailyPoint = { date: string; close: string };
+export const getIndexDaily = (params: {
+  index_code: string;
+  source_name?: string;
+  start_date?: string;
+  end_date?: string;
+  fetch?: boolean;
+}) => api.get("/indexes/daily", { params });
 
 export const syncNavHistory = (fundCodes: string[], startDate: string, endDate: string, source?: string) =>
-  api.post("/nav-history/sync/", {
+  api.post("/nav-history/sync", {
     fund_codes: fundCodes,
     start_date: startDate,
     end_date: endDate,
@@ -112,51 +215,51 @@ export const syncNavHistory = (fundCodes: string[], startDate: string, endDate: 
   });
 
 // watchlists
-export const listWatchlists = () => api.get("/watchlists/");
+export const listWatchlists = () => api.get("/watchlists");
 
-export const createWatchlist = (name: string) => api.post("/watchlists/", { name });
+export const createWatchlist = (name: string) => api.post("/watchlists", { name });
 
 export const addWatchlistItem = (watchlistId: string, fundCode: string) =>
-  api.post(`/watchlists/${encodeURIComponent(watchlistId)}/items/`, { fund_code: fundCode });
+  api.post(`/watchlists/${encodeURIComponent(watchlistId)}/items`, { fund_code: fundCode });
 
 export const patchWatchlist = (watchlistId: string, name: string) =>
-  api.patch(`/watchlists/${encodeURIComponent(watchlistId)}/`, { name });
+  api.patch(`/watchlists/${encodeURIComponent(watchlistId)}`, { name });
 
 export const deleteWatchlist = (watchlistId: string) =>
-  api.delete(`/watchlists/${encodeURIComponent(watchlistId)}/`);
+  api.delete(`/watchlists/${encodeURIComponent(watchlistId)}`);
 
 export const removeWatchlistItem = (watchlistId: string, fundCode: string) =>
   api.delete(
-    `/watchlists/${encodeURIComponent(watchlistId)}/items/${encodeURIComponent(fundCode)}/`
+    `/watchlists/${encodeURIComponent(watchlistId)}/items/${encodeURIComponent(fundCode)}`
   );
 
 export const reorderWatchlist = (watchlistId: string, fundCodes: string[]) =>
-  api.put(`/watchlists/${encodeURIComponent(watchlistId)}/reorder/`, { fund_codes: fundCodes });
+  api.put(`/watchlists/${encodeURIComponent(watchlistId)}/reorder`, { fund_codes: fundCodes });
 
 // accounts
-export const listAccounts = () => api.get("/accounts/");
+export const listAccounts = () => api.get("/accounts");
 
 export const createAccount = (data: { name: string; parent?: string | null; is_default?: boolean }) =>
-  api.post("/accounts/", data);
+  api.post("/accounts", data);
 
 export const patchAccount = (
   accountId: string,
   data: { name?: string; parent?: string | null; is_default?: boolean }
-) => api.patch(`/accounts/${encodeURIComponent(accountId)}/`, data);
+) => api.patch(`/accounts/${encodeURIComponent(accountId)}`, data);
 
 export const deleteAccount = (accountId: string) =>
-  api.delete(`/accounts/${encodeURIComponent(accountId)}/`);
+  api.delete(`/accounts/${encodeURIComponent(accountId)}`);
 
 // positions
-export const listPositions = (params?: { account?: string }) => api.get("/positions/", { params });
+export const listPositions = (params?: { account?: string }) => api.get("/positions", { params });
 
 export const getPositionHistory = (accountId: string, days?: number) =>
-  api.get("/positions/history/", {
+  api.get("/positions/history", {
     params: { account_id: accountId, ...(typeof days === "number" ? { days } : {}) },
   });
 
 export const listPositionOperations = (params?: { account?: string; fund_code?: string }) =>
-  api.get("/positions/operations/", { params });
+  api.get("/positions/operations", { params });
 
 export const createPositionOperation = (data: {
   account: string;
@@ -167,14 +270,122 @@ export const createPositionOperation = (data: {
   amount: string | number;
   share: string | number;
   nav: string | number;
-}) => api.post("/positions/operations/", data);
+}) => api.post("/positions/operations", data);
 
 export const deletePositionOperation = (operationId: string) =>
-  api.delete(`/positions/operations/${encodeURIComponent(operationId)}/`);
+  api.delete(`/positions/operations/${encodeURIComponent(operationId)}`);
 
 export const recalculatePositions = (accountId?: string) =>
-  api.post("/positions/recalculate/", accountId ? { account_id: accountId } : {});
+  api.post("/positions/recalculate", accountId ? { account_id: accountId } : {});
 
 export const queryFundNav = (data: { fund_code: string; operation_date: string; before_15: boolean }, source?: string) =>
-  api.post("/funds/query_nav/", { ...data, ...(source ? { source } : {}) });
+  api.post("/funds/query_nav", { ...data, ...(source ? { source } : {}) });
+
+// sim (paper trading / RL env)
+export type SimRunSummary = {
+  id: string;
+  mode: "backtest" | "env" | string;
+  name: string;
+  source_name: string;
+  strategy?: string;
+  start_date: string;
+  end_date: string;
+  current_date?: string | null;
+  initial_cash: string;
+  cash_available: string;
+  cash_frozen: string;
+  buy_fee_rate: number;
+  sell_fee_rate: number;
+  settlement_days: number;
+  status: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SimAction = {
+  side: "BUY" | "SELL";
+  fund_code: string;
+  amount?: string | null;
+  shares?: string | null;
+};
+
+export type SimPositionView = {
+  fund_code: string;
+  shares_available: string;
+  shares_frozen: string;
+  nav?: string | null;
+  value?: string | null;
+};
+
+export type SimObservation = {
+  date: string;
+  cash_available: string;
+  cash_frozen: string;
+  cash_receivable: string;
+  total_equity: string;
+  positions: SimPositionView[];
+};
+
+export type SimStepResult = {
+  date: string;
+  reward: number;
+  done: boolean;
+  observation: SimObservation;
+};
+
+export const listSimRuns = () => api.get("/sim/runs");
+
+export const deleteSimRun = (runId: string) => api.delete(`/sim/runs/${encodeURIComponent(runId)}`);
+
+export const createSimRun = (payload: {
+  mode: "backtest" | "env";
+  strategy?: string;
+  name?: string;
+  source?: string;
+  fund_codes: string[];
+  start_date: string;
+  end_date: string;
+  initial_cash: string;
+  buy_fee_rate?: number;
+  sell_fee_rate?: number;
+  settlement_days?: number;
+  top_k?: number;
+  rebalance_every?: number;
+  weights?: number[];
+  // auto_topk_ts_timing params
+  refer_index_code?: string;
+  sell_macd_point?: number | null;
+  buy_macd_point?: number | null;
+  sh_composite_index?: number;
+  fund_position?: number;
+  sell_at_top?: boolean;
+  sell_num?: number;
+  sell_unit?: "amount" | "fundPercent" | string;
+  profit_rate?: number;
+  buy_amount_percent?: number;
+}) => api.post("/sim/runs", payload);
+
+export const runSimBacktest = (runId: string) => api.post(`/sim/runs/${encodeURIComponent(runId)}/run`, {});
+
+export const getSimEquity = (runId: string) => api.get(`/sim/runs/${encodeURIComponent(runId)}/equity`);
+
+export const getSimEnvObservation = (runId: string) =>
+  api.get(`/sim/envs/${encodeURIComponent(runId)}/observation`);
+
+export const simEnvStep = (runId: string, actions: SimAction[]) =>
+  api.post(`/sim/envs/${encodeURIComponent(runId)}/step`, { actions });
+
+export type SimTrainRoundOut = {
+  round: number;
+  best_total_return: number;
+  best_final_equity: number;
+  best_weights: number[];
+};
+
+export const trainSimRunAuto = (
+  runId: string,
+  payload: { rounds: number; population?: number; elite_ratio?: number; seed?: number }
+) => api.post(`/sim/runs/${encodeURIComponent(runId)}/train`, payload);
+
+export const listSimTrainRounds = (runId: string) => api.get(`/sim/runs/${encodeURIComponent(runId)}/train/rounds`);
 

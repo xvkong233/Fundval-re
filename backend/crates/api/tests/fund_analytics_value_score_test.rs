@@ -116,7 +116,7 @@ async fn fund_analytics_includes_value_score_and_ce_with_gamma() {
 
     let config = api::config::ConfigStore::load();
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(Some(pool), config, jwt);
+    let state = AppState::new(Some(pool), config, jwt, api::db::DatabaseKind::Sqlite);
     let token = state.jwt().issue_access_token("1");
     let app = api::service(state);
 
@@ -145,7 +145,7 @@ async fn fund_analytics_includes_value_score_and_ce_with_gamma() {
 
     assert!(v.get("value_scores").is_some());
     assert!(v["value_scores"].is_array());
-    assert!(v["value_scores"].as_array().unwrap().len() >= 1);
+    assert!(!v["value_scores"].as_array().unwrap().is_empty());
 
     assert!(v.get("ce").is_some());
     assert_eq!(v["ce"]["gamma"], 5.0);

@@ -10,6 +10,7 @@ use serde_json::{Value, json};
 use sqlx::Row;
 use uuid::Uuid;
 
+use crate::db::DatabaseKind;
 use crate::state::AppState;
 
 pub const DEEPQ_STAR_CSV_URL: &str = "https://sq.deepq.tech/star/api/data";
@@ -304,18 +305,25 @@ async fn run_sync_once_unlocked(state: &AppState) -> Result<SnifferSyncReport, S
     let pool = state
         .pool()
         .ok_or_else(|| "database not configured".to_string())?;
+    let is_postgres = state.db_kind() == DatabaseKind::Postgres;
 
     let run_id = Uuid::new_v4().to_string();
-    let _ = sqlx::query(
+    let insert_run_sql = if is_postgres {
+        r#"
+        INSERT INTO sniffer_run (id, source_url, started_at, ok)
+        VALUES ($1::uuid, $2, CURRENT_TIMESTAMP, FALSE)
+        "#
+    } else {
         r#"
         INSERT INTO sniffer_run (id, source_url, started_at, ok)
         VALUES ($1, $2, CURRENT_TIMESTAMP, FALSE)
-        "#,
-    )
-    .bind(&run_id)
-    .bind(DEEPQ_STAR_CSV_URL)
-    .execute(pool)
-    .await;
+        "#
+    };
+    let _ = sqlx::query(insert_run_sql)
+        .bind(&run_id)
+        .bind(DEEPQ_STAR_CSV_URL)
+        .execute(pool)
+        .await;
 
     let client = Client::builder()
         .timeout(Duration::from_secs(30))
@@ -326,7 +334,7 @@ async fn run_sync_once_unlocked(state: &AppState) -> Result<SnifferSyncReport, S
     let csv_text = match fetch_deepq_csv(&client).await {
         Ok(v) => v,
         Err(e) => {
-            let _ = mark_run_failed(pool, &run_id, &e).await;
+            let _ = mark_run_failed(pool, run_id.as_str(), &e).await;
             return Err(e);
         }
     };
@@ -334,7 +342,7 @@ async fn run_sync_once_unlocked(state: &AppState) -> Result<SnifferSyncReport, S
     let rows = match parse_deepq_csv(&csv_text) {
         Ok(v) => v,
         Err(e) => {
-            let _ = mark_run_failed(pool, &run_id, &e).await;
+            let _ = mark_run_failed(pool, run_id.as_str(), &e).await;
             return Err(e);
         }
     };
@@ -347,24 +355,40 @@ async fn run_sync_once_unlocked(state: &AppState) -> Result<SnifferSyncReport, S
         .await
         .map_err(|e| format!("开启事务失败: {e}"))?;
 
-    sqlx::query(
+    let insert_snapshot_sql = if is_postgres {
+        r#"
+        INSERT INTO sniffer_snapshot (id, source_url, fetched_at, item_count, run_id)
+        VALUES ($1::uuid, $2, CURRENT_TIMESTAMP, $3, $4::uuid)
+        "#
+    } else {
         r#"
         INSERT INTO sniffer_snapshot (id, source_url, fetched_at, item_count, run_id)
         VALUES ($1, $2, CURRENT_TIMESTAMP, $3, $4)
-        "#,
-    )
-    .bind(&snapshot_id)
-    .bind(DEEPQ_STAR_CSV_URL)
-    .bind(item_count)
-    .bind(&run_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| format!("写入 sniffer_snapshot 失败: {e}"))?;
+        "#
+    };
+
+    sqlx::query(insert_snapshot_sql)
+        .bind(&snapshot_id)
+        .bind(DEEPQ_STAR_CSV_URL)
+        .bind(item_count)
+        .bind(&run_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| format!("写入 sniffer_snapshot 失败: {e}"))?;
 
     let mut fund_ids: Vec<String> = Vec::with_capacity(rows.len());
 
     for r in &rows {
-        let fund_id: String = sqlx::query(
+        let insert_fund_sql = if is_postgres {
+            r#"
+            INSERT INTO fund (id, fund_code, fund_name, fund_type, created_at, updated_at)
+            VALUES ($1::uuid, $2, $3, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT (fund_code) DO UPDATE
+              SET fund_name = EXCLUDED.fund_name,
+                  updated_at = CURRENT_TIMESTAMP
+            RETURNING CAST(id AS TEXT) as id
+            "#
+        } else {
             r#"
             INSERT INTO fund (id, fund_code, fund_name, fund_type, created_at, updated_at)
             VALUES ($1, $2, $3, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
@@ -372,43 +396,58 @@ async fn run_sync_once_unlocked(state: &AppState) -> Result<SnifferSyncReport, S
               SET fund_name = EXCLUDED.fund_name,
                   updated_at = CURRENT_TIMESTAMP
             RETURNING CAST(id AS TEXT) as id
-            "#,
-        )
-        .bind(Uuid::new_v4().to_string())
-        .bind(&r.fund_code)
-        .bind(&r.fund_name)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(|e| format!("upsert fund 失败: {e}"))?
-        .get("id");
+            "#
+        };
+
+        let fund_id: String = sqlx::query(insert_fund_sql)
+            .bind(Uuid::new_v4().to_string())
+            .bind(&r.fund_code)
+            .bind(&r.fund_name)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| format!("upsert fund 失败: {e}"))?
+            .get("id");
         fund_ids.push(fund_id.clone());
 
         let tags_literal = to_pg_text_array_literal(&r.tags);
         let raw_json = serde_json::to_string(&r.raw).unwrap_or_else(|_| "{}".to_string());
 
-        sqlx::query(
+        let insert_item_sql = if is_postgres {
+            r#"
+            INSERT INTO sniffer_item (
+              id, snapshot_id, fund_id, sector, tags, star_count,
+              week_growth, year_growth, max_drawdown, fund_size_text, raw, created_at
+            )
+            VALUES (
+              $1::uuid,$2::uuid,$3::uuid,$4,$5::TEXT[],$6,
+              $7::NUMERIC,$8::NUMERIC,$9::NUMERIC,$10,$11::JSONB,CURRENT_TIMESTAMP
+            )
+            "#
+        } else {
             r#"
             INSERT INTO sniffer_item (
               id, snapshot_id, fund_id, sector, tags, star_count,
               week_growth, year_growth, max_drawdown, fund_size_text, raw, created_at
             )
             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,CURRENT_TIMESTAMP)
-            "#,
-        )
-        .bind(Uuid::new_v4().to_string())
-        .bind(&snapshot_id)
-        .bind(&fund_id)
-        .bind(&r.sector)
-        .bind(tags_literal)
-        .bind(r.star_count)
-        .bind(r.week_growth.map(|v| v.to_string()))
-        .bind(r.year_growth.map(|v| v.to_string()))
-        .bind(r.max_drawdown.map(|v| v.to_string()))
-        .bind(&r.fund_size_text)
-        .bind(raw_json)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| format!("写入 sniffer_item 失败: {e}"))?;
+            "#
+        };
+
+        sqlx::query(insert_item_sql)
+            .bind(Uuid::new_v4().to_string())
+            .bind(&snapshot_id)
+            .bind(&fund_id)
+            .bind(&r.sector)
+            .bind(tags_literal)
+            .bind(r.star_count)
+            .bind(r.week_growth.map(|v| v.to_string()))
+            .bind(r.year_growth.map(|v| v.to_string()))
+            .bind(r.max_drawdown.map(|v| v.to_string()))
+            .bind(&r.fund_size_text)
+            .bind(raw_json)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| format!("写入 sniffer_item 失败: {e}"))?;
     }
 
     let user_rows = sqlx::query("SELECT id FROM auth_user ORDER BY id ASC")
@@ -422,22 +461,32 @@ async fn run_sync_once_unlocked(state: &AppState) -> Result<SnifferSyncReport, S
 
     let mut users_updated: i32 = 0;
     for user_id in &user_ids {
-        let watchlist_id: String = sqlx::query(
+        let insert_watchlist_sql = if is_postgres {
+            r#"
+            INSERT INTO watchlist (id, user_id, name, created_at)
+            VALUES ($1::uuid, $2, $3, CURRENT_TIMESTAMP)
+            ON CONFLICT (user_id, name) DO UPDATE
+              SET name = EXCLUDED.name
+            RETURNING CAST(id AS TEXT) as id
+            "#
+        } else {
             r#"
             INSERT INTO watchlist (id, user_id, name, created_at)
             VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
             ON CONFLICT (user_id, name) DO UPDATE
               SET name = EXCLUDED.name
             RETURNING CAST(id AS TEXT) as id
-            "#,
-        )
-        .bind(Uuid::new_v4().to_string())
-        .bind(*user_id)
-        .bind(SNIFFER_WATCHLIST_NAME)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(|e| format!("创建/获取 watchlist 失败: {e}"))?
-        .get("id");
+            "#
+        };
+
+        let watchlist_id: String = sqlx::query(insert_watchlist_sql)
+            .bind(Uuid::new_v4().to_string())
+            .bind(*user_id)
+            .bind(SNIFFER_WATCHLIST_NAME)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| format!("创建/获取 watchlist 失败: {e}"))?
+            .get("id");
 
         sqlx::query("DELETE FROM watchlist_item WHERE CAST(watchlist_id AS TEXT) = $1")
             .bind(&watchlist_id)
@@ -447,19 +496,25 @@ async fn run_sync_once_unlocked(state: &AppState) -> Result<SnifferSyncReport, S
 
         if !fund_ids.is_empty() {
             for (i, fund_id) in fund_ids.iter().enumerate() {
-                sqlx::query(
+                let insert_watchlist_item_sql = if is_postgres {
+                    r#"
+                    INSERT INTO watchlist_item (id, watchlist_id, fund_id, "order", created_at)
+                    VALUES ($1::uuid, $2::uuid, $3::uuid, $4, CURRENT_TIMESTAMP)
+                    "#
+                } else {
                     r#"
                     INSERT INTO watchlist_item (id, watchlist_id, fund_id, "order", created_at)
                     VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
-                    "#,
-                )
-                .bind(Uuid::new_v4().to_string())
-                .bind(&watchlist_id)
-                .bind(fund_id)
-                .bind(i as i32)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| format!("批量写入 watchlist_item 失败: {e}"))?;
+                    "#
+                };
+                sqlx::query(insert_watchlist_item_sql)
+                    .bind(Uuid::new_v4().to_string())
+                    .bind(&watchlist_id)
+                    .bind(fund_id)
+                    .bind(i as i32)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| format!("批量写入 watchlist_item 失败: {e}"))?;
             }
         }
 
@@ -470,7 +525,16 @@ async fn run_sync_once_unlocked(state: &AppState) -> Result<SnifferSyncReport, S
         .await
         .map_err(|e| format!("提交事务失败: {e}"))?;
 
-    let _ = sqlx::query(
+    let update_run_sql = if is_postgres {
+        r#"
+        UPDATE sniffer_run
+        SET finished_at = CURRENT_TIMESTAMP,
+            ok = TRUE,
+            item_count = $2,
+            snapshot_id = $3::uuid
+        WHERE CAST(id AS TEXT) = $1
+        "#
+    } else {
         r#"
         UPDATE sniffer_run
         SET finished_at = CURRENT_TIMESTAMP,
@@ -478,13 +542,14 @@ async fn run_sync_once_unlocked(state: &AppState) -> Result<SnifferSyncReport, S
             item_count = $2,
             snapshot_id = $3
         WHERE CAST(id AS TEXT) = $1
-        "#,
-    )
-    .bind(&run_id)
-    .bind(item_count)
-    .bind(&snapshot_id)
-    .execute(pool)
-    .await;
+        "#
+    };
+    let _ = sqlx::query(update_run_sql)
+        .bind(&run_id)
+        .bind(item_count)
+        .bind(&snapshot_id)
+        .execute(pool)
+        .await;
 
     Ok(SnifferSyncReport {
         run_id: run_id.clone(),

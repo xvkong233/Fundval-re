@@ -177,41 +177,101 @@ pub async fn retrieve(
 
     let gamma = q.gamma.unwrap_or(3.0);
 
-    let source_name_raw = q.source.as_deref().unwrap_or(sources::SOURCE_TIANTIAN);
-    let Some(source_name) = sources::normalize_source_name(source_name_raw) else {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(json!({ "error": format!("数据源 {source_name_raw} 不存在") })),
-        )
-            .into_response();
-    };
-
-    let rows = sqlx::query(
-        r#"
-        SELECT
-          CAST(h.unit_nav AS TEXT) as unit_nav
-        FROM fund_nav_history h
-        JOIN fund f ON f.id = h.fund_id
-        WHERE f.fund_code = $1 AND h.source_name = $2
-        ORDER BY h.nav_date DESC
-        LIMIT $3
-        "#,
-    )
-    .bind(code)
-    .bind(source_name)
-    .bind(n)
-    .fetch_all(pool)
-    .await;
-
-    let rows = match rows {
-        Ok(v) => v,
-        Err(e) => {
+    // source 选择逻辑：
+    // - 如果显式传了 source：只用该 source（保持确定性）。
+    // - 否则：优先使用 crawl_source，其次用 crawl_source_fallbacks，再兜底内置 sources。
+    let explicit_source = q.source.as_deref();
+    let mut source_candidates: Vec<&'static str> = Vec::new();
+    if let Some(raw) = explicit_source {
+        let Some(s) = sources::normalize_source_name(raw) else {
             return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                errors::internal_json(&state, e),
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": format!("数据源 {raw} 不存在") })),
             )
                 .into_response();
+        };
+        source_candidates.push(s);
+    } else {
+        let primary_raw = state
+            .config()
+            .get_string("crawl_source")
+            .unwrap_or_else(|| sources::SOURCE_TIANTIAN.to_string());
+        if let Some(s) = sources::normalize_source_name(&primary_raw) {
+            source_candidates.push(s);
         }
+
+        let fallbacks_raw = state
+            .config()
+            .get_string("crawl_source_fallbacks")
+            .unwrap_or_default();
+        for p in fallbacks_raw.split(',') {
+            let s = p.trim();
+            if s.is_empty() {
+                continue;
+            }
+            if let Some(n) = sources::normalize_source_name(s) {
+                source_candidates.push(n);
+            }
+        }
+
+        for s in sources::BUILTIN_SOURCES {
+            source_candidates.push(s);
+        }
+
+        // 去重但保持顺序
+        let mut dedup: Vec<&'static str> = Vec::new();
+        for s in source_candidates {
+            if !dedup.contains(&s) {
+                dedup.push(s);
+            }
+        }
+        source_candidates = dedup;
+    }
+
+    let mut source_name: Option<&'static str> = None;
+    let mut rows: Vec<sqlx::any::AnyRow> = Vec::new();
+    for s in source_candidates {
+        let rs = sqlx::query(
+            r#"
+            SELECT
+              CAST(h.unit_nav AS TEXT) as unit_nav
+            FROM fund_nav_history h
+            JOIN fund f ON f.id = h.fund_id
+            WHERE f.fund_code = $1 AND h.source_name = $2
+            ORDER BY h.nav_date DESC
+            LIMIT $3
+            "#,
+        )
+        .bind(code)
+        .bind(s)
+        .bind(n)
+        .fetch_all(pool)
+        .await;
+
+        let rs = match rs {
+            Ok(v) => v,
+            Err(e) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    errors::internal_json(&state, e),
+                )
+                    .into_response();
+            }
+        };
+
+        if rs.len() >= 2 {
+            source_name = Some(s);
+            rows = rs;
+            break;
+        }
+    }
+
+    let Some(source_name) = source_name else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "净值数据不足（请先同步该基金净值）" })),
+        )
+            .into_response();
     };
 
     let mut navs: Vec<f64> = Vec::with_capacity(rows.len());
@@ -349,7 +409,11 @@ pub async fn retrieve(
             .fetch_optional(pool)
             .await;
         let fund_type = match fund_type_row {
-            Ok(Some(r)) => r.get::<String, _>("fund_type"),
+            Ok(Some(r)) => r
+                .try_get::<Option<String>, _>("fund_type")
+                .ok()
+                .flatten()
+                .unwrap_or_default(),
             Ok(None) => "".to_string(),
             Err(e) => {
                 return (
@@ -365,6 +429,14 @@ pub async fn retrieve(
             if let Some(vs) = vs {
                 candidates.push((vs, ce));
             }
+        }
+    }
+
+    // Fallback：没有行业/类型时，仍给出“全市场”对比，保证性价比不空。
+    if candidates.is_empty() {
+        let (vs, ce) = compute_value_score_and_ce_overall(pool, &ctx).await;
+        if let Some(vs) = vs {
+            candidates.push((vs, ce));
         }
     }
 
@@ -508,6 +580,147 @@ async fn compute_value_score_and_ce_by_fund_type(
         peer_name: fund_type.to_string(),
         peer_code: None,
         fund_type: fund_type.to_string(),
+        score_0_100: vs.score_0_100,
+        percentile_0_100: vs.percentile_0_100,
+        sample_size: vs.sample_size as i64,
+        components: vs
+            .components
+            .into_iter()
+            .map(|c| ValueScoreComponentOut {
+                name: c.name.to_string(),
+                percentile_0_100: c.percentile_0_100,
+                weight: c.weight,
+                weighted: c.weighted,
+            })
+            .collect::<Vec<_>>(),
+    });
+
+    let ce_out = {
+        let target = ces
+            .iter()
+            .find(|(c, _)| c == ctx.target_code)
+            .map(|(_, x)| *x);
+        target.map(|t| {
+            let values = ces.iter().map(|(_, x)| x.ce).collect::<Vec<_>>();
+            let p = percentile_high_better(&values, t.ce);
+            CeOut {
+                gamma: t.gamma,
+                ce: t.ce,
+                ann_excess: t.ann_excess,
+                ann_var: t.ann_var,
+                percentile_0_100: p,
+            }
+        })
+    };
+
+    (value_score_out, ce_out)
+}
+
+async fn compute_value_score_and_ce_overall(
+    pool: &sqlx::AnyPool,
+    ctx: &PeerComputeCtx<'_>,
+) -> (Option<ValueScoreOut>, Option<CeOut>) {
+    let rows = sqlx::query(
+        r#"
+        SELECT f.fund_code as fund_code
+        FROM fund f
+        JOIN fund_nav_history h ON h.fund_id = f.id
+        WHERE h.source_name = $1
+        GROUP BY f.fund_code
+        ORDER BY f.fund_code ASC
+        LIMIT 500
+        "#,
+    )
+    .bind(ctx.source_name)
+    .fetch_all(pool)
+    .await;
+
+    let rows = match rows {
+        Ok(v) => v,
+        Err(_) => return (None, None),
+    };
+
+    if rows.len() < 3 {
+        return (None, None);
+    }
+
+    let mut samples: Vec<analytics::value_score::SampleMetrics> = Vec::with_capacity(rows.len());
+    let mut ces: Vec<(String, analytics::ce::CeResult)> = Vec::new();
+
+    for r in rows {
+        let code: String = r.get("fund_code");
+        let code = code.trim();
+        if code.is_empty() {
+            continue;
+        }
+
+        let nav_rows = sqlx::query(
+            r#"
+            SELECT CAST(h.unit_nav AS TEXT) as unit_nav
+            FROM fund_nav_history h
+            JOIN fund f ON f.id = h.fund_id
+            WHERE f.fund_code = $1 AND h.source_name = $2
+            ORDER BY h.nav_date DESC
+            LIMIT $3
+            "#,
+        )
+        .bind(code)
+        .bind(ctx.source_name)
+        .bind(ctx.n)
+        .fetch_all(pool)
+        .await;
+
+        let nav_rows = match nav_rows {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        let mut navs: Vec<f64> = Vec::with_capacity(nav_rows.len());
+        for rr in nav_rows.into_iter().rev() {
+            let s: String = rr.get("unit_nav");
+            if let Ok(v) = s.trim().parse::<f64>() {
+                if v > 0.0 {
+                    navs.push(v);
+                }
+            }
+        }
+        if navs.len() < 2 {
+            continue;
+        }
+
+        let m = match analytics::metrics::compute_metrics_from_navs(&navs, ctx.rf_percent) {
+            Some(v) => v,
+            None => continue,
+        };
+
+        let ann_return = compute_ann_return_from_navs(&navs);
+        let mdd_mag = (-m.max_drawdown).max(0.0);
+        let calmar = ann_return.and_then(|r| {
+            if mdd_mag > 0.0 { Some(r / mdd_mag) } else { None }
+        });
+
+        samples.push(analytics::value_score::SampleMetrics {
+            fund_code: code.to_string(),
+            ann_return,
+            ann_vol: Some(m.ann_vol),
+            max_drawdown: Some(mdd_mag),
+            sharpe: m.sharpe,
+            calmar,
+        });
+
+        if let Some(ce) = analytics::ce::compute_ce_from_navs(&navs, ctx.rf_percent, ctx.gamma) {
+            ces.push((code.to_string(), ce));
+        }
+    }
+
+    let weights = analytics::value_score::ValueScoreWeights::default();
+    let value_score = analytics::value_score::compute_value_score(&samples, ctx.target_code, &weights);
+
+    let value_score_out = value_score.map(|vs| ValueScoreOut {
+        peer_kind: "overall".to_string(),
+        peer_name: "全市场".to_string(),
+        peer_code: None,
+        fund_type: "全市场".to_string(),
         score_0_100: vs.score_0_100,
         percentile_0_100: vs.percentile_0_100,
         sample_size: vs.sample_size as i64,

@@ -275,7 +275,7 @@ pub async fn accuracy(
 
     let rows: Vec<(f64,)> = match sqlx::query_as(
         r#"
-        SELECT CAST(error_rate AS REAL) as error_rate
+        SELECT CAST(error_rate AS DOUBLE PRECISION) as error_rate
         FROM estimate_accuracy
         WHERE source_name = $1 AND error_rate IS NOT NULL
         ORDER BY estimate_date DESC

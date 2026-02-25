@@ -23,7 +23,7 @@ Docker（Windows PowerShell 推荐）
 
  常用覆盖：
 
-  .\scripts\compose-dev.ps1 up -ProjectName fundval-dev -FrontendPort 19700 -BackendPort 19701
+  .\scripts\compose-dev.ps1 up -ProjectName fundval-dev -FrontendPort 19700 -BackendPort 19701 -QuantPort 19702
 
 基金接口检查（smoke）
 -------------------

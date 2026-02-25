@@ -115,6 +115,21 @@ impl ConfigStore {
         if let Ok(v) = std::env::var("CRAWL_SOURCE_FALLBACKS") {
             data.insert("crawl_source_fallbacks".into(), Value::String(v));
         }
+        if let Some(v) = std::env::var("TASK_RUN_MAX_JOBS")
+            .ok()
+            .and_then(|s| s.parse::<i64>().ok())
+        {
+            data.insert(
+                "task_run_max_jobs".into(),
+                Value::Number(serde_json::Number::from(v)),
+            );
+        }
+        if let Ok(v) = std::env::var("QUANT_SERVICE_URL") {
+            let v = v.trim().to_string();
+            if !v.is_empty() {
+                data.insert("quant_service_url".into(), Value::String(v));
+            }
+        }
 
         Self {
             path,
@@ -253,6 +268,10 @@ fn default_config() -> BTreeMap<String, Value> {
     m.insert("system_initialized".into(), Value::Bool(false));
     m.insert("debug".into(), Value::Bool(false));
     m.insert("estimate_cache_ttl".into(), Value::Number(5.into()));
+    // 估值：默认启用“异步实时估值”（接口只读缓存 + 入队刷新），避免批量请求触发上游封锁。
+    m.insert("estimate_async_enabled".into(), Value::Bool(true));
+    // 估值入队：每 tick 最多入队多少 estimate_sync（自选/持仓优先，其余全市场慢速播种）。
+    m.insert("estimate_enqueue_max_jobs".into(), Value::Number(50.into()));
     m.insert("sources_health_probe".into(), Value::Bool(true));
     m.insert("tushare_token".into(), Value::Null);
     // crawl / cache: 自选/持仓优先，分批播种全量，避免触发数据源封锁
@@ -273,6 +292,13 @@ fn default_config() -> BTreeMap<String, Value> {
     m.insert(
         "crawl_source_fallbacks".into(),
         Value::String("danjuan,ths".into()),
+    );
+    // task_job：每轮最多执行多少个异步任务（signals_batch 等计算类任务）。
+    m.insert("task_run_max_jobs".into(), Value::Number(5.into()));
+    // 独立量化服务（Python/FastAPI）。
+    m.insert(
+        "quant_service_url".into(),
+        Value::String("http://localhost:8002".into()),
     );
     m
 }

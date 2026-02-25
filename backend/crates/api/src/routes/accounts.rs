@@ -9,6 +9,7 @@ use serde_json::json;
 use sqlx::Row;
 use uuid::Uuid;
 
+use crate::db::DatabaseKind;
 use crate::routes::auth;
 use crate::routes::errors;
 use crate::state::AppState;
@@ -388,19 +389,27 @@ pub async fn create(
             .into_response();
     }
 
-    if let Err(e) = sqlx::query(
+    let is_postgres = state.db_kind() == DatabaseKind::Postgres;
+    let sql = if is_postgres {
         r#"
-        INSERT INTO account (id, user_id, name, parent_id, is_default, created_at, updated_at)
-        VALUES (CAST($1 AS uuid), $2, $3, CAST($4 AS uuid), $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        "#,
-    )
-    .bind(&id)
-    .bind(user_id_i64)
-    .bind(&name)
-    .bind(parent_id.clone())
-    .bind(is_default)
-    .execute(&mut *tx)
-    .await
+            INSERT INTO account (id, user_id, name, parent_id, is_default, created_at, updated_at)
+            VALUES (($1)::uuid, $2, $3, ($4)::uuid, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        "#
+    } else {
+        r#"
+            INSERT INTO account (id, user_id, name, parent_id, is_default, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        "#
+    };
+
+    if let Err(e) = sqlx::query(sql)
+        .bind(&id)
+        .bind(user_id_i64)
+        .bind(&name)
+        .bind(parent_id.clone())
+        .bind(is_default)
+        .execute(&mut *tx)
+        .await
     {
         let _ = tx.rollback().await;
         return (
@@ -813,23 +822,35 @@ async fn update_internal(
             .into_response();
     }
 
-    if let Err(e) = sqlx::query(
+    let is_postgres = state.db_kind() == DatabaseKind::Postgres;
+    let sql = if is_postgres {
         r#"
-        UPDATE account
-        SET name = $1,
-            parent_id = CAST($2 AS uuid),
-            is_default = $3,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE CAST(id AS TEXT) = $4 AND user_id = $5
-        "#,
-    )
-    .bind(&next_name)
-    .bind(next_parent.clone())
-    .bind(next_is_default)
-    .bind(&existing_row.id)
-    .bind(user_id_i64)
-    .execute(&mut *tx)
-    .await
+            UPDATE account
+            SET name = $1,
+                parent_id = ($2)::uuid,
+                is_default = $3,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE CAST(id AS TEXT) = $4 AND user_id = $5
+        "#
+    } else {
+        r#"
+            UPDATE account
+            SET name = $1,
+                parent_id = $2,
+                is_default = $3,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE CAST(id AS TEXT) = $4 AND user_id = $5
+        "#
+    };
+
+    if let Err(e) = sqlx::query(sql)
+        .bind(&next_name)
+        .bind(next_parent.clone())
+        .bind(next_is_default)
+        .bind(&existing_row.id)
+        .bind(user_id_i64)
+        .execute(&mut *tx)
+        .await
     {
         let _ = tx.rollback().await;
         return (

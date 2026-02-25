@@ -39,6 +39,11 @@ pub struct WatchlistItemResponse {
     pub fund_code: String,
     pub fund_name: String,
     pub fund_type: Option<String>,
+    pub latest_nav: Option<String>,
+    pub latest_nav_date: Option<String>,
+    pub estimate_nav: Option<String>,
+    pub estimate_growth: Option<String>,
+    pub estimate_time: Option<String>,
     pub order: i32,
     pub created_at: String,
 }
@@ -188,17 +193,33 @@ pub async fn create(
 
     let id = Uuid::new_v4().to_string();
     let created_at = Utc::now();
-    let inserted = sqlx::query(
-        r#"
+    let sql_pg = r#"
+        INSERT INTO watchlist (id, user_id, name, created_at)
+        VALUES (($1)::uuid,$2,$3,CURRENT_TIMESTAMP)
+    "#;
+    let sql_any = r#"
         INSERT INTO watchlist (id, user_id, name, created_at)
         VALUES ($1,$2,$3,CURRENT_TIMESTAMP)
-        "#,
-    )
-    .bind(&id)
-    .bind(user_id_i64)
-    .bind(&name)
-    .execute(pool)
-    .await;
+    "#;
+
+    let inserted = sqlx::query(sql_pg)
+        .bind(&id)
+        .bind(user_id_i64)
+        .bind(&name)
+        .execute(pool)
+        .await;
+
+    let inserted = if inserted.is_ok() {
+        Ok(())
+    } else {
+        sqlx::query(sql_any)
+            .bind(&id)
+            .bind(user_id_i64)
+            .bind(&name)
+            .execute(pool)
+            .await
+            .map(|_| ())
+    };
 
     if let Err(e) = inserted {
         return (
@@ -647,19 +668,35 @@ pub async fn items_add(
     let next_order = max_order.unwrap_or(-1) + 1;
 
     let item_id = Uuid::new_v4().to_string();
-    if let Err(e) = sqlx::query(
-        r#"
+    let sql_pg = r#"
+        INSERT INTO watchlist_item (id, watchlist_id, fund_id, "order", created_at)
+        VALUES (($1)::uuid,($2)::uuid,($3)::uuid,$4,CURRENT_TIMESTAMP)
+    "#;
+    let sql_any = r#"
         INSERT INTO watchlist_item (id, watchlist_id, fund_id, "order", created_at)
         VALUES ($1,$2,$3,$4,CURRENT_TIMESTAMP)
-        "#,
-    )
-    .bind(&item_id)
-    .bind(&id_str)
-    .bind(&fund_id)
-    .bind(next_order)
-    .execute(pool)
-    .await
-    {
+    "#;
+
+    let r = sqlx::query(sql_pg)
+        .bind(&item_id)
+        .bind(&id_str)
+        .bind(&fund_id)
+        .bind(next_order)
+        .execute(pool)
+        .await;
+
+    if let Err(e) = if r.is_ok() {
+        Ok(())
+    } else {
+        sqlx::query(sql_any)
+            .bind(&item_id)
+            .bind(&id_str)
+            .bind(&fund_id)
+            .bind(next_order)
+            .execute(pool)
+            .await
+            .map(|_| ())
+    } {
         return (
             StatusCode::BAD_REQUEST,
             errors::masked_json(&state, "添加基金到自选失败", e),
@@ -898,6 +935,11 @@ async fn load_items(
               f.fund_code,
               f.fund_name,
               f.fund_type,
+              CAST(f.latest_nav AS TEXT) as latest_nav,
+              CAST(f.latest_nav_date AS TEXT) as latest_nav_date,
+              CAST(f.estimate_nav AS TEXT) as estimate_nav,
+              CAST(f.estimate_growth AS TEXT) as estimate_growth,
+              CAST(f.estimate_time AS TEXT) as estimate_time,
               i."order" as "order",
               CAST(i.created_at AS TEXT) as created_at
             FROM watchlist_item i
@@ -945,6 +987,13 @@ async fn load_items(
                 fund_code: row.get::<String, _>("fund_code"),
                 fund_name: row.get::<String, _>("fund_name"),
                 fund_type: row.get::<Option<String>, _>("fund_type"),
+                latest_nav: row.get::<Option<String>, _>("latest_nav"),
+                latest_nav_date: row.get::<Option<String>, _>("latest_nav_date"),
+                estimate_nav: row.get::<Option<String>, _>("estimate_nav"),
+                estimate_growth: row.get::<Option<String>, _>("estimate_growth"),
+                estimate_time: row
+                    .get::<Option<String>, _>("estimate_time")
+                    .map(|s| dbfmt::datetime_to_rfc3339(&s)),
                 order: row.get::<i32, _>("order"),
                 created_at: dbfmt::datetime_to_rfc3339(&row.get::<String, _>("created_at")),
             });

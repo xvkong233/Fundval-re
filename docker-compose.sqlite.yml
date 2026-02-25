@@ -1,4 +1,25 @@
 services:
+  quant-service:
+    build:
+      context: ./quant-service
+    environment:
+      - PORT=8002
+      - TZ=${TZ:-Asia/Shanghai}
+    ports:
+      - "${QUANT_HOST_PORT:-8002}:8002"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8002/health').read(); print('ok')\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - fundval
+
   backend:
     build:
       context: ./backend
@@ -6,6 +27,7 @@ services:
       - PORT=8001
       # SQLite 发行/本地方案：不依赖 Postgres 服务
       - DATABASE_URL=sqlite:data/fundval.sqlite
+      - QUANT_SERVICE_URL=http://quant-service:8002
       - SECRET_KEY=${SECRET_KEY:-django-insecure-dev-only}
       - CORS_ALLOW_ORIGINS=${CORS_ALLOW_ORIGINS:-}
       - REQUIRE_SECURE_SECRET=${REQUIRE_SECURE_SECRET:-false}
@@ -15,6 +37,9 @@ services:
     volumes:
       - config_data:/app/config
       - sqlite_data:/app/data
+    depends_on:
+      quant-service:
+        condition: service_healthy
     ports:
       - "${BACKEND_HOST_PORT:-8001}:8001"
     healthcheck:

@@ -970,26 +970,53 @@ pub async fn operations_create(
         }
     };
 
-    if let Err(e) = sqlx::query(
-        r#"
+    let sql_pg = r#"
+        INSERT INTO position_operation (
+          id, account_id, fund_id, operation_type, operation_date, before_15, amount, share, nav, created_at
+        )
+        VALUES (
+          ($1)::uuid,($2)::uuid,($3)::uuid,$4,($5)::date,$6,
+          ($7)::numeric,($8)::numeric,($9)::numeric,
+          CURRENT_TIMESTAMP
+        )
+    "#;
+    let sql_any = r#"
         INSERT INTO position_operation (
           id, account_id, fund_id, operation_type, operation_date, before_15, amount, share, nav, created_at
         )
         VALUES ($1,$2,$3,$4,$5,$6,CAST($7 AS NUMERIC),CAST($8 AS NUMERIC),CAST($9 AS NUMERIC),CURRENT_TIMESTAMP)
-        "#,
-    )
-    .bind(&id)
-    .bind(&account_id_str)
-    .bind(&fund_id)
-    .bind(&operation_type)
-    .bind(operation_date.to_string())
-    .bind(body.before_15)
-    .bind(amount.to_string())
-    .bind(share.to_string())
-    .bind(nav.to_string())
-    .execute(&mut *tx)
-    .await
-    {
+    "#;
+
+    let r = sqlx::query(sql_pg)
+        .bind(&id)
+        .bind(&account_id_str)
+        .bind(&fund_id)
+        .bind(&operation_type)
+        .bind(operation_date.to_string())
+        .bind(body.before_15)
+        .bind(amount.to_string())
+        .bind(share.to_string())
+        .bind(nav.to_string())
+        .execute(&mut *tx)
+        .await;
+
+    if let Err(e) = if r.is_ok() {
+        Ok(())
+    } else {
+        sqlx::query(sql_any)
+            .bind(&id)
+            .bind(&account_id_str)
+            .bind(&fund_id)
+            .bind(&operation_type)
+            .bind(operation_date.to_string())
+            .bind(body.before_15)
+            .bind(amount.to_string())
+            .bind(share.to_string())
+            .bind(nav.to_string())
+            .execute(&mut *tx)
+            .await
+            .map(|_| ())
+    } {
         let _ = tx.rollback().await;
         return (
             StatusCode::BAD_REQUEST,
@@ -1471,8 +1498,16 @@ async fn recalculate_position(
     };
 
     let position_id = Uuid::new_v4().to_string();
-    sqlx::query(
-        r#"
+    let sql_pg = r#"
+        INSERT INTO position (id, account_id, fund_id, holding_share, holding_cost, holding_nav, updated_at)
+        VALUES (($1)::uuid,($2)::uuid,($3)::uuid,($4)::numeric,($5)::numeric,($6)::numeric,CURRENT_TIMESTAMP)
+        ON CONFLICT (account_id, fund_id) DO UPDATE
+        SET holding_share = EXCLUDED.holding_share,
+            holding_cost = EXCLUDED.holding_cost,
+            holding_nav = EXCLUDED.holding_nav,
+            updated_at = CURRENT_TIMESTAMP
+    "#;
+    let sql_any = r#"
         INSERT INTO position (id, account_id, fund_id, holding_share, holding_cost, holding_nav, updated_at)
         VALUES ($1,$2,$3,CAST($4 AS NUMERIC),CAST($5 AS NUMERIC),CAST($6 AS NUMERIC),CURRENT_TIMESTAMP)
         ON CONFLICT (account_id, fund_id) DO UPDATE
@@ -1480,17 +1515,30 @@ async fn recalculate_position(
             holding_cost = EXCLUDED.holding_cost,
             holding_nav = EXCLUDED.holding_nav,
             updated_at = CURRENT_TIMESTAMP
-        "#,
-    )
-    .bind(&position_id)
-    .bind(account_id)
-    .bind(fund_id)
-    .bind(rescale(total_share, 4).to_string())
-    .bind(rescale(total_cost, 2).to_string())
-    .bind(holding_nav.to_string())
-    .execute(&mut **tx)
-    .await
-    .map_err(|e| e.to_string())?;
+    "#;
+
+    let r = sqlx::query(sql_pg)
+        .bind(&position_id)
+        .bind(account_id)
+        .bind(fund_id)
+        .bind(rescale(total_share, 4).to_string())
+        .bind(rescale(total_cost, 2).to_string())
+        .bind(holding_nav.to_string())
+        .execute(&mut **tx)
+        .await;
+
+    if r.is_err() {
+        sqlx::query(sql_any)
+            .bind(&position_id)
+            .bind(account_id)
+            .bind(fund_id)
+            .bind(rescale(total_share, 4).to_string())
+            .bind(rescale(total_cost, 2).to_string())
+            .bind(holding_nav.to_string())
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
 
     Ok(())
 }

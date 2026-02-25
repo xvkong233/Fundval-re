@@ -1,12 +1,12 @@
 "use client";
 
 import {
-  Affix,
   Badge,
   Button,
   Card,
   Col,
   Divider,
+  Grid,
   Input,
   List,
   Result,
@@ -26,7 +26,13 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ReloadOutlined, SyncOutlined } from "@ant-design/icons";
 import { AuthedLayout } from "../../components/AuthedLayout";
-import { adminSnifferSync, batchFundSignals, getSnifferItems, getSnifferStatus } from "../../lib/api";
+import {
+  adminSnifferSync,
+  enqueueBatchFundSignals,
+  getBatchFundSignalsPage,
+  getSnifferItems,
+  getSnifferStatus,
+} from "../../lib/api";
 import { useAuth } from "../../contexts/AuthContext";
 import { buildSnifferAdvice, type SnifferSignalsSummary } from "../../lib/snifferAdvice";
 import { selectSnifferSignalCandidateCodes } from "../../lib/snifferSignalCandidates";
@@ -61,6 +67,47 @@ type SnifferStatusResponse = {
   last_snapshot?: any | null;
 };
 
+type SignalsBatchTaskCacheV1 = {
+  v: 1;
+  candidate_key: string;
+  task_id: string;
+  source: string;
+  created_at_ms: number;
+};
+
+const SIGNALS_BATCH_TASK_CACHE_KEY = "fv.sniffer.signals_batch_task.v1";
+const SIGNALS_BATCH_TASK_CACHE_TTL_MS = 60 * 60 * 1000;
+
+function readSignalsBatchTaskCache(): SignalsBatchTaskCacheV1 | null {
+  try {
+    const raw = sessionStorage.getItem(SIGNALS_BATCH_TASK_CACHE_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as SignalsBatchTaskCacheV1;
+    if (!v || v.v !== 1) return null;
+    if (!v.task_id || !v.candidate_key) return null;
+    if (typeof v.created_at_ms !== "number" || !Number.isFinite(v.created_at_ms)) return null;
+    return v;
+  } catch {
+    return null;
+  }
+}
+
+function writeSignalsBatchTaskCache(v: SignalsBatchTaskCacheV1) {
+  try {
+    sessionStorage.setItem(SIGNALS_BATCH_TASK_CACHE_KEY, JSON.stringify(v));
+  } catch {
+    // ignore
+  }
+}
+
+function clearSignalsBatchTaskCache() {
+  try {
+    sessionStorage.removeItem(SIGNALS_BATCH_TASK_CACHE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 function toNumber(value: string | null | undefined): number | null {
   if (!value) return null;
   const n = Number.parseFloat(String(value));
@@ -82,6 +129,9 @@ function bucketLabel(bucket: any) {
 export default function SnifferPage() {
   const { user } = useAuth();
   const isAdmin = String(user?.role ?? "") === "admin";
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
+  const isDesktop = Boolean(screens.lg);
 
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -95,6 +145,8 @@ export default function SnifferPage() {
 
   const [signalsLoading, setSignalsLoading] = useState(false);
   const [signalsByFund, setSignalsByFund] = useState<Record<string, SnifferSignalsSummary | null>>({});
+  const [signalsTaskId, setSignalsTaskId] = useState<string | null>(null);
+  const [signalsTaskStatus, setSignalsTaskStatus] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -115,8 +167,9 @@ export default function SnifferPage() {
   const triggerAdminSync = async () => {
     setSyncing(true);
     try {
-      await adminSnifferSync();
-      message.success("已触发同步");
+      const r = await adminSnifferSync();
+      const taskId = String(r?.data?.task_id ?? "").trim();
+      message.success(taskId ? `已入队（task_id=${taskId}）` : "已触发同步");
       await load();
     } catch (e: any) {
       message.error(e?.response?.data?.error || "触发同步失败（需要管理员权限）");
@@ -129,15 +182,21 @@ export default function SnifferPage() {
     void load();
   }, []);
 
-  const filteredItems = useMemo(() => {
+  const filteredItemsByFacet = useMemo(() => {
     const base = itemsResp?.items ?? [];
-    const q = search.trim().toLowerCase();
     return base.filter((it) => {
       if (sector && it.sector !== sector) return false;
       if (tags.length > 0) {
         const set = new Set(it.tags ?? []);
         if (!tags.every((t) => set.has(t))) return false;
       }
+      return true;
+    });
+  }, [itemsResp, sector, tags]);
+
+  const filteredItems = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return filteredItemsByFacet.filter((it) => {
       if (q) {
         const name = String(it.fund_name ?? "").toLowerCase();
         const code = String(it.fund_code ?? "").toLowerCase();
@@ -145,21 +204,19 @@ export default function SnifferPage() {
       }
       return true;
     });
-  }, [itemsResp, sector, tags, search]);
+  }, [filteredItemsByFacet, search]);
 
   const advice = useMemo(() => buildSnifferAdvice(filteredItems, signalsByFund), [filteredItems, signalsByFund]);
   const buyList = useMemo(() => advice.buy.slice(0, 10), [advice.buy]);
   const watchList = useMemo(() => advice.watch.slice(0, 10), [advice.watch]);
   const avoidList = useMemo(() => advice.avoid.slice(0, 10), [advice.avoid]);
 
-  const signalCandidateKey = useMemo(
-    () => selectSnifferSignalCandidateCodes(filteredItems, 50).join(","),
-    [filteredItems]
+  const signalCandidateCodes = useMemo(
+    () => selectSnifferSignalCandidateCodes(filteredItemsByFacet, 50),
+    [filteredItemsByFacet]
   );
-  const signalCandidateCount = useMemo(
-    () => (signalCandidateKey ? signalCandidateKey.split(",").filter(Boolean).length : 0),
-    [signalCandidateKey]
-  );
+  const signalCandidateKey = useMemo(() => [...signalCandidateCodes].sort().join(","), [signalCandidateCodes]);
+  const signalCandidateCount = useMemo(() => signalCandidateCodes.length, [signalCandidateCodes]);
   const signalsLoadedCount = useMemo(() => Object.keys(signalsByFund).length, [signalsByFund]);
   const signalsNonNullCount = useMemo(
     () => Object.values(signalsByFund).filter((x) => x !== null).length,
@@ -167,21 +224,104 @@ export default function SnifferPage() {
   );
 
   useEffect(() => {
-    const codes = signalCandidateKey ? signalCandidateKey.split(",").filter(Boolean) : [];
+    const codes = signalCandidateCodes;
     if (!codes.length) {
       setSignalsByFund({});
+      setSignalsTaskId(null);
+      setSignalsTaskStatus(null);
       return;
     }
 
     let cancelled = false;
     const run = async () => {
       setSignalsLoading(true);
+      setSignalsTaskStatus("queued");
       try {
-        const r = await batchFundSignals({ fund_codes: codes, source: "tiantian" }).catch(() => null);
-        if (cancelled) return;
-        const list = Array.isArray(r?.data) ? (r?.data as any[]) : [];
-        const next = liteListToSignalsSummaryByFund(list);
-        setSignalsByFund(next);
+        const source = "tiantian";
+        const now = Date.now();
+        const cached = readSignalsBatchTaskCache();
+        const cachedOk =
+          cached &&
+          cached.v === 1 &&
+          cached.source === source &&
+          cached.candidate_key === signalCandidateKey &&
+          now - cached.created_at_ms >= 0 &&
+          now - cached.created_at_ms <= SIGNALS_BATCH_TASK_CACHE_TTL_MS;
+
+        let taskId = cachedOk ? String(cached!.task_id ?? "").trim() : "";
+        let resumed = Boolean(taskId);
+
+        const enqueueNew = async () => {
+          const enqueueRes = await enqueueBatchFundSignals({ fund_codes: codes, source });
+          const newId = String(enqueueRes?.data?.task_id ?? "").trim();
+          if (!newId) throw new Error("信号任务入队失败：缺少 task_id");
+          taskId = newId;
+          resumed = false;
+          writeSignalsBatchTaskCache({
+            v: 1,
+            candidate_key: signalCandidateKey,
+            task_id: taskId,
+            source,
+            created_at_ms: Date.now(),
+          });
+          if (!cancelled) {
+            setSignalsTaskId(taskId);
+            message.info("信号任务已入队：可在「任务队列」查看进度与日志");
+          }
+        };
+
+        if (!taskId) {
+          await enqueueNew();
+        } else if (!cancelled) {
+          setSignalsTaskId(taskId);
+        }
+
+        const pageSize = 200;
+        const fetchedPages = new Set<number>();
+        while (!cancelled) {
+          let first: any = null;
+          try {
+            first = await getBatchFundSignalsPage(taskId, { page: 1, page_size: pageSize });
+          } catch (e: any) {
+            const status = Number(e?.response?.status ?? 0);
+            const retryable = status === 404 || status === 400;
+            if (resumed && retryable) {
+              clearSignalsBatchTaskCache();
+              fetchedPages.clear();
+              await enqueueNew();
+              continue;
+            }
+            throw e;
+          }
+          if (cancelled) return;
+
+          const status = String(first?.data?.status ?? "");
+          const done = Number(first?.data?.done ?? 0);
+          setSignalsTaskStatus(status || null);
+
+          const pages = Math.max(1, Math.ceil(Math.max(0, done) / pageSize));
+          const all: any[] = [];
+
+          const page1Items = Array.isArray(first?.data?.items) ? (first?.data?.items as any[]) : [];
+          all.push(...page1Items);
+          fetchedPages.add(1);
+
+          for (let p = 2; p <= pages; p++) {
+            if (cancelled) return;
+            if (fetchedPages.has(p) && status === "done") continue;
+            const r = await getBatchFundSignalsPage(taskId, { page: p, page_size: pageSize });
+            const items = Array.isArray(r?.data?.items) ? (r?.data?.items as any[]) : [];
+            all.push(...items);
+            fetchedPages.add(p);
+          }
+
+          setSignalsByFund(liteListToSignalsSummaryByFund(all));
+
+          if (status === "done" || status === "error") {
+            break;
+          }
+          await new Promise((r) => setTimeout(r, 1500));
+        }
       } finally {
         if (!cancelled) setSignalsLoading(false);
       }
@@ -191,7 +331,7 @@ export default function SnifferPage() {
     return () => {
       cancelled = true;
     };
-  }, [signalCandidateKey]);
+  }, [signalCandidateCodes, signalCandidateKey]);
 
   const lastRun = statusResp?.last_run ?? null;
   const lastRunOk = lastRun ? Boolean(lastRun.ok) : null;
@@ -213,10 +353,21 @@ export default function SnifferPage() {
                 text={signalsLoading ? "信号加载中" : `信号 ${signalsLoadedCount}/${signalCandidateCount}`}
               />
               {signalsNonNullCount > 0 ? <Tag color="blue">有效信号 {signalsNonNullCount}</Tag> : null}
+              {signalsTaskStatus ? <Tag color="purple">任务 {signalsTaskStatus}</Tag> : null}
+              {signalsTaskId ? (
+                <Tag color="geekblue" style={{ maxWidth: 260 }}>
+                  <span style={{ display: "inline-block", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {signalsTaskId}
+                  </span>
+                </Tag>
+              ) : null}
             </Space>
           }
           extra={
             <Space wrap>
+              <Link href="/tasks" style={{ whiteSpace: "nowrap" }}>
+                任务队列
+              </Link>
               <Text type="secondary" style={{ fontSize: 12 }}>
                 来源：<Text code>{itemsResp?.source_url || "https://sq.deepq.tech/star/api/data"}</Text>
               </Text>
@@ -278,11 +429,11 @@ export default function SnifferPage() {
               }
               styles={{ body: { padding: 12 } }}
             >
-              <Space wrap style={{ width: "100%", justifyContent: "space-between" }} size={[8, 8]}>
-                <Space wrap size={[8, 8]}>
+              <div className="fv-toolbar">
+                <div className="fv-toolbarLeft fv-toolbarScroll">
                   <Select
                     allowClear
-                    style={{ width: 200 }}
+                    style={{ width: isMobile ? 140 : 200 }}
                     placeholder="板块"
                     value={sector ?? undefined}
                     onChange={(v) => setSector(v ? String(v) : null)}
@@ -291,7 +442,7 @@ export default function SnifferPage() {
                   <Select
                     mode="multiple"
                     allowClear
-                    style={{ width: 320 }}
+                    style={{ width: isMobile ? 220 : 320 }}
                     placeholder="标签（多选）"
                     value={tags}
                     onChange={(v) => setTags(Array.isArray(v) ? (v as string[]).map(String) : [])}
@@ -299,13 +450,13 @@ export default function SnifferPage() {
                   />
                   <Input
                     placeholder="搜索：名称/代码"
-                    style={{ width: 260 }}
+                    style={{ width: isMobile ? 180 : 260 }}
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     allowClear
                   />
-                </Space>
-                <Space wrap>
+                </div>
+                <div className="fv-toolbarRight fv-toolbarScroll">
                   <Button
                     icon={<ReloadOutlined />}
                     onClick={() => {
@@ -316,8 +467,8 @@ export default function SnifferPage() {
                   >
                     清空筛选
                   </Button>
-                </Space>
-              </Space>
+                </div>
+              </div>
 
               <div style={{ marginTop: 12 }}>
                 {loading ? (
@@ -340,13 +491,19 @@ export default function SnifferPage() {
                     }
                   />
                 ) : (
-                  <Table<SnifferItem>
-                    rowKey={(r) => r.fund_code}
-                    dataSource={filteredItems}
-                    size="small"
-                    pagination={{ pageSize: 50, showSizeChanger: true }}
-                    scroll={{ x: "max-content", y: 640 }}
-                    sticky
+                   <Table<SnifferItem>
+                     rowKey={(r) => r.fund_code}
+                     dataSource={filteredItems}
+                     size="small"
+                    pagination={{
+                      pageSize: isMobile ? 20 : 50,
+                      showSizeChanger: true,
+                      showQuickJumper: !isMobile,
+                      simple: isMobile,
+                      showLessItems: isMobile,
+                    }}
+                    scroll={{ x: "max-content" }}
+                    sticky={isDesktop}
                     columns={[
                       {
                         title: "基金",
@@ -392,12 +549,14 @@ export default function SnifferPage() {
                         title: "板块",
                         dataIndex: "sector",
                         width: 160,
+                        responsive: ["md"],
                         sorter: (a, b) => String(a.sector).localeCompare(String(b.sector)),
                       },
                       {
                         title: "星级",
                         dataIndex: "star_count",
                         width: 120,
+                        responsive: ["md"],
                         render: (v: any) => <Text>{starsText(typeof v === "number" ? v : null)}</Text>,
                         sorter: (a, b) => (a.star_count ?? -1) - (b.star_count ?? -1),
                         defaultSortOrder: "descend",
@@ -413,6 +572,7 @@ export default function SnifferPage() {
                         title: "年涨幅",
                         dataIndex: "year_growth",
                         width: 140,
+                        responsive: ["md"],
                         render: (v: any) => (v ? `${String(v)}%` : "-"),
                         sorter: (a, b) => (toNumber(a.year_growth) ?? -Infinity) - (toNumber(b.year_growth) ?? -Infinity),
                       },
@@ -420,6 +580,7 @@ export default function SnifferPage() {
                         title: "最大回撤",
                         dataIndex: "max_drawdown",
                         width: 140,
+                        responsive: ["md"],
                         render: (v: any) => (v ? `${String(v)}%` : "-"),
                         sorter: (a, b) =>
                           (toNumber(a.max_drawdown) ?? -Infinity) - (toNumber(b.max_drawdown) ?? -Infinity),
@@ -427,6 +588,7 @@ export default function SnifferPage() {
                       {
                         title: "标签",
                         dataIndex: "tags",
+                        responsive: ["lg"],
                         render: (v: any) => {
                           const list = Array.isArray(v) ? (v as string[]) : [];
                           if (!list.length) return "-";
@@ -444,6 +606,7 @@ export default function SnifferPage() {
                         title: "规模",
                         dataIndex: "fund_size_text",
                         width: 180,
+                        responsive: ["lg"],
                         render: (v: any) => (v ? String(v) : "-"),
                       },
                     ]}
@@ -454,7 +617,7 @@ export default function SnifferPage() {
           </Col>
 
           <Col xs={24} lg={7}>
-            <Affix offsetTop={80}>
+            <div style={isDesktop ? { position: "sticky", top: 80 } : undefined}>
               <Card
                 title="购买建议"
                 extra={
@@ -463,7 +626,15 @@ export default function SnifferPage() {
                     {signalsLoading ? <Tag>加载信号…</Tag> : null}
                   </Space>
                 }
-                styles={{ body: { padding: 12 } }}
+                styles={{
+                  body: isDesktop
+                    ? {
+                        padding: 12,
+                        maxHeight: "calc(100vh - 140px)",
+                        overflowY: "auto",
+                      }
+                    : { padding: 12 },
+                }}
               >
                 <Paragraph type="secondary" style={{ marginBottom: 12 }}>
                   结合位置（20/60/20）、抄底/反转概率（20T/5T）与星级/回撤，给出“买入候选/观望/回避”的中性分桶。
@@ -612,7 +783,7 @@ export default function SnifferPage() {
                   风险提示：所有建议均不构成投资建议；请结合你的持有周期（自然日/交易日）与风险承受能力。
                 </Text>
               </Card>
-            </Affix>
+            </div>
           </Col>
         </Row>
       </Space>

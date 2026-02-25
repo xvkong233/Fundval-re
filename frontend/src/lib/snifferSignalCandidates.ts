@@ -26,6 +26,10 @@ export function selectSnifferSignalCandidateCodes(items: CandidateItem[], limit 
 
   const sort = (a: (typeof normalized)[number], b: (typeof normalized)[number]) => {
     if (b.score !== a.score) return b.score - a.score;
+    // 旧实现用 idx 作为 tie-break，会导致“相同 score 的候选集合”在输入顺序变化时不稳定，
+    // 进而使嗅探页 signalCandidateKey 波动、触发重复入队。这里改为按 fundCode 字典序稳定排序。
+    const c = a.fundCode.localeCompare(b.fundCode);
+    if (c !== 0) return c;
     return a.idx - b.idx;
   };
 

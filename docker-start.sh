@@ -86,10 +86,12 @@ echo ""
 
 FRONTEND_HOST_PORT="$(resolve_port FRONTEND_HOST_PORT 3000)"
 BACKEND_HOST_PORT="$(resolve_port BACKEND_HOST_PORT 8001)"
+QUANT_HOST_PORT="$(resolve_port QUANT_HOST_PORT 8002)"
 
 echo "Access the application at: http://localhost:$FRONTEND_HOST_PORT"
 echo ""
-echo "API endpoint: http://localhost:$BACKEND_HOST_PORT"
+echo "API endpoint:   http://localhost:$BACKEND_HOST_PORT"
+echo "Quant endpoint: http://localhost:$QUANT_HOST_PORT"
 echo ""
 echo "To view bootstrap key:"
 echo "  $(docker compose version >/dev/null 2>&1 && echo "docker compose" || echo "docker-compose") logs backend | grep 'BOOTSTRAP KEY'"

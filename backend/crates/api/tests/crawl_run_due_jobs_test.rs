@@ -57,7 +57,7 @@ async fn run_due_jobs_marks_success_and_increments_attempt() {
     .await
     .expect("seed job");
 
-    let ran = api::crawl::scheduler::run_due_jobs(&pool, 10, |_| async { Ok(()) })
+    let ran = api::crawl::scheduler::run_due_jobs(&pool, 10, |_, _| async { Ok(()) })
         .await
         .expect("run ok");
     assert_eq!(ran, 1);
@@ -73,7 +73,7 @@ async fn run_due_jobs_marks_success_and_increments_attempt() {
     // 成功后 attempt 应重置，避免历史失败导致后续 backoff 过大。
     assert_eq!(row.get::<i64, _>("attempt"), 0);
     let last_ok_at: Option<String> = row.get("last_ok_at");
-    assert!(last_ok_at.unwrap_or_default().trim().len() > 0);
+    assert!(!last_ok_at.unwrap_or_default().trim().is_empty());
     let last_error: Option<String> = row.get("last_error");
     assert!(last_error.is_none());
 }
@@ -95,7 +95,7 @@ async fn run_due_jobs_records_error_and_backoff() {
     .await
     .expect("seed job");
 
-    let ran = api::crawl::scheduler::run_due_jobs(&pool, 10, |_| async { Err("boom".to_string()) })
+    let ran = api::crawl::scheduler::run_due_jobs(&pool, 10, |_, _| async { Err("boom".to_string()) })
         .await
         .expect("run ok");
     assert_eq!(ran, 1);
@@ -130,7 +130,7 @@ async fn run_due_jobs_updates_daily_counters() {
     .await
     .expect("seed jobs");
 
-    let _ = api::crawl::scheduler::run_due_jobs(&pool, 10, |job| async move {
+    let _ = api::crawl::scheduler::run_due_jobs(&pool, 10, |job, _run_id| async move {
         if job.id == "job-err" {
             return Err("boom".to_string());
         }

@@ -8,7 +8,7 @@ async fn sources_list_returns_builtin_canonical_names() {
     let config = api::config::ConfigStore::load();
     config.set_system_initialized(false);
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(None, config, jwt);
+    let state = AppState::new(None, config, jwt, api::db::DatabaseKind::Sqlite);
     let app = api::service(state);
 
     let res = app
@@ -50,7 +50,7 @@ async fn sources_health_can_be_disabled_for_tests() {
     config.set_system_initialized(false);
     config.set_bool("sources_health_probe", false);
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(None, config, jwt);
+    let state = AppState::new(None, config, jwt, api::db::DatabaseKind::Sqlite);
     let app = api::service(state);
 
     let res = app

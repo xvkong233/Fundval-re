@@ -8,11 +8,13 @@ use std::sync::Arc;
 use tokio::{sync::Semaphore, task::JoinSet};
 use uuid::Uuid;
 
+use crate::db::DatabaseKind;
 use crate::eastmoney;
 use crate::routes::auth;
 use crate::routes::errors;
 use crate::sources;
 use crate::state::AppState;
+use crate::tasks;
 
 async fn upsert_basic_fund(
     pool: &sqlx::AnyPool,
@@ -20,29 +22,41 @@ async fn upsert_basic_fund(
     fund_name: &str,
     fund_type: Option<&str>,
 ) -> Result<(), String> {
+    let is_postgres = crate::db::database_kind_from_pool(pool) == DatabaseKind::Postgres;
     let code = fund_code.trim();
     let name = fund_name.trim();
     if code.is_empty() || name.is_empty() {
         return Err("invalid fund_code/fund_name".to_string());
     }
 
-    sqlx::query(
+    let sql = if is_postgres {
         r#"
-        INSERT INTO fund (id, fund_code, fund_name, fund_type, created_at, updated_at)
-        VALUES (CAST($1 AS uuid), $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        ON CONFLICT (fund_code) DO UPDATE
-          SET fund_name = EXCLUDED.fund_name,
-              fund_type = COALESCE(EXCLUDED.fund_type, fund.fund_type),
-              updated_at = CURRENT_TIMESTAMP
-        "#,
-    )
-    .bind(Uuid::new_v4().to_string())
-    .bind(code)
-    .bind(name)
-    .bind(fund_type)
-    .execute(pool)
-    .await
-    .map_err(|e| e.to_string())?;
+            INSERT INTO fund (id, fund_code, fund_name, fund_type, created_at, updated_at)
+            VALUES (($1)::uuid, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT (fund_code) DO UPDATE
+              SET fund_name = EXCLUDED.fund_name,
+                  fund_type = COALESCE(EXCLUDED.fund_type, fund.fund_type),
+                  updated_at = CURRENT_TIMESTAMP
+        "#
+    } else {
+        r#"
+            INSERT INTO fund (id, fund_code, fund_name, fund_type, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT (fund_code) DO UPDATE
+              SET fund_name = EXCLUDED.fund_name,
+                  fund_type = COALESCE(EXCLUDED.fund_type, fund.fund_type),
+                  updated_at = CURRENT_TIMESTAMP
+        "#
+    };
+
+    sqlx::query(sql)
+        .bind(Uuid::new_v4().to_string())
+        .bind(code)
+        .bind(name)
+        .bind(fund_type)
+        .execute(pool)
+        .await
+        .map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -57,14 +71,30 @@ async fn ensure_fund_exists(
         return Ok(false);
     }
 
-    let exists = sqlx::query("SELECT 1 FROM fund WHERE fund_code = $1")
+    fn is_placeholder_fund_name(name: &str) -> bool {
+        let n = name.trim();
+        if n.is_empty() {
+            return true;
+        }
+        if n == "T" {
+            return true;
+        }
+        if n.eq_ignore_ascii_case("test") || n.eq_ignore_ascii_case("test fund") {
+            return true;
+        }
+        false
+    }
+
+    let existing_name = sqlx::query("SELECT fund_name FROM fund WHERE fund_code = $1")
         .bind(code)
         .fetch_optional(pool)
         .await
         .map_err(|e| e.to_string())?
-        .is_some();
-    if exists {
-        return Ok(true);
+        .map(|r| r.get::<String, _>("fund_name"));
+    if let Some(name) = existing_name {
+        if !is_placeholder_fund_name(&name) {
+            return Ok(true);
+        }
     }
 
     // 优先用天天基金估值接口拿到基金名称（更轻量），失败再回退 fund list。
@@ -98,6 +128,9 @@ pub struct FundItem {
     pub fund_type: Option<String>,
     pub latest_nav: Option<String>,
     pub latest_nav_date: Option<String>,
+    pub estimate_nav: Option<String>,
+    pub estimate_growth: Option<String>,
+    pub estimate_time: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -185,8 +218,8 @@ pub async fn list(
     let count: i64 = count_row.get::<i64, _>("cnt");
 
     // page data
-    let list_sql = format!(
-        r#"
+        let list_sql = format!(
+            r#"
         SELECT
           CAST(id AS TEXT) as id,
           fund_code,
@@ -194,6 +227,9 @@ pub async fn list(
           fund_type,
           CAST(latest_nav AS TEXT) as latest_nav,
           CAST(latest_nav_date AS TEXT) as latest_nav_date,
+          CAST(estimate_nav AS TEXT) as estimate_nav,
+          CAST(estimate_growth AS TEXT) as estimate_growth,
+          CAST(estimate_time AS TEXT) as estimate_time,
           CAST(created_at AS TEXT) as created_at,
           CAST(updated_at AS TEXT) as updated_at
         FROM fund
@@ -307,6 +343,9 @@ pub async fn list(
                   fund_type,
                   CAST(latest_nav AS TEXT) as latest_nav,
                   CAST(latest_nav_date AS TEXT) as latest_nav_date,
+                  CAST(estimate_nav AS TEXT) as estimate_nav,
+                  CAST(estimate_growth AS TEXT) as estimate_growth,
+                  CAST(estimate_time AS TEXT) as estimate_time,
                   CAST(created_at AS TEXT) as created_at,
                   CAST(updated_at AS TEXT) as updated_at
                 FROM fund
@@ -338,6 +377,11 @@ pub async fn list(
                             fund_type: row.get::<Option<String>, _>("fund_type"),
                             latest_nav: row.get::<Option<String>, _>("latest_nav"),
                             latest_nav_date: row.get::<Option<String>, _>("latest_nav_date"),
+                            estimate_nav: row.get::<Option<String>, _>("estimate_nav"),
+                            estimate_growth: row.get::<Option<String>, _>("estimate_growth"),
+                            estimate_time: row
+                                .get::<Option<String>, _>("estimate_time")
+                                .map(|s| crate::dbfmt::datetime_to_rfc3339(&s)),
                             created_at: crate::dbfmt::datetime_to_rfc3339(
                                 &row.get::<String, _>("created_at"),
                             ),
@@ -376,6 +420,11 @@ pub async fn list(
             fund_type: row.get::<Option<String>, _>("fund_type"),
             latest_nav: row.get::<Option<String>, _>("latest_nav"),
             latest_nav_date: row.get::<Option<String>, _>("latest_nav_date"),
+            estimate_nav: row.get::<Option<String>, _>("estimate_nav"),
+            estimate_growth: row.get::<Option<String>, _>("estimate_growth"),
+            estimate_time: row
+                .get::<Option<String>, _>("estimate_time")
+                .map(|s| crate::dbfmt::datetime_to_rfc3339(&s)),
             created_at: crate::dbfmt::datetime_to_rfc3339(&row.get::<String, _>("created_at")),
             updated_at: crate::dbfmt::datetime_to_rfc3339(&row.get::<String, _>("updated_at")),
         })
@@ -408,6 +457,9 @@ pub async fn retrieve(
           fund_type,
           CAST(latest_nav AS TEXT) as latest_nav,
           CAST(latest_nav_date AS TEXT) as latest_nav_date,
+          CAST(estimate_nav AS TEXT) as estimate_nav,
+          CAST(estimate_growth AS TEXT) as estimate_growth,
+          CAST(estimate_time AS TEXT) as estimate_time,
           CAST(created_at AS TEXT) as created_at,
           CAST(updated_at AS TEXT) as updated_at
         FROM fund
@@ -430,7 +482,44 @@ pub async fn retrieve(
     };
 
     let row = match row {
-        Some(v) => Some(v),
+        Some(v) => {
+            let name: String = v.get("fund_name");
+            if name.trim().eq_ignore_ascii_case("test fund") || name.trim() == "T" {
+                // 纠偏：历史/测试数据可能写入占位符名称（例如 000001 -> Test Fund）。
+                // 发现占位符时，尝试从上游刷新一次基础信息。
+                if let Ok(client) = eastmoney::build_client() {
+                    let _ = ensure_fund_exists(pool, &client, &fund_code).await;
+                    sqlx::query(
+                        r#"
+                        SELECT
+                          CAST(id AS TEXT) as id,
+                          fund_code,
+                          fund_name,
+                          fund_type,
+                          CAST(latest_nav AS TEXT) as latest_nav,
+                          CAST(latest_nav_date AS TEXT) as latest_nav_date,
+                          CAST(estimate_nav AS TEXT) as estimate_nav,
+                          CAST(estimate_growth AS TEXT) as estimate_growth,
+                          CAST(estimate_time AS TEXT) as estimate_time,
+                          CAST(created_at AS TEXT) as created_at,
+                          CAST(updated_at AS TEXT) as updated_at
+                        FROM fund
+                        WHERE fund_code = $1
+                        "#,
+                    )
+                    .bind(&fund_code)
+                    .fetch_optional(pool)
+                    .await
+                    .ok()
+                    .flatten()
+                    .or(Some(v))
+                } else {
+                    Some(v)
+                }
+            } else {
+                Some(v)
+            }
+        }
         None => {
             // 开箱即用：fund 表里没有时，尝试从上游补齐后再查一次。
             let client = match eastmoney::build_client() {
@@ -454,6 +543,9 @@ pub async fn retrieve(
                   fund_type,
                   CAST(latest_nav AS TEXT) as latest_nav,
                   CAST(latest_nav_date AS TEXT) as latest_nav_date,
+                  CAST(estimate_nav AS TEXT) as estimate_nav,
+                  CAST(estimate_growth AS TEXT) as estimate_growth,
+                  CAST(estimate_time AS TEXT) as estimate_time,
                   CAST(created_at AS TEXT) as created_at,
                   CAST(updated_at AS TEXT) as updated_at
                 FROM fund
@@ -484,6 +576,11 @@ pub async fn retrieve(
         fund_type: row.get::<Option<String>, _>("fund_type"),
         latest_nav: row.get::<Option<String>, _>("latest_nav"),
         latest_nav_date: row.get::<Option<String>, _>("latest_nav_date"),
+        estimate_nav: row.get::<Option<String>, _>("estimate_nav"),
+        estimate_growth: row.get::<Option<String>, _>("estimate_growth"),
+        estimate_time: row
+            .get::<Option<String>, _>("estimate_time")
+            .map(|s| crate::dbfmt::datetime_to_rfc3339(&s)),
         created_at: crate::dbfmt::datetime_to_rfc3339(&row.get::<String, _>("created_at")),
         updated_at: crate::dbfmt::datetime_to_rfc3339(&row.get::<String, _>("updated_at")),
     };
@@ -525,7 +622,25 @@ pub async fn estimate(
     };
 
     let row = match row {
-        Some(v) => Some(v),
+        Some(v) => {
+            let name: String = v.get("fund_name");
+            if name.trim().eq_ignore_ascii_case("test fund") || name.trim() == "T" {
+                if let Ok(client) = eastmoney::build_client() {
+                    let _ = ensure_fund_exists(pool, &client, &fund_code).await;
+                    sqlx::query("SELECT CAST(id AS TEXT) as id, fund_name FROM fund WHERE fund_code = $1")
+                        .bind(&fund_code)
+                        .fetch_optional(pool)
+                        .await
+                        .ok()
+                        .flatten()
+                        .or(Some(v))
+                } else {
+                    Some(v)
+                }
+            } else {
+                Some(v)
+            }
+        }
         None => {
             // 开箱即用：fund 表里没有时，尝试从上游补齐后再继续估值。
             let client = match eastmoney::build_client() {
@@ -778,7 +893,7 @@ pub async fn accuracy(
         SELECT
           source_name,
           CAST(estimate_date AS TEXT) as estimate_date,
-          CAST(error_rate AS REAL) as error_rate
+          CAST(error_rate AS DOUBLE PRECISION) as error_rate
         FROM estimate_accuracy
         WHERE CAST(fund_id AS TEXT) = $1 AND error_rate IS NOT NULL
         ORDER BY estimate_date DESC
@@ -847,6 +962,8 @@ pub async fn accuracy(
 pub struct BatchEstimateRequest {
     pub fund_codes: Option<Vec<String>>,
     pub source: Option<String>,
+    /// 默认 true：当缓存过期/缺失时会入队后台刷新；设为 false 时仅返回 DB 缓存（不触发入队）。
+    pub enqueue_refresh: Option<bool>,
 }
 
 pub async fn batch_estimate(
@@ -953,6 +1070,8 @@ pub async fn batch_estimate(
     let ttl_minutes = state.config().get_i64("estimate_cache_ttl", 5).max(0);
     let ttl = Duration::minutes(ttl_minutes);
     let now = Utc::now();
+    let async_enabled = state.config().get_bool("estimate_async_enabled", true);
+    let enqueue_refresh = body.enqueue_refresh.unwrap_or(true);
 
     let mut results: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     let mut need_fetch: Vec<(String, FundDbRow)> = Vec::new();
@@ -991,6 +1110,39 @@ pub async fn batch_estimate(
         } else {
             need_fetch.push((code.clone(), row));
         }
+    }
+
+    if async_enabled && !need_fetch.is_empty() {
+        // 异步模式：不在请求内抓取外部估值，避免批量请求触发上游封锁。
+        // 直接返回 DB 缓存（可能为旧值/空），同时把需要刷新的基金入队给后台 worker 节流执行。
+        for (code, row) in &need_fetch {
+            results.insert(
+                code.clone(),
+                json!({
+                  "fund_code": code,
+                  "fund_name": row.fund_name,
+                  "estimate_nav": row.estimate_nav,
+                  "estimate_growth": row.estimate_growth,
+                  "estimate_time": row.estimate_time.as_deref().map(crate::dbfmt::datetime_to_rfc3339),
+                  "latest_nav": row.latest_nav,
+                  "latest_nav_date": row.latest_nav_date,
+                  "from_cache": false,
+                  "queued_refresh": enqueue_refresh
+                }),
+            );
+
+            if enqueue_refresh {
+                // 请求触发：按自选级别优先级入队（让估值更“实时”）。
+                let _ = crate::crawl::scheduler::upsert_estimate_job(pool, code, source_name, 120).await;
+            }
+        }
+
+        if enqueue_refresh {
+            // 唤醒后台 worker，避免等待 tick。
+            state.crawl_notify().notify_one();
+        }
+
+        return (StatusCode::OK, Json(serde_json::Value::Object(results))).into_response();
     }
 
     if !need_fetch.is_empty() {
@@ -1387,6 +1539,97 @@ pub async fn batch_update_nav(
 }
 
 #[derive(Debug, Deserialize)]
+pub struct PricesRefreshBatchAsyncRequest {
+    pub fund_codes: Vec<String>,
+    pub source: Option<String>,
+    pub priority: Option<i64>,
+}
+
+pub async fn prices_refresh_batch_async(
+    axum::extract::State(state): axum::extract::State<AppState>,
+    headers: axum::http::HeaderMap,
+    Json(body): Json<PricesRefreshBatchAsyncRequest>,
+) -> axum::response::Response {
+    let user_id = match auth::authenticate(&state, &headers) {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+    let created_by = user_id.parse::<i64>().ok();
+
+    let pool = match state.pool() {
+        None => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "database not configured" })),
+            )
+                .into_response();
+        }
+        Some(p) => p,
+    };
+
+    let mut fund_codes: Vec<String> = body
+        .fund_codes
+        .into_iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    fund_codes.sort();
+    fund_codes.dedup();
+    if fund_codes.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "fund_codes 不能为空" })),
+        )
+            .into_response();
+    }
+    if fund_codes.len() > 500 {
+        fund_codes.truncate(500);
+    }
+
+    let source_raw = body.source.as_deref().unwrap_or(sources::SOURCE_TIANTIAN);
+    let Some(source_name) = sources::normalize_source_name(source_raw) else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": format!("数据源 {source_raw} 不存在") })),
+        )
+            .into_response();
+    };
+
+    let payload = json!({
+      "fund_codes": fund_codes,
+      "source": source_name,
+    });
+    let priority = body.priority.unwrap_or(150).clamp(1, 1000);
+
+    let task_id =
+        match tasks::enqueue_task_job(pool, "prices_refresh_batch", &payload, priority, created_by).await
+        {
+            Ok(id) => id,
+            Err(e) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    errors::internal_json(&state, e),
+                )
+                    .into_response();
+            }
+        };
+
+    // 唤醒后台 worker，避免等待 tick。
+    state.crawl_notify().notify_one();
+
+    let pool2 = pool.clone();
+    if !cfg!(test) {
+        tokio::spawn(async move {
+            if let Err(e) = tasks::run_due_task_jobs(&pool2, 1).await {
+                tracing::warn!(error = %e, "task queue run_due_task_jobs failed (route trigger)");
+            }
+        });
+    }
+
+    (StatusCode::ACCEPTED, Json(json!({ "task_id": task_id }))).into_response()
+}
+
+#[derive(Debug, Deserialize)]
 pub struct QueryNavRequest {
     pub fund_code: String,
     pub operation_date: String,
@@ -1675,6 +1918,7 @@ pub async fn sync(
     let mut created: i64 = 0;
     let mut updated: i64 = 0;
 
+    let is_postgres = state.db_kind() == DatabaseKind::Postgres;
     for f in &funds {
         let existed = match sqlx::query("SELECT 1 FROM fund WHERE fund_code = $1")
             .bind(&f.fund_code)
@@ -1688,22 +1932,33 @@ pub async fn sync(
             }
         };
 
-        if let Err(e) = sqlx::query(
+        let sql = if is_postgres {
             r#"
-            INSERT INTO fund (id, fund_code, fund_name, fund_type, created_at, updated_at)
-            VALUES (CAST($1 AS uuid), $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            ON CONFLICT (fund_code) DO UPDATE
-              SET fund_name = EXCLUDED.fund_name,
-                  fund_type = EXCLUDED.fund_type,
-                  updated_at = CURRENT_TIMESTAMP
-            "#,
-        )
-        .bind(Uuid::new_v4().to_string())
-        .bind(&f.fund_code)
-        .bind(&f.fund_name)
-        .bind(&f.fund_type)
-        .execute(pool)
-        .await
+                INSERT INTO fund (id, fund_code, fund_name, fund_type, created_at, updated_at)
+                VALUES (($1)::uuid, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT (fund_code) DO UPDATE
+                  SET fund_name = EXCLUDED.fund_name,
+                      fund_type = EXCLUDED.fund_type,
+                      updated_at = CURRENT_TIMESTAMP
+            "#
+        } else {
+            r#"
+                INSERT INTO fund (id, fund_code, fund_name, fund_type, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT (fund_code) DO UPDATE
+                  SET fund_name = EXCLUDED.fund_name,
+                      fund_type = EXCLUDED.fund_type,
+                      updated_at = CURRENT_TIMESTAMP
+            "#
+        };
+
+        if let Err(e) = sqlx::query(sql)
+            .bind(Uuid::new_v4().to_string())
+            .bind(&f.fund_code)
+            .bind(&f.fund_name)
+            .bind(&f.fund_type)
+            .execute(pool)
+            .await
         {
             tracing::error!(error = %e, "funds.sync upsert failed");
             continue;
@@ -1788,6 +2043,7 @@ async fn sync_nav_history_for_date(
     }
 
     let mut inserted_count: i64 = 0;
+    let is_postgres = crate::db::database_kind_from_pool(pool) == DatabaseKind::Postgres;
     for item in data {
         let exists = sqlx::query(
             r#"
@@ -1795,7 +2051,7 @@ async fn sync_nav_history_for_date(
             FROM fund_nav_history
             WHERE source_name = $1
               AND CAST(fund_id AS TEXT) = $2
-              AND nav_date = CAST($3 AS DATE)
+              AND nav_date = $3
             "#,
         )
         .bind(source_name)
@@ -1806,37 +2062,49 @@ async fn sync_nav_history_for_date(
         .map_err(|e| e.to_string())?
         .is_some();
 
-        sqlx::query(
+        let sql = if is_postgres {
             r#"
-            INSERT INTO fund_nav_history (id, source_name, fund_id, nav_date, unit_nav, accumulated_nav, daily_growth, created_at, updated_at)
-            VALUES (
-              CAST($1 AS uuid),
-              $2,
-              CAST($3 AS uuid),
-              CAST($4 AS DATE),
-              CAST($5 AS NUMERIC),
-              CAST($6 AS NUMERIC),
-              CAST($7 AS NUMERIC),
-              CURRENT_TIMESTAMP,
-              CURRENT_TIMESTAMP
-            )
-            ON CONFLICT (source_name, fund_id, nav_date) DO UPDATE
-              SET unit_nav = CAST(EXCLUDED.unit_nav AS NUMERIC),
-                  accumulated_nav = CAST(EXCLUDED.accumulated_nav AS NUMERIC),
-                  daily_growth = CAST(EXCLUDED.daily_growth AS NUMERIC),
-                  updated_at = CURRENT_TIMESTAMP
-            "#,
-        )
-        .bind(Uuid::new_v4().to_string())
-        .bind(source_name)
-        .bind(fund_id)
-        .bind(item.nav_date.to_string())
-        .bind(item.unit_nav.to_string())
-        .bind(item.accumulated_nav.map(|v| v.to_string()))
-        .bind(item.daily_growth.map(|v| v.to_string()))
-        .execute(pool)
-        .await
-        .map_err(|e| e.to_string())?;
+                INSERT INTO fund_nav_history (id, source_name, fund_id, nav_date, unit_nav, accumulated_nav, daily_growth, created_at, updated_at)
+                VALUES (
+                  ($1)::uuid,
+                  $2,
+                  ($3)::uuid,
+                  ($4)::date,
+                  ($5)::numeric,
+                  ($6)::numeric,
+                  ($7)::numeric,
+                  CURRENT_TIMESTAMP,
+                  CURRENT_TIMESTAMP
+                )
+                ON CONFLICT (source_name, fund_id, nav_date) DO UPDATE
+                  SET unit_nav = EXCLUDED.unit_nav,
+                      accumulated_nav = EXCLUDED.accumulated_nav,
+                      daily_growth = EXCLUDED.daily_growth,
+                      updated_at = CURRENT_TIMESTAMP
+            "#
+        } else {
+            r#"
+                INSERT INTO fund_nav_history (id, source_name, fund_id, nav_date, unit_nav, accumulated_nav, daily_growth, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT (source_name, fund_id, nav_date) DO UPDATE
+                  SET unit_nav = EXCLUDED.unit_nav,
+                      accumulated_nav = EXCLUDED.accumulated_nav,
+                      daily_growth = EXCLUDED.daily_growth,
+                      updated_at = CURRENT_TIMESTAMP
+            "#
+        };
+
+        sqlx::query(sql)
+            .bind(Uuid::new_v4().to_string())
+            .bind(source_name)
+            .bind(fund_id)
+            .bind(item.nav_date.to_string())
+            .bind(item.unit_nav.to_string())
+            .bind(item.accumulated_nav.map(|v| v.to_string()))
+            .bind(item.daily_growth.map(|v| v.to_string()))
+            .execute(pool)
+            .await
+            .map_err(|e| e.to_string())?;
 
         if !exists {
             inserted_count += 1;
@@ -1857,20 +2125,30 @@ async fn upsert_estimate_accuracy(
     estimate_date: String,
     estimate_nav: Decimal,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query(
+    let is_postgres = crate::db::database_kind_from_pool(pool) == DatabaseKind::Postgres;
+    let sql = if is_postgres {
         r#"
-        INSERT INTO estimate_accuracy (id, source_name, fund_id, estimate_date, estimate_nav, created_at)
-        VALUES (CAST($1 AS uuid), $2, CAST($3 AS uuid), CAST($4 AS DATE), CAST($5 AS NUMERIC), CURRENT_TIMESTAMP)
-        ON CONFLICT (source_name, fund_id, estimate_date) DO UPDATE
-          SET estimate_nav = CAST(EXCLUDED.estimate_nav AS NUMERIC)
-        "#,
-    )
-    .bind(Uuid::new_v4().to_string())
-    .bind(source_name)
-    .bind(fund_id)
-    .bind(estimate_date)
-    .bind(estimate_nav.to_string())
-    .execute(pool)
-    .await
-    .map(|_| ())
+            INSERT INTO estimate_accuracy (id, source_name, fund_id, estimate_date, estimate_nav, created_at)
+            VALUES (($1)::uuid, $2, ($3)::uuid, ($4)::date, ($5)::numeric, CURRENT_TIMESTAMP)
+            ON CONFLICT (source_name, fund_id, estimate_date) DO UPDATE
+              SET estimate_nav = EXCLUDED.estimate_nav
+        "#
+    } else {
+        r#"
+            INSERT INTO estimate_accuracy (id, source_name, fund_id, estimate_date, estimate_nav, created_at)
+            VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+            ON CONFLICT (source_name, fund_id, estimate_date) DO UPDATE
+              SET estimate_nav = EXCLUDED.estimate_nav
+        "#
+    };
+
+    sqlx::query(sql)
+        .bind(Uuid::new_v4().to_string())
+        .bind(source_name)
+        .bind(fund_id)
+        .bind(estimate_date)
+        .bind(estimate_nav.to_string())
+        .execute(pool)
+        .await
+        .map(|_| ())
 }

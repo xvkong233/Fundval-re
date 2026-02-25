@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quant-service"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.110",
+  "pydantic>=2.6",
+  "numpy>=1.26",
+  "pandas>=2.2",
+  "uvicorn[standard]>=0.27",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "httpx>=0.26",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*", "xalpha*"]
+
+[tool.setuptools.package-data]
+xalpha = ["*.csv"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

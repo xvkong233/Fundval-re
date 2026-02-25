@@ -7,10 +7,12 @@ use sqlx::any::AnyRow;
 use uuid::Uuid;
 
 use crate::eastmoney;
+use crate::ml;
 use crate::routes::auth;
 use crate::routes::errors;
 use crate::sources;
 use crate::state::AppState;
+use crate::tasks;
 
 #[derive(Debug, Serialize)]
 struct ErrorResponse {
@@ -353,6 +355,12 @@ pub struct SyncRequest {
     pub start_date: Option<String>,
     pub end_date: Option<String>,
     pub source: Option<String>,
+    /// 同步模式：
+    /// - enqueue（默认）：只入队，由后台爬虫节流执行（防止批量抓取导致上游封锁）
+    /// - inline：立即抓取并写库（仅建议小批量/管理员使用）
+    pub mode: Option<String>,
+    /// 同步成功后是否自动计算预测信号（ML 快照）。默认 true。
+    pub compute_signals: Option<bool>,
 }
 
 pub async fn sync(
@@ -415,6 +423,54 @@ pub async fn sync(
         Some(p) => p,
     };
 
+    let compute_signals = body.compute_signals.unwrap_or(true);
+    let mode = body.mode.as_deref().unwrap_or("enqueue").trim().to_lowercase();
+
+    let mut results: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+
+    if mode != "inline" {
+        let start_date_raw = body.start_date.as_deref().map(|s| s.trim()).unwrap_or("");
+        let end_date_raw = body.end_date.as_deref().map(|s| s.trim()).unwrap_or("");
+
+        let payload = json!({
+          "fund_codes": fund_codes,
+          "source": source_name,
+          "start_date": if start_date_raw.is_empty() { serde_json::Value::Null } else { json!(start_date_raw) },
+          "end_date": if end_date_raw.is_empty() { serde_json::Value::Null } else { json!(end_date_raw) },
+          "compute_signals": compute_signals,
+          "per_job_delay_ms": state.config().get_i64("crawl_per_job_delay_ms", 250).clamp(0, 60_000),
+          "per_job_jitter_ms": state.config().get_i64("crawl_per_job_jitter_ms", 200).clamp(0, 60_000),
+          "source_fallbacks": state.config().get_string("crawl_source_fallbacks").unwrap_or_default(),
+          "tushare_token": state.config().get_string("tushare_token").unwrap_or_default(),
+        });
+
+        let task_id = match tasks::enqueue_task_job(pool, "nav_history_sync_batch", &payload, 120, None).await {
+            Ok(id) => id,
+            Err(e) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    errors::internal_json(&state, e),
+                )
+                    .into_response();
+            }
+        };
+
+        // 立即唤醒后台 worker，避免等待 tick。
+        state.crawl_notify().notify_one();
+
+        let pool2 = pool.clone();
+        if !cfg!(test) {
+            tokio::spawn(async move {
+                if let Err(e) = tasks::run_due_task_jobs(&pool2, 1).await {
+                    tracing::warn!(error = %e, "task queue run_due_task_jobs failed (route trigger)");
+                }
+            });
+        }
+
+        return (StatusCode::ACCEPTED, Json(json!({ "task_id": task_id }))).into_response();
+    }
+
+    // inline：兼容原行为（小批量/管理员）
     let client = match eastmoney::build_client() {
         Ok(c) => c,
         Err(e) => {
@@ -430,8 +486,8 @@ pub async fn sync(
         .get_string("tushare_token")
         .unwrap_or_default();
 
-    let mut results: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     for code in fund_codes {
+        let key = code.clone();
         match sync_one(
             pool,
             &client,
@@ -444,10 +500,60 @@ pub async fn sync(
         .await
         {
             Ok(count) => {
-                results.insert(code, json!({ "success": true, "count": count }));
+                results.insert(key, json!({ "success": true, "count": count, "queued": false }));
+
+                if compute_signals {
+                    let pool = pool.clone();
+                    let fund_code = code.clone();
+                    let source_used = source_name.to_string();
+                    tokio::spawn(async move {
+                        // 全市场兜底：即使没有关联板块，也能基于全量基金数据生成信号（模型缺失时会训练一次）。
+                        let _ = ml::compute::compute_and_store_fund_snapshot_with_opts(
+                            &pool,
+                            &fund_code,
+                            ml::train::PEER_CODE_ALL,
+                            &source_used,
+                            ml::compute::ComputeOpts {
+                                train_if_missing: true,
+                            },
+                        )
+                        .await;
+
+                        // 再补充 1-2 个板块 peer（可选，不阻塞同步接口）。
+                        let peer_rows = sqlx::query(
+                            r#"
+                            SELECT sec_code
+                            FROM fund_relate_theme
+                            WHERE fund_code = $1
+                            GROUP BY sec_code
+                            ORDER BY sec_code ASC
+                            LIMIT 2
+                            "#,
+                        )
+                        .bind(&fund_code)
+                        .fetch_all(&pool)
+                        .await;
+
+                        if let Ok(rows) = peer_rows {
+                            for r in rows {
+                                let peer_code: String = r.get("sec_code");
+                                let _ = ml::compute::compute_and_store_fund_snapshot_with_opts(
+                                    &pool,
+                                    &fund_code,
+                                    &peer_code,
+                                    &source_used,
+                                    ml::compute::ComputeOpts {
+                                        train_if_missing: false,
+                                    },
+                                )
+                                .await;
+                            }
+                        }
+                    });
+                }
             }
             Err(e) => {
-                results.insert(code, json!({ "success": false, "error": e }));
+                results.insert(key, json!({ "success": false, "error": e }));
             }
         }
     }

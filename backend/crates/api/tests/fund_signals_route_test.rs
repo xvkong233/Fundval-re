@@ -101,7 +101,7 @@ async fn fund_signals_returns_shape() {
 
     let config = api::config::ConfigStore::load();
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(Some(pool), config, jwt);
+    let state = AppState::new(Some(pool), config, jwt, api::db::DatabaseKind::Sqlite);
     let token = state.jwt().issue_access_token("1");
     let app = api::service(state);
 
@@ -122,7 +122,15 @@ async fn fund_signals_returns_shape() {
     assert_eq!(v["source"], "tiantian");
     assert!(v.get("peers").is_some());
     assert!(v["peers"].is_array());
-    assert!(v["peers"].as_array().unwrap().len() >= 1);
+    assert!(!v["peers"].as_array().unwrap().is_empty());
     assert!(v["peers"][0].get("dip_buy").is_some());
     assert!(v["peers"][0].get("magic_rebound").is_some());
+
+    let peers = v["peers"].as_array().unwrap();
+    assert!(
+        peers
+            .iter()
+            .any(|p| p.get("peer_code").and_then(|v| v.as_str()) == Some(api::ml::train::PEER_CODE_ALL)),
+        "peers 应包含全市场 (__all__) 兜底"
+    );
 }

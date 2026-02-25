@@ -15,7 +15,7 @@ async fn body_json(res: axum::response::Response) -> Value {
 async fn fund_analytics_requires_auth() {
     let config = api::config::ConfigStore::load();
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(None, config, jwt);
+    let state = AppState::new(None, config, jwt, api::db::DatabaseKind::Sqlite);
     let app = api::service(state);
 
     let res = app
@@ -96,7 +96,7 @@ async fn fund_analytics_returns_metrics_from_seeded_nav_history() {
 
     let config = api::config::ConfigStore::load();
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(Some(pool), config, jwt);
+    let state = AppState::new(Some(pool), config, jwt, api::db::DatabaseKind::Sqlite);
     let token = state.jwt().issue_access_token("1");
     let app = api::service(state);
 

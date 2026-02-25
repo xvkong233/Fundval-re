@@ -6,14 +6,18 @@ pub mod db;
 pub mod dbfmt;
 pub mod django_password;
 pub mod eastmoney;
+pub mod forecast;
+pub mod index_series;
 pub mod jwt;
 pub mod ml;
 pub mod position_history;
 pub mod rates;
 pub mod routes;
+pub mod sim;
 pub mod sniffer;
 pub mod sources;
 pub mod state;
+pub mod tasks;
 pub mod tiantian_h5;
 
 use axum::Router;

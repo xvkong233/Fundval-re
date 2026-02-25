@@ -4,6 +4,8 @@ use sqlx::Row;
 use super::dataset::{DatasetConfig, build_trigger_samples_for_peer};
 use super::logreg::{LogRegModel, LogRegTrainConfig, train_logreg};
 
+pub const PEER_CODE_ALL: &str = "__all__";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MlTask {
     DipBuy,
@@ -36,7 +38,11 @@ pub async fn train_and_store_sector_model(
     task: MlTask,
     cfg: &DatasetConfig,
 ) -> Result<(), String> {
-    let samples = build_trigger_samples_for_peer(pool, peer_code, source_name, cfg).await?;
+    let samples = if peer_code.trim() == PEER_CODE_ALL {
+        super::dataset::build_trigger_samples_for_all_funds(pool, source_name, cfg).await?
+    } else {
+        build_trigger_samples_for_peer(pool, peer_code, source_name, cfg).await?
+    };
     if samples.is_empty() {
         return Ok(());
     }

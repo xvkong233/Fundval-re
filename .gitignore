@@ -54,6 +54,10 @@ lerna-debug.log*
 /frontend/dist/
 /frontend/dist-ssr/
 /frontend/.vite/
+/frontend/.next/
+/frontend/.turbo/
+/frontend/out/
+/frontend/.pnpm-store/
 
 # Tauri
 /frontend/src-tauri/target/
@@ -61,6 +65,9 @@ lerna-debug.log*
 
 # Rust backend
 /backend/target/
+/backend/.sqlx/
+/backend/data/
+/data/
 
 # Capacitor
 /frontend/android/
@@ -86,7 +93,7 @@ lerna-debug.log*
 .env.local
 .env.*.local
 /backend/config.json
-/backend/config.json
+/backend/crates/api/config.json
 
 # Logs
 logs/
@@ -100,6 +107,8 @@ pids/
 .coverage
 htmlcov/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .vitest/
 
 # OS
@@ -111,15 +120,10 @@ Thumbs.db
 *.temp
 *.bak
 *.backup
+_sim.patch
+sim_engine_test_output.txt
+jjxqy1_2_008021.json
 
-# Ignore most markdown by default (kept from earlier workflow),
-# but allow top-level READMEs and plan docs to be committed.
-*.md
-!README.md
-!README.en.md
-__pycache__
-.pytest_cache
-.venv
 backend/celerybeat-schedule
 backend/celerybeat-schedule-shm
 backend/celerybeat-schedule-wal
@@ -128,7 +132,3 @@ image.png
 
 # Git worktrees (local development only)
 .worktrees/
-
-# Allow committing design/plan docs
-!docs/plans/
-!docs/plans/**

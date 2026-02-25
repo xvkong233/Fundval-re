@@ -87,7 +87,7 @@ pub async fn upsert_risk_free_rate_3m(
 
     let sql_pg = r#"
         INSERT INTO risk_free_rate_daily (id, rate_date, tenor, rate, source, fetched_at, created_at, updated_at)
-        VALUES (CAST($1 AS uuid), $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (($1)::uuid, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         ON CONFLICT (rate_date, tenor, source) DO UPDATE
           SET rate = EXCLUDED.rate,
               fetched_at = CURRENT_TIMESTAMP,

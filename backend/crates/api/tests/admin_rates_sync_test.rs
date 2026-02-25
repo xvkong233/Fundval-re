@@ -53,7 +53,7 @@ async fn admin_can_sync_risk_free_rate_into_db() {
     let config = api::config::ConfigStore::load();
     let jwt = api::jwt::JwtService::from_secret("test-secret");
     let pool_verify = pool.clone();
-    let state = AppState::new(Some(pool), config, jwt);
+    let state = AppState::new(Some(pool), config, jwt, api::db::DatabaseKind::Sqlite);
     let token = state.jwt().issue_access_token("1");
     let app = api::service(state);
 

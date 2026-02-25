@@ -8,6 +8,7 @@ use crate::routes::auth;
 use crate::routes::errors;
 use crate::sniffer;
 use crate::state::AppState;
+use crate::tasks;
 
 #[derive(Debug, Serialize)]
 struct SnifferItemResponse {
@@ -279,7 +280,8 @@ pub async fn items(
     let fetched_at: String = snap_row.get("fetched_at");
     let item_count: i32 = snap_row.get("item_count");
 
-    let rows = match sqlx::query(
+    let is_postgres = state.db_kind() == crate::db::DatabaseKind::Postgres;
+    let sql = if is_postgres {
         r#"
         SELECT
           f.fund_code,
@@ -293,10 +295,29 @@ pub async fn items(
           i.fund_size_text
         FROM sniffer_item i
         JOIN fund f ON f.id = i.fund_id
-        WHERE i.snapshot_id = $1
+        WHERE i.snapshot_id = $1::uuid
         ORDER BY i.sector ASC, i.star_count DESC NULLS LAST, i.week_growth DESC NULLS LAST, f.fund_code ASC
-        "#,
-    )
+        "#
+    } else {
+        r#"
+        SELECT
+          f.fund_code,
+          f.fund_name,
+          i.sector,
+          i.star_count,
+          CAST(i.tags AS TEXT) as tags,
+          CAST(i.week_growth AS TEXT) as week_growth,
+          CAST(i.year_growth AS TEXT) as year_growth,
+          CAST(i.max_drawdown AS TEXT) as max_drawdown,
+          i.fund_size_text
+        FROM sniffer_item i
+        JOIN fund f ON f.id = i.fund_id
+        WHERE CAST(i.snapshot_id AS TEXT) = $1
+        ORDER BY i.sector ASC, i.star_count DESC NULLS LAST, i.week_growth DESC NULLS LAST, f.fund_code ASC
+        "#
+    };
+
+    let rows = match sqlx::query(sql)
     .bind(&snapshot_id)
     .fetch_all(pool)
     .await
@@ -398,19 +419,37 @@ pub async fn admin_sync(
             .into_response();
     }
 
-    match sniffer::run_sync_once(state.clone()).await {
-        Ok(r) => (
-            StatusCode::OK,
-            Json(json!({
-              "run_id": r.run_id,
-              "snapshot_id": r.snapshot_id,
-              "item_count": r.item_count,
-              "users_updated": r.users_updated,
-              "watchlist_name": sniffer::SNIFFER_WATCHLIST_NAME,
-              "source_url": sniffer::DEEPQ_STAR_CSV_URL,
-            })),
-        )
-            .into_response(),
-        Err(e) => (StatusCode::BAD_GATEWAY, Json(json!({ "error": e }))).into_response(),
+    let payload = json!({});
+    let task_id = match tasks::enqueue_task_job(pool, "sniffer_sync", &payload, 200, Some(user_id_i64)).await {
+        Ok(id) => id,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                errors::internal_json(&state, e),
+            )
+                .into_response();
+        }
+    };
+
+    // 立即唤醒后台 worker，避免等待 tick。
+    state.crawl_notify().notify_one();
+
+    let pool2 = pool.clone();
+    if !cfg!(test) {
+        tokio::spawn(async move {
+            if let Err(e) = tasks::run_due_task_jobs(&pool2, 1).await {
+                tracing::warn!(error = %e, "task queue run_due_task_jobs failed (route trigger)");
+            }
+        });
     }
+
+    (
+        StatusCode::ACCEPTED,
+        Json(json!({
+          "task_id": task_id,
+          "watchlist_name": sniffer::SNIFFER_WATCHLIST_NAME,
+          "source_url": sniffer::DEEPQ_STAR_CSV_URL,
+        })),
+    )
+        .into_response()
 }

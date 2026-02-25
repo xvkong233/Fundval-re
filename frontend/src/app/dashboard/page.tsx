@@ -1,7 +1,7 @@
 "use client";
 
 import { ReloadOutlined } from "@ant-design/icons";
-import { Button, Card, Col, Row, Space, Statistic, Table, Typography, message } from "antd";
+import { Button, Card, Col, Grid, Row, Space, Statistic, Table, Typography, message } from "antd";
 import type { TableColumnsType } from "antd";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -54,6 +54,9 @@ function opTypeText(t: "BUY" | "SELL"): string {
 }
 
 export default function DashboardPage() {
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
+
   const [loading, setLoading] = useState(false);
   const [lastUpdateTime, setLastUpdateTime] = useState<Date | null>(null);
 
@@ -142,8 +145,8 @@ export default function DashboardPage() {
         </span>
       ),
     },
-    { title: "持仓成本", dataIndex: "holding_cost", key: "holding_cost", width: 140, render: money },
-    { title: "持仓市值", dataIndex: "holding_value", key: "holding_value", width: 140, render: money },
+    { title: "持仓成本", dataIndex: "holding_cost", key: "holding_cost", width: 140, render: money, responsive: ["md"] },
+    { title: "持仓市值", dataIndex: "holding_value", key: "holding_value", width: 140, render: money, responsive: ["md"] },
     {
       title: "总盈亏",
       dataIndex: "pnl",
@@ -162,13 +165,20 @@ export default function DashboardPage() {
       render: (_: any, r) => r.fund_name ?? "-",
     },
     { title: "金额", dataIndex: "amount", key: "amount", width: 120, render: money },
-    { title: "份额", dataIndex: "share", key: "share", width: 120, render: (v: any) => (v ? String(v) : "-") },
+    {
+      title: "份额",
+      dataIndex: "share",
+      key: "share",
+      width: 120,
+      render: (v: any) => (v ? String(v) : "-"),
+      responsive: ["md"],
+    },
   ];
 
   const posColumns: TableColumnsType<Position> = [
     { title: "代码", dataIndex: "fund_code", key: "fund_code", width: 110 },
     { title: "基金名称", dataIndex: "fund_name", key: "fund_name", ellipsis: true },
-    { title: "持仓成本", dataIndex: "holding_cost", key: "holding_cost", width: 140, render: money },
+    { title: "持仓成本", dataIndex: "holding_cost", key: "holding_cost", width: 140, render: money, responsive: ["lg"] },
     {
       title: "盈亏",
       dataIndex: "pnl",
@@ -180,80 +190,51 @@ export default function DashboardPage() {
 
   return (
     <AuthedLayout
-      title={
-        <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-          <span>仪表盘</span>
-          {lastUpdateTime ? (
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              更新于 {lastUpdateTime.toLocaleTimeString()}
-            </Text>
-          ) : null}
-        </div>
-      }
+      title="仪表盘"
+      subtitle={lastUpdateTime ? `更新于 ${lastUpdateTime.toLocaleTimeString()}` : undefined}
     >
-      <Space direction="vertical" style={{ width: "100%" }} size="middle">
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <Card
-          title={
-            <Space wrap>
-              <span>总览</span>
+          title="总览"
+          extra={
+            <div className="fv-toolbarScroll">
               <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void loadAll()}>
                 刷新
               </Button>
-            </Space>
+            </div>
           }
         >
-          <Row gutter={16}>
-            <Col xs={12} md={6}>
-              <Statistic title="持仓成本" value={money(summary.holding_cost)} />
-            </Col>
-            <Col xs={12} md={6}>
-              <Statistic title="持仓市值" value={money(summary.holding_value)} />
-            </Col>
-            <Col xs={12} md={6}>
-              <Statistic
-                title="总盈亏"
-                value={money(summary.pnl)}
-                valueStyle={{ color: pnlColor(summary.pnl) }}
-              />
-            </Col>
-            <Col xs={12} md={6}>
-              <Statistic
-                title="收益率"
-                value={pctFromRate(summary.pnl_rate)}
-                valueStyle={{ color: pnlColor(summary.pnl_rate) }}
-              />
-            </Col>
-          </Row>
-          <Row gutter={16} style={{ marginTop: 12 }}>
-            <Col xs={12} md={6}>
-              <Statistic
-                title="今日盈亏(预估)"
-                value={money(summary.today_pnl)}
-                valueStyle={{ color: pnlColor(summary.today_pnl) }}
-              />
-            </Col>
-            <Col xs={12} md={6}>
-              <Statistic
-                title="今日收益率(预估)"
-                value={pctFromRate(summary.today_pnl_rate)}
-                valueStyle={{ color: pnlColor(summary.today_pnl_rate) }}
-              />
-            </Col>
-            <Col xs={12} md={6}>
-              <Statistic title="持仓数量" value={positions.length} />
-            </Col>
-            <Col xs={12} md={6}>
-              <Statistic title="自选列表" value={watchlists.length} />
-            </Col>
-          </Row>
+          <div className="fv-kpiGrid">
+            <Statistic title="持仓成本" value={money(summary.holding_cost)} />
+            <Statistic title="持仓市值" value={money(summary.holding_value)} />
+            <Statistic title="总盈亏" value={money(summary.pnl)} valueStyle={{ color: pnlColor(summary.pnl) }} />
+            <Statistic title="收益率" value={pctFromRate(summary.pnl_rate)} valueStyle={{ color: pnlColor(summary.pnl_rate) }} />
+            <Statistic
+              title="今日盈亏(预估)"
+              value={money(summary.today_pnl)}
+              valueStyle={{ color: pnlColor(summary.today_pnl) }}
+            />
+            <Statistic
+              title="今日收益率(预估)"
+              value={pctFromRate(summary.today_pnl_rate)}
+              valueStyle={{ color: pnlColor(summary.today_pnl_rate) }}
+            />
+            <Statistic title="持仓数量" value={positions.length} />
+            <Statistic title="自选列表" value={watchlists.length} />
+          </div>
 
           <div style={{ marginTop: 16 }}>
-            <Space wrap>
-              <Link href="/funds">基金</Link>
-              <Link href="/watchlists">自选</Link>
-              <Link href="/accounts">账户</Link>
-              <Link href="/positions">持仓</Link>
-            </Space>
+            <div className="fv-toolbarScroll">
+              <Space wrap={false} style={{ whiteSpace: "nowrap" }}>
+                <Link href="/funds">基金</Link>
+                <Link href="/watchlists">自选</Link>
+                <Link href="/accounts">账户</Link>
+                <Link href="/positions">持仓</Link>
+                <Link href="/sniffer">嗅探</Link>
+                <Link href="/sim">模拟盘</Link>
+                <Link href="/sources">数据源</Link>
+              </Space>
+            </div>
           </div>
         </Card>
 
@@ -263,8 +244,14 @@ export default function DashboardPage() {
             loading={loading}
             columns={parentColumns}
             dataSource={parentAccounts}
-            pagination={false}
-            size="middle"
+            pagination={{
+              pageSize: isMobile ? 10 : 20,
+              simple: isMobile,
+              showLessItems: isMobile,
+              showSizeChanger: !isMobile,
+            }}
+            size={isMobile ? "small" : "middle"}
+            scroll={isMobile ? undefined : { x: "max-content" }}
           />
         </Card>
 
@@ -296,7 +283,7 @@ export default function DashboardPage() {
             </Card>
           </Col>
         </Row>
-      </Space>
+      </div>
     </AuthedLayout>
   );
 }

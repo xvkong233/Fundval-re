@@ -32,6 +32,7 @@ This repository is an **extended second-development edition** (not just a “por
 
 - `backend/`: Rust (axum/sqlx) API server
 - `frontend/`: Next.js UI (Ant Design + ECharts)
+- `quant-service/`: Python (FastAPI) quant/strategy service
 - `packaging/`: cross-platform packaging templates
 - `docs/`: plans & documentation
 
@@ -53,6 +54,7 @@ Endpoints:
 
 - Frontend: `http://localhost:3000`
 - Backend health: `http://localhost:8001/api/health/`
+- Quant service health: `http://localhost:8002/health`
 
 ## Bootstrap (first-time initialization)
 

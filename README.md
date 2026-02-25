@@ -19,8 +19,14 @@ Fundval 是一个面向基金投资者与研究者的「估值 + 指标 + 信号
 
 - `backend/`：Rust（axum/sqlx）后端 API
 - `frontend/`：Next.js 前端（Ant Design + ECharts）
+- `quant-service/`：Python（FastAPI）量化计算服务（策略/指标计算）
 - `packaging/`：跨平台打包模板（portable、Windows 安装器等）
 - `docs/`：计划与文档（包含接口/实现规划）
+
+服务级开发说明：
+- `backend/README.md`
+- `frontend/README.md`
+- `quant-service/README.md`
 
 ## 快速开始（Docker，推荐）
 
@@ -40,6 +46,7 @@ docker compose -f docker-compose.sqlite.yml up --build
 
 - 前端：`http://localhost:3000`
 - 后端（health）：`http://localhost:8001/api/health/`
+- 量化服务（health）：`http://localhost:8002/health`
 
 如端口冲突，可在 `.env` 中调整 `FRONTEND_HOST_PORT / BACKEND_HOST_PORT`。
 
@@ -102,6 +109,8 @@ docker compose logs backend | grep "BOOTSTRAP KEY"
 frontend (Next.js)
     ↓ /api
 backend (axum)
+    ↓ QUANT_SERVICE_URL
+quant-service (FastAPI)
     ↓
 PostgreSQL
 ```
@@ -112,6 +121,7 @@ PostgreSQL
 
 - 后端 `cargo test -p api`
 - 前端 `npm test` + `npm run build`
+- 量化服务 `pytest -q`
 - 构建并推送 Docker 镜像到 GHCR（`ghcr.io`）
 - （可选）推送镜像到 Docker Hub（需配置 secrets）
 - 从 `CHANGELOG.md` 抽取对应版本段落生成 Release Notes，并上传跨平台附件
@@ -120,6 +130,7 @@ PostgreSQL
 
 - 后端：`ghcr.io/<owner>/<repo>-backend:<tag>` 与 `:latest`
 - 前端：`ghcr.io/<owner>/<repo>-frontend:<tag>` 与 `:latest`
+- 量化服务：`ghcr.io/<owner>/<repo>-quant-service:<tag>` 与 `:latest`
 
 需要你在 GitHub 仓库里确认：
 

@@ -17,7 +17,7 @@ export default function HomePage() {
 
     async function run() {
       try {
-        const res = await fetch("/api/health/", { headers: { Accept: "application/json" } });
+        const res = await fetch("/api/health", { headers: { Accept: "application/json" } });
         const data = (await res.json()) as any;
 
         if (cancelled) return;

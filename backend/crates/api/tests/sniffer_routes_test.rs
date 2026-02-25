@@ -7,7 +7,7 @@ use api::state::AppState;
 async fn sniffer_endpoints_require_auth() {
     let config = api::config::ConfigStore::load();
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(None, config, jwt);
+    let state = AppState::new(None, config, jwt, api::db::DatabaseKind::Sqlite);
     let app = api::service(state);
 
     for uri in ["/api/sniffer/status/", "/api/sniffer/items/"] {

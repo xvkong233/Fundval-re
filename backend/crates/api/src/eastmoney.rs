@@ -22,6 +22,18 @@ pub struct RealtimeNavData {
 }
 
 #[derive(Debug, Clone)]
+pub struct FundGzSnapshot {
+    pub fund_code: String,
+    pub fund_name: Option<String>,
+    pub latest_nav: Option<Decimal>,
+    pub latest_nav_date: Option<NaiveDate>,
+    pub estimate_nav: Option<Decimal>,
+    pub estimate_growth: Option<Decimal>,
+    pub estimate_time: Option<NaiveDateTime>,
+    pub gztime_raw: Option<String>,
+}
+
+#[derive(Debug, Clone)]
 pub struct FundListItem {
     pub fund_code: String,
     pub fund_name: String,
@@ -57,6 +69,17 @@ fn extract_jsonpgz_payload(text: &str) -> Option<&str> {
     }
 }
 
+fn extract_jsonp_payload(text: &str) -> Option<&str> {
+    let text = text.trim();
+    let open = text.find('(')?;
+    let close = text.rfind(')')?;
+    if close <= open {
+        return None;
+    }
+    let payload = text[open + 1..close].trim();
+    if payload.is_empty() { None } else { Some(payload) }
+}
+
 pub fn build_client() -> Result<reqwest::Client, String> {
     let mut headers = HeaderMap::new();
     headers.insert(ACCEPT, HeaderValue::from_static("*/*"));
@@ -76,6 +99,62 @@ pub fn build_client() -> Result<reqwest::Client, String> {
         .default_headers(headers)
         .build()
         .map_err(|e| e.to_string())
+}
+
+#[derive(Debug, Clone)]
+pub struct IndexKlineRow {
+    pub trade_date: NaiveDate,
+    pub close: Decimal,
+}
+
+pub async fn fetch_index_kline_daily(
+    client: &reqwest::Client,
+    index_code: &str,
+    start_date: NaiveDate,
+    end_date: NaiveDate,
+) -> Result<Vec<IndexKlineRow>, String> {
+    let beg = start_date.format("%Y%m%d").to_string();
+    let end = end_date.format("%Y%m%d").to_string();
+
+    // Eastmoney kline daily (klt=101): JSONP if cb present, so we always pass cb and parse payload.
+    let url = format!(
+        "http://60.push2his.eastmoney.com/api/qt/stock/kline/get?secid={index_code}&fields1=f1,f2,f3,f4,f5&fields2=f51,f52,f53,f54,f55,f56,f57&klt=101&fqt=0&beg={beg}&end={end}&ut=fa5fd1943c7b386f172d6893dbfba10b&cb=cb"
+    );
+    let text = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .error_for_status()
+        .map_err(|e| e.to_string())?
+        .text()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let payload = extract_jsonp_payload(&text).unwrap_or(text.trim());
+    let v: Value = serde_json::from_str(payload).map_err(|e| e.to_string())?;
+    let klines = v
+        .get("data")
+        .and_then(|d| d.get("klines"))
+        .and_then(|k| k.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    let mut out: Vec<IndexKlineRow> = Vec::with_capacity(klines.len());
+    for item in klines {
+        let Some(s) = item.as_str() else { continue; };
+        let parts: Vec<&str> = s.split(',').collect();
+        if parts.len() < 3 {
+            continue;
+        }
+        let date = parts[0].trim();
+        let close = parts[2].trim();
+        let Ok(d) = NaiveDate::parse_from_str(date, "%Y-%m-%d") else { continue; };
+        let Ok(c) = Decimal::from_str_exact(close) else { continue; };
+        out.push(IndexKlineRow { trade_date: d, close: c });
+    }
+
+    Ok(out)
 }
 
 pub async fn fetch_estimate(
@@ -134,6 +213,108 @@ pub async fn fetch_estimate(
         estimate_nav,
         estimate_growth,
         estimate_time,
+    }))
+}
+
+pub async fn fetch_fundgz_snapshot(
+    client: &reqwest::Client,
+    fund_code: &str,
+) -> Result<Option<FundGzSnapshot>, String> {
+    let url = format!("http://fundgz.1234567.com.cn/js/{fund_code}.js");
+    let text = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .error_for_status()
+        .map_err(|e| e.to_string())?
+        .text()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let Some(json_str) = extract_jsonpgz_payload(&text) else {
+        return Ok(None);
+    };
+
+    let v: Value = serde_json::from_str(json_str).map_err(|e| e.to_string())?;
+    let fundcode = v
+        .get("fundcode")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .trim();
+    if fundcode.is_empty() {
+        return Ok(None);
+    }
+
+    let name = v.get("name").and_then(|x| x.as_str()).map(|s| s.trim().to_string());
+
+    let latest_nav = v
+        .get("dwjz")
+        .and_then(|x| x.as_str())
+        .and_then(|s| {
+            let t = s.trim();
+            if t.is_empty() {
+                None
+            } else {
+                Decimal::from_str_exact(t).ok()
+            }
+        });
+
+    let latest_nav_date = v
+        .get("jzrq")
+        .and_then(|x| x.as_str())
+        .and_then(|s| {
+            let t = s.trim();
+            if t.is_empty() {
+                None
+            } else {
+                NaiveDate::parse_from_str(t, "%Y-%m-%d").ok()
+            }
+        });
+
+    let estimate_nav = v
+        .get("gsz")
+        .and_then(|x| x.as_str())
+        .and_then(|s| {
+            let t = s.trim();
+            if t.is_empty() {
+                None
+            } else {
+                Decimal::from_str_exact(t).ok()
+            }
+        });
+
+    let estimate_growth = v
+        .get("gszzl")
+        .and_then(|x| x.as_str())
+        .and_then(|s| {
+            let t = s.trim();
+            if t.is_empty() {
+                None
+            } else {
+                Decimal::from_str_exact(t).ok()
+            }
+        });
+
+    let gztime_raw = v
+        .get("gztime")
+        .and_then(|x| x.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    let estimate_time = gztime_raw
+        .as_deref()
+        .and_then(|s| NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M").ok());
+
+    Ok(Some(FundGzSnapshot {
+        fund_code: fundcode.to_string(),
+        fund_name: name,
+        latest_nav,
+        latest_nav_date,
+        estimate_nav,
+        estimate_growth,
+        estimate_time,
+        gztime_raw,
     }))
 }
 

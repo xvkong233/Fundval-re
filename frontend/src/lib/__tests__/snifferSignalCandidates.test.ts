@@ -14,5 +14,20 @@ describe("selectSnifferSignalCandidateCodes", () => {
     expect(selectSnifferSignalCandidateCodes(items, 50)).toEqual(["A", "B", "C"]);
     expect(selectSnifferSignalCandidateCodes(items, 2)).toEqual(["A", "B"]);
   });
-});
 
+  test("is stable regardless of input order when scores tie", () => {
+    const items1 = [
+      { fund_code: "B", star_count: 3, max_drawdown: "10", year_growth: "0" },
+      { fund_code: "A", star_count: 3, max_drawdown: "10", year_growth: "0" },
+      { fund_code: "C", star_count: 3, max_drawdown: "10", year_growth: "0" },
+    ];
+    const items2 = [
+      { fund_code: "C", star_count: 3, max_drawdown: "10", year_growth: "0" },
+      { fund_code: "B", star_count: 3, max_drawdown: "10", year_growth: "0" },
+      { fund_code: "A", star_count: 3, max_drawdown: "10", year_growth: "0" },
+    ];
+
+    expect(selectSnifferSignalCandidateCodes(items1, 50)).toEqual(["A", "B", "C"]);
+    expect(selectSnifferSignalCandidateCodes(items2, 50)).toEqual(["A", "B", "C"]);
+  });
+});

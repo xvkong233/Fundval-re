@@ -2,6 +2,7 @@ param(
   [string]$ProjectName = "fundval-check-funds",
   [string]$FrontendPort = "3000",
   [string]$BackendPort = "8001",
+  [string]$QuantPort = "8002",
   [switch]$Build,
   [string]$FundCode = ""
 )
@@ -17,11 +18,12 @@ function Invoke-Compose([string[]]$ComposeArgs) {
 $env:COMPOSE_PROJECT_NAME = $ProjectName
 $env:FRONTEND_HOST_PORT = $FrontendPort
 $env:BACKEND_HOST_PORT = $BackendPort
+$env:QUANT_HOST_PORT = $QuantPort
 
 # 启动（不删 volume）
 $upArgs = @("up", "-d")
 if ($Build) { $upArgs += "--build" } else { $upArgs += "--no-build" }
-$upArgs += @("db-candidate", "backend", "frontend")
+$upArgs += @("db-candidate", "quant-service", "backend", "frontend")
 Invoke-Compose $upArgs
 
 $healthUrl = "http://localhost:$BackendPort/api/health/"
@@ -71,4 +73,4 @@ Write-Host ""
 Write-Host "Done."
 Write-Host " - Frontend: http://localhost:$FrontendPort/"
 Write-Host " - API:      http://localhost:$BackendPort/"
-
+Write-Host " - Quant:    http://localhost:$QuantPort/health"

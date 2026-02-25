@@ -3,9 +3,20 @@
 .worktrees/
 .codex/
 
+# Python / FastAPI / tooling
+**/__pycache__/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.tox/
+**/.venv/
+**/venv/
+**/.python-version
+
 # Rust
 backend/target/
 **/target/
+**/.sqlx/
 
 # Node / Next.js
 frontend/node_modules/
@@ -13,6 +24,12 @@ frontend/.next/
 **/node_modules/
 **/.next/
 **/.turbo/
+**/.pnpm-store/
+**/.yarn/
+**/.cache/
+**/.vite/
+**/dist/
+**/out/
 
 # Logs / temp
 logs/

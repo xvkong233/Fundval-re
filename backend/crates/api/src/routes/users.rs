@@ -305,7 +305,7 @@ pub async fn me_summary(
 
     let total_cost = sqlx::query_scalar::<_, f64>(
         r#"
-        SELECT COALESCE(CAST(SUM(CAST(p.holding_cost AS REAL)) AS REAL), 0.0)
+        SELECT COALESCE(CAST(SUM(CAST(p.holding_cost AS DOUBLE PRECISION)) AS DOUBLE PRECISION), 0.0)
         FROM position p
         JOIN account a ON a.id = p.account_id
         WHERE a.user_id = $1
@@ -317,7 +317,7 @@ pub async fn me_summary(
 
     let total_value = sqlx::query_scalar::<_, f64>(
         r#"
-        SELECT COALESCE(CAST(SUM(CAST(f.latest_nav AS REAL) * CAST(p.holding_share AS REAL)) AS REAL), 0.0)
+        SELECT COALESCE(CAST(SUM(CAST(f.latest_nav AS DOUBLE PRECISION) * CAST(p.holding_share AS DOUBLE PRECISION)) AS DOUBLE PRECISION), 0.0)
         FROM position p
         JOIN account a ON a.id = p.account_id
         JOIN fund f ON f.id = p.fund_id
@@ -330,7 +330,7 @@ pub async fn me_summary(
 
     let total_pnl = sqlx::query_scalar::<_, f64>(
         r#"
-        SELECT COALESCE(CAST(SUM((CAST(f.latest_nav AS REAL) - CAST(p.holding_nav AS REAL)) * CAST(p.holding_share AS REAL)) AS REAL), 0.0)
+        SELECT COALESCE(CAST(SUM((CAST(f.latest_nav AS DOUBLE PRECISION) - CAST(p.holding_nav AS DOUBLE PRECISION)) * CAST(p.holding_share AS DOUBLE PRECISION)) AS DOUBLE PRECISION), 0.0)
         FROM position p
         JOIN account a ON a.id = p.account_id
         JOIN fund f ON f.id = p.fund_id

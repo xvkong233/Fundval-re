@@ -123,5 +123,5 @@ async fn compute_writes_fund_signal_snapshot_row() {
 
     let p: Option<f64> = row.try_get("dip_buy_proba_5t").ok();
     let p = p.expect("dip_buy_proba_5t should exist");
-    assert!(p >= 0.0 && p <= 1.0);
+    assert!((0.0..=1.0).contains(&p));
 }

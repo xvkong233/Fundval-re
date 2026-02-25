@@ -19,6 +19,7 @@ import {
   Divider,
   Empty,
   Form,
+  Grid,
   Input,
   InputNumber,
   Modal,
@@ -34,7 +35,8 @@ import {
   message,
   theme,
 } from "antd";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AuthedLayout } from "../../components/AuthedLayout";
 import {
@@ -158,6 +160,8 @@ function PositionsInner() {
   const searchParams = useSearchParams();
   const preferredAccountId = searchParams?.get("account");
   const { token } = theme.useToken();
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
 
   const [loading, setLoading] = useState(false);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -251,7 +255,7 @@ function PositionsInner() {
   const distributionRows = useMemo(() => computeDistribution(positions as any), [positions]);
   const pnlRankingRows = useMemo(() => computePnlRanking(positions as any, 10), [positions]);
 
-  const getOperationTypeTag = (record: Operation) => {
+  const getOperationTypeTag = useCallback((record: Operation) => {
     if (record.operation_type === "SELL") return <Tag color="green">减仓</Tag>;
 
     const fundOps = operations
@@ -264,7 +268,7 @@ function PositionsInner() {
 
     const isBuild = fundOps.length > 0 && fundOps[0]?.id === record.id;
     return <Tag color="red">{isBuild ? "建仓" : "加仓"}</Tag>;
-  };
+  }, [operations]);
 
   const loadAccounts = async () => {
     setLoading(true);
@@ -282,7 +286,7 @@ function PositionsInner() {
     }
   };
 
-  const refreshFundData = async (pos: Position[]) => {
+  const refreshFundData = useCallback(async (pos: Position[]) => {
     const codes = pos.map((p) => p.fund_code).filter(Boolean);
     if (codes.length === 0) return;
     setRefreshingFundData(true);
@@ -312,9 +316,9 @@ function PositionsInner() {
     } finally {
       setRefreshingFundData(false);
     }
-  };
+  }, []);
 
-  const loadPositions = async (accountId: string) => {
+  const loadPositions = useCallback(async (accountId: string) => {
     setPositionsLoading(true);
     try {
       const res = await listPositions({ account: accountId });
@@ -326,9 +330,9 @@ function PositionsInner() {
     } finally {
       setPositionsLoading(false);
     }
-  };
+  }, [refreshFundData]);
 
-  const loadOperations = async (accountId: string) => {
+  const loadOperations = useCallback(async (accountId: string) => {
     setOpsLoading(true);
     try {
       const res = await listPositionOperations({ account: accountId });
@@ -344,7 +348,7 @@ function PositionsInner() {
     } finally {
       setOpsLoading(false);
     }
-  };
+  }, []);
 
   const loadHistory = async (accountId: string, days: number) => {
     setHistoryLoading(true);
@@ -438,7 +442,7 @@ function PositionsInner() {
     setOpModalOpen(true);
   };
 
-  const openBuySell = (mode: "buy" | "sell", position: Position) => {
+  const openBuySell = useCallback((mode: "buy" | "sell", position: Position) => {
     if (!selectedAccountId) return;
     setOpModalMode(mode);
     opForm.resetFields();
@@ -449,7 +453,7 @@ function PositionsInner() {
       before_15: true,
     });
     setOpModalOpen(true);
-  };
+  }, [opForm, selectedAccountId]);
 
   const submitOperation = async () => {
     if (!selectedAccountId) return;
@@ -484,7 +488,7 @@ function PositionsInner() {
     }
   };
 
-  const rollback = async (opId: string) => {
+  const rollback = useCallback(async (opId: string) => {
     if (!selectedAccountId) return;
     setLoading(true);
     try {
@@ -501,7 +505,7 @@ function PositionsInner() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [loadOperations, loadPositions, selectedAccountId]);
 
   const recalc = async () => {
     if (!selectedAccountId) return;
@@ -522,22 +526,219 @@ function PositionsInner() {
     }
   };
 
+  const positionColumns = useMemo(() => {
+    if (isMobile) {
+      return [
+        {
+          title: "基金",
+          key: "fund",
+          render: (_: any, record: Position) => {
+            const code = String(record.fund_code ?? "").trim();
+            const name = String(record.fund_name ?? record.fund?.fund_name ?? code).trim();
+            const latestNav = record.fund?.latest_nav ?? (record as any).latest_nav;
+            const latestDate = record.fund?.latest_nav_date ?? (record as any).latest_nav_date;
+            const estNav = record.fund?.estimate_nav;
+            const estGrowth = record.fund?.estimate_growth;
+            const estGrowthNum = toNumber(estGrowth);
+            const positive = estGrowthNum === null ? !String(estGrowth ?? "").startsWith("-") : estGrowthNum >= 0;
+
+            return (
+              <div style={{ minWidth: 0 }}>
+                <Link
+                  href={`/funds/${encodeURIComponent(code)}`}
+                  style={{ display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                  title={name}
+                >
+                  {name || code}
+                </Link>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <Text type="secondary" className="fv-mono" style={{ fontSize: 12 }}>
+                    {code}
+                  </Text>
+                  {latestNav ? (
+                    <Text type="secondary" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+                      最新 {fixed4(latestNav)}
+                      {typeof latestDate === "string" ? ` (${latestDate.slice(5)})` : ""}
+                    </Text>
+                  ) : null}
+                  {estNav ? (
+                    <Text type="secondary" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+                      估值 {fixed4(estNav)}
+                    </Text>
+                  ) : null}
+                  {estGrowth !== undefined && estGrowth !== null && estGrowth !== "" ? (
+                    <Text style={{ fontSize: 12, color: positive ? "#cf1322" : "#3f8600", whiteSpace: "nowrap" }}>
+                      {estGrowthNum !== null && estGrowthNum >= 0 ? "+" : ""}
+                      {estGrowthNum !== null ? estGrowthNum.toFixed(2) : String(estGrowth)}%
+                    </Text>
+                  ) : null}
+                </div>
+              </div>
+            );
+          },
+        },
+        {
+          title: "盈亏",
+          key: "pnl",
+          width: 120,
+          render: (_: any, record: Position) => (
+            <div style={{ whiteSpace: "nowrap" }}>
+              <div style={{ color: pnlColor(record.pnl) }}>{money(record.pnl)}</div>
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                成本 {money(record.holding_cost)}
+              </Text>
+            </div>
+          ),
+        },
+        {
+          title: "",
+          key: "action",
+          width: 110,
+          render: (_: any, record: Position) => (
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 6 }}>
+              <Button size="small" icon={<PlusOutlined />} onClick={() => openBuySell("buy", record)} />
+              <Button size="small" icon={<MinusOutlined />} onClick={() => openBuySell("sell", record)} />
+            </div>
+          ),
+        },
+      ];
+    }
+
+    return [
+      { title: "代码", dataIndex: "fund_code", width: 110, render: (v: any) => <span className="fv-mono">{String(v ?? "-")}</span> },
+      {
+        title: "基金名称",
+        dataIndex: "fund_name",
+        ellipsis: true,
+        render: (_: any, record: Position) => (
+          <Link href={`/funds/${encodeURIComponent(String(record.fund_code ?? "").trim())}`}>{record.fund_name ?? "-"}</Link>
+        ),
+      },
+      {
+        title: "最新净值",
+        key: "latest_nav",
+        width: 160,
+        render: (_: any, record: Position) => {
+          const nav = record.fund?.latest_nav ?? (record as any).latest_nav;
+          const date = record.fund?.latest_nav_date ?? (record as any).latest_nav_date;
+          if (!nav) return "-";
+          const dateStr = typeof date === "string" ? `(${date.slice(5)})` : "";
+          return (
+            <span style={{ whiteSpace: "nowrap" }}>
+              {fixed4(nav)}
+              <Text type="secondary" style={{ fontSize: 11, marginLeft: 4 }}>
+                {dateStr}
+              </Text>
+            </span>
+          );
+        },
+      },
+      {
+        title: "实时估值",
+        key: "estimate_nav",
+        width: 140,
+        render: (_: any, record: Position) => {
+          const nav = record.fund?.estimate_nav;
+          return nav ? fixed4(nav) : "-";
+        },
+      },
+      {
+        title: "估算涨跌(%)",
+        key: "estimate_growth",
+        width: 140,
+        render: (_: any, record: Position) => {
+          const g = record.fund?.estimate_growth;
+          if (g === undefined || g === null || g === "") return "-";
+          const n = toNumber(g);
+          const text = n === null ? String(g) : n.toFixed(2);
+          const positive = n === null ? !String(g).startsWith("-") : n >= 0;
+          return (
+            <span style={{ color: positive ? "#cf1322" : "#3f8600", whiteSpace: "nowrap" }}>
+              {n !== null && n >= 0 ? "+" : ""}
+              {text}
+            </span>
+          );
+        },
+      },
+      { title: "持有份额", dataIndex: "holding_share", width: 130, render: (v: any) => (v ? String(v) : "-") },
+      { title: "持有成本", dataIndex: "holding_cost", width: 130, render: money },
+      {
+        title: "盈亏",
+        dataIndex: "pnl",
+        width: 120,
+        render: (v: any) => <span style={{ color: pnlColor(v), whiteSpace: "nowrap" }}>{money(v)}</span>,
+      },
+      {
+        title: "操作",
+        key: "action",
+        width: 160,
+        render: (_: any, record: Position) => (
+          <Space size="small">
+            <Button size="small" icon={<PlusOutlined />} onClick={() => openBuySell("buy", record)}>
+              加仓
+            </Button>
+            <Button size="small" icon={<MinusOutlined />} onClick={() => openBuySell("sell", record)}>
+              减仓
+            </Button>
+          </Space>
+        ),
+      },
+    ];
+  }, [isMobile, openBuySell]);
+
+  const operationsColumns = useMemo(() => {
+    return [
+      { title: "日期", dataIndex: "operation_date", width: 120 },
+      {
+        title: "类型",
+        dataIndex: "operation_type",
+        width: 90,
+        render: (_: any, record: Operation) => getOperationTypeTag(record),
+      },
+      { title: "基金", key: "fund", render: (_: any, r: Operation) => r.fund_name ?? "-" },
+      { title: "金额", dataIndex: "amount", width: 110, render: money },
+      { title: "份额", dataIndex: "share", width: 110, render: (v: any) => (v ? String(v) : "-"), responsive: ["md"] },
+      { title: "净值", dataIndex: "nav", width: 110, render: fixed4, responsive: ["md"] },
+      {
+        title: "15点前",
+        dataIndex: "before_15",
+        width: 80,
+        render: (v: any) => (v ? "是" : "否"),
+        responsive: ["lg"],
+      },
+      {
+        title: "操作",
+        key: "action",
+        width: 110,
+        render: (_: any, record: Operation) => (
+          <Popconfirm title="确认回滚该操作？" okText="回滚" cancelText="取消" onConfirm={() => void rollback(record.id)}>
+            <Button size="small" danger icon={<DeleteOutlined />}>
+              回滚
+            </Button>
+          </Popconfirm>
+        ),
+      },
+    ];
+  }, [getOperationTypeTag, rollback]);
+
   return (
     <AuthedLayout title="持仓">
       <Card
         title="持仓管理"
         extra={
-          <Space wrap>
-            <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void loadAccounts()}>
-              刷新账户
-            </Button>
-            <Button icon={<RollbackOutlined />} loading={loading} onClick={() => void recalc()}>
-              重算持仓
-            </Button>
-            <Button type="primary" icon={<PlusOutlined />} onClick={openBuild} disabled={!selectedAccountId}>
-              建仓/加减仓
-            </Button>
-          </Space>
+          <div className="fv-toolbarScroll">
+            <Space wrap>
+              <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void loadAccounts()}>
+                刷新账户
+              </Button>
+              <Button icon={<RollbackOutlined />} loading={loading} onClick={() => void recalc()}>
+                重算持仓
+              </Button>
+              <Button type="primary" icon={<PlusOutlined />} onClick={openBuild} disabled={!selectedAccountId}>
+                建仓/加减仓
+              </Button>
+            </Space>
+          </div>
         }
       >
         {childAccounts.length === 0 ? (
@@ -553,24 +754,16 @@ function PositionsInner() {
             />
 
             <Card size="small" title={selectedAccount ? `账户：${selectedAccount.name}` : "账户汇总"}>
-              <Row gutter={16}>
-                <Col span={6}>
-                  <Statistic title="持仓成本" value={money(accountStats.holding_cost)} />
-                </Col>
-                <Col span={6}>
-                  <Statistic title="持仓市值" value={money(accountStats.holding_value)} />
-                </Col>
-                <Col span={6}>
-                  <Statistic
-                    title="总盈亏"
-                    valueStyle={{ color: pnlColor(accountStats.pnl) }}
-                    value={money(accountStats.pnl)}
-                  />
-                </Col>
-                <Col span={6}>
-                  <Statistic title="今日盈亏(预估)" valueStyle={{ color: pnlColor(accountStats.today_pnl) }} value={money(accountStats.today_pnl)} />
-                </Col>
-              </Row>
+              <div className="fv-kpiGrid4">
+                <Statistic title="持仓成本" value={money(accountStats.holding_cost)} />
+                <Statistic title="持仓市值" value={money(accountStats.holding_value)} />
+                <Statistic title="总盈亏" valueStyle={{ color: pnlColor(accountStats.pnl) }} value={money(accountStats.pnl)} />
+                <Statistic
+                  title="今日盈亏(预估)"
+                  valueStyle={{ color: pnlColor(accountStats.today_pnl) }}
+                  value={money(accountStats.today_pnl)}
+                />
+              </div>
             </Card>
 
             <Card
@@ -589,19 +782,21 @@ function PositionsInner() {
                     label: "收益趋势",
                     children: (
                       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                        <Space wrap>
-                          {[7, 30, 90, 180].map((d) => (
-                            <Button
-                              key={d}
-                              size="small"
-                              type={historyDays === d ? "primary" : "default"}
-                              loading={historyLoading}
-                              onClick={() => setHistoryDays(d)}
-                            >
-                              {d === 7 ? "近7天" : d === 30 ? "近30天" : d === 90 ? "近90天" : "近半年"}
-                            </Button>
-                          ))}
-                        </Space>
+                        <div className="fv-toolbarScroll">
+                          <Space wrap>
+                            {[7, 30, 90, 180].map((d) => (
+                              <Button
+                                key={d}
+                                size="small"
+                                type={historyDays === d ? "primary" : "default"}
+                                loading={historyLoading}
+                                onClick={() => setHistoryDays(d)}
+                              >
+                                {d === 7 ? "近7天" : d === 30 ? "近30天" : d === 90 ? "近90天" : "近半年"}
+                              </Button>
+                            ))}
+                          </Space>
+                        </div>
                         {historyError ? (
                           <Empty description={historyError} />
                         ) : historyPoints.length === 0 ? (
@@ -648,151 +843,58 @@ function PositionsInner() {
               />
             </Card>
 
-            <Space wrap>
-              <Button
-                icon={<ReloadOutlined />}
-                loading={refreshingFundData}
-                onClick={() => void refreshFundData(positions)}
-                disabled={positions.length === 0}
-              >
-                刷新估值/净值
-              </Button>
-              <Select
-                style={{ width: 220 }}
-                value={fundTypeFilter}
-                onChange={(v) => setFundTypeFilter(v)}
-                options={fundTypeOptions.map((t) => ({ value: t, label: t === "all" ? "全部类型" : t }))}
-              />
-            </Space>
+            <div className="fv-toolbar">
+              <div className="fv-toolbarLeft fv-toolbarScroll">
+                <Button
+                  icon={<ReloadOutlined />}
+                  loading={refreshingFundData}
+                  onClick={() => void refreshFundData(positions)}
+                  disabled={positions.length === 0}
+                >
+                  刷新估值/净值
+                </Button>
+                <Select
+                  style={{ width: 220 }}
+                  value={fundTypeFilter}
+                  onChange={(v) => setFundTypeFilter(v)}
+                  options={fundTypeOptions.map((t) => ({ value: t, label: t === "all" ? "全部类型" : t }))}
+                />
+              </div>
+            </div>
 
             <Table<Position>
               rowKey={(r) => r.id}
               loading={positionsLoading}
               dataSource={filteredPositions}
-              pagination={false}
-              size="middle"
-              columns={[
-                { title: "代码", dataIndex: "fund_code", width: 110 },
-                { title: "基金名称", dataIndex: "fund_name", ellipsis: true },
-                {
-                  title: "最新净值",
-                  key: "latest_nav",
-                  width: 160,
-                  render: (_, record) => {
-                    const nav = record.fund?.latest_nav ?? (record as any).latest_nav;
-                    const date = record.fund?.latest_nav_date ?? (record as any).latest_nav_date;
-                    if (!nav) return "-";
-                    const dateStr = typeof date === "string" ? `(${date.slice(5)})` : "";
-                    return (
-                      <span style={{ whiteSpace: "nowrap" }}>
-                        {fixed4(nav)}
-                        <Text type="secondary" style={{ fontSize: 11, marginLeft: 4 }}>
-                          {dateStr}
-                        </Text>
-                      </span>
-                    );
-                  },
-                },
-                {
-                  title: "实时估值",
-                  key: "estimate_nav",
-                  width: 140,
-                  render: (_, record) => {
-                    const nav = record.fund?.estimate_nav;
-                    return nav ? fixed4(nav) : "-";
-                  },
-                },
-                {
-                  title: "估算涨跌(%)",
-                  key: "estimate_growth",
-                  width: 140,
-                  render: (_, record) => {
-                    const g = record.fund?.estimate_growth;
-                    if (g === undefined || g === null || g === "") return "-";
-                    const n = toNumber(g);
-                    const text = n === null ? String(g) : n.toFixed(2);
-                    const positive = n === null ? !String(g).startsWith("-") : n >= 0;
-                    return (
-                      <span style={{ color: positive ? "#cf1322" : "#3f8600" }}>
-                        {n !== null && n >= 0 ? "+" : ""}
-                        {text}
-                      </span>
-                    );
-                  },
-                },
-                { title: "持有份额", dataIndex: "holding_share", width: 130, render: (v) => (v ? String(v) : "-") },
-                { title: "持有成本", dataIndex: "holding_cost", width: 130, render: money },
-                {
-                  title: "盈亏",
-                  dataIndex: "pnl",
-                  width: 120,
-                  render: (v) => <span style={{ color: pnlColor(v) }}>{money(v)}</span>,
-                },
-                {
-                  title: "操作",
-                  key: "action",
-                  width: 160,
-                  render: (_, record) => (
-                    <Space size="small">
-                      <Button size="small" icon={<PlusOutlined />} onClick={() => openBuySell("buy", record)}>
-                        加仓
-                      </Button>
-                      <Button size="small" icon={<MinusOutlined />} onClick={() => openBuySell("sell", record)}>
-                        减仓
-                      </Button>
-                    </Space>
-                  ),
-                },
-              ]}
+              pagination={{
+                pageSize: isMobile ? 10 : 20,
+                simple: isMobile,
+                showLessItems: isMobile,
+                showSizeChanger: !isMobile,
+              }}
+              size={isMobile ? "small" : "middle"}
+              scroll={isMobile ? undefined : { x: "max-content" }}
+              columns={positionColumns as any}
             />
           </div>
         )}
       </Card>
 
       <Card title="操作流水" style={{ marginTop: 16 }}>
-            <Table<Operation>
-              rowKey={(r) => r.id}
-              loading={opsLoading}
-              dataSource={operations}
-              pagination={false}
-              size="small"
-              locale={{ emptyText: selectedAccountId ? "暂无操作流水" : "请选择子账户" }}
-              columns={[
-                { title: "日期", dataIndex: "operation_date", width: 120 },
-            {
-              title: "类型",
-              dataIndex: "operation_type",
-              width: 90,
-              render: (_: any, record) => getOperationTypeTag(record),
-            },
-            { title: "基金", key: "fund", render: (_, r) => r.fund_name ?? "-" },
-            { title: "金额", dataIndex: "amount", width: 110, render: money },
-            { title: "份额", dataIndex: "share", width: 110, render: (v) => (v ? String(v) : "-") },
-            { title: "净值", dataIndex: "nav", width: 110, render: fixed4 },
-            {
-              title: "15点前",
-              dataIndex: "before_15",
-              width: 80,
-              render: (v: any) => (v ? "是" : "否"),
-            },
-            {
-              title: "操作",
-              key: "action",
-              width: 110,
-              render: (_, record) => (
-                <Popconfirm
-                  title="确认回滚该操作？"
-                  okText="回滚"
-                  cancelText="取消"
-                  onConfirm={() => void rollback(record.id)}
-                >
-                  <Button size="small" danger icon={<DeleteOutlined />}>
-                    回滚
-                  </Button>
-                </Popconfirm>
-              ),
-            },
-          ]}
+        <Table<Operation>
+          rowKey={(r) => r.id}
+          loading={opsLoading}
+          dataSource={operations}
+          pagination={{
+            pageSize: isMobile ? 10 : 20,
+            simple: isMobile,
+            showLessItems: isMobile,
+            showSizeChanger: !isMobile,
+          }}
+          size={isMobile ? "small" : "middle"}
+          scroll={isMobile ? undefined : { x: "max-content" }}
+          locale={{ emptyText: selectedAccountId ? "暂无操作流水" : "请选择子账户" }}
+          columns={operationsColumns as any}
         />
       </Card>
 
@@ -827,12 +929,12 @@ function PositionsInner() {
           </Form.Item>
 
           <Row gutter={12}>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item label="操作日期" name="operation_date" rules={[{ required: true, message: "请选择日期" }]}>
                 <DatePicker style={{ width: "100%" }} />
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item name="before_15" valuePropName="checked" label=" ">
                 <Checkbox>15:00 前操作</Checkbox>
               </Form.Item>
@@ -842,17 +944,17 @@ function PositionsInner() {
           <Divider style={{ margin: "12px 0" }} />
 
           <Row gutter={12}>
-            <Col span={8}>
+            <Col xs={24} sm={8}>
               <Form.Item label="金额" name="amount" rules={[{ required: true, message: "请输入金额" }]}>
                 <InputNumber style={{ width: "100%" }} min={0} precision={2} />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col xs={24} sm={8}>
               <Form.Item label="份额" name="share" rules={[{ required: true, message: "请输入份额" }]}>
                 <InputNumber style={{ width: "100%" }} min={0} precision={4} />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col xs={24} sm={8}>
               <Form.Item label="净值" name="nav" rules={[{ required: true, message: "请输入净值" }]}>
                 <InputNumber style={{ width: "100%" }} min={0} precision={4} />
               </Form.Item>

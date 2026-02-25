@@ -18,6 +18,28 @@ services:
     networks:
       - fundval
 
+  quant-service:
+    build:
+      context: ./quant-service
+    environment:
+      - PORT=8002
+      - DEBUG=${DEBUG:-false}
+      - TZ=${TZ:-Asia/Shanghai}
+    ports:
+      - "${QUANT_HOST_PORT:-8002}:8002"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8002/health').read(); print('ok')\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - fundval
+
   backend:
     build:
       context: ./backend
@@ -32,9 +54,12 @@ services:
       - REQUIRE_SECURE_SECRET=${REQUIRE_SECURE_SECRET:-false}
       - ALLOW_REGISTER=${ALLOW_REGISTER:-false}
       - DEBUG=${DEBUG:-false}
+      - QUANT_SERVICE_URL=http://quant-service:8002
       - TZ=${TZ:-Asia/Shanghai}
     depends_on:
       db-candidate:
+        condition: service_healthy
+      quant-service:
         condition: service_healthy
     volumes:
       - config_data:/app/config

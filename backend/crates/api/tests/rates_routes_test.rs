@@ -15,7 +15,7 @@ async fn body_json(res: axum::response::Response) -> Value {
 async fn rates_endpoints_require_auth() {
     let config = api::config::ConfigStore::load();
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(None, config, jwt);
+    let state = AppState::new(None, config, jwt, api::db::DatabaseKind::Sqlite);
     let app = api::service(state);
 
     let res = app
@@ -62,7 +62,7 @@ async fn risk_free_rate_returns_cached_row_when_present() {
 
     let config = api::config::ConfigStore::load();
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(Some(pool), config, jwt);
+    let state = AppState::new(Some(pool), config, jwt, api::db::DatabaseKind::Sqlite);
     let token = state.jwt().issue_access_token("1");
     let app = api::service(state);
 

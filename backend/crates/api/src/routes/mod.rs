@@ -7,16 +7,22 @@ pub mod auth;
 pub mod bootstrap;
 pub mod crawl_config;
 pub mod errors;
+pub mod forecast;
 pub mod fund_analytics;
+pub mod fund_analysis_v2;
 pub mod fund_signals;
 pub mod funds;
 pub mod health;
+pub mod indexes;
 pub mod nav_history;
 pub mod positions;
 pub mod rates;
 pub mod settings;
+pub mod sim;
+pub mod quant;
 pub mod sniffer;
 pub mod sources;
+pub mod tasks;
 pub mod users;
 pub mod watchlists;
 
@@ -73,12 +79,28 @@ pub fn router(state: AppState) -> Router<AppState> {
             axum::routing::get(fund_analytics::retrieve),
         )
         .route(
+            "/api/funds/{fund_code}/analysis_v2",
+            axum::routing::get(fund_analysis_v2::retrieve),
+        )
+        .route(
+            "/api/funds/{fund_code}/analysis_v2/compute",
+            axum::routing::post(fund_analysis_v2::compute),
+        )
+        .route(
             "/api/funds/{fund_code}/signals",
             axum::routing::get(fund_signals::retrieve),
         )
         .route(
             "/api/funds/signals/batch",
             axum::routing::post(fund_signals::batch),
+        )
+        .route(
+            "/api/funds/signals/batch_async",
+            axum::routing::post(fund_signals::batch_async),
+        )
+        .route(
+            "/api/funds/signals/batch_async/{task_id}",
+            axum::routing::get(fund_signals::batch_async_page),
         )
         .route(
             "/api/funds/{fund_code}/accuracy",
@@ -91,6 +113,10 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route(
             "/api/funds/batch_update_nav",
             axum::routing::post(funds::batch_update_nav),
+        )
+        .route(
+            "/api/funds/prices/refresh_batch_async",
+            axum::routing::post(funds::prices_refresh_batch_async),
         )
         .route(
             "/api/funds/query_nav",
@@ -170,9 +196,93 @@ pub fn router(state: AppState) -> Router<AppState> {
             "/api/nav-history/sync",
             axum::routing::post(nav_history::sync),
         )
+        .route("/api/indexes/daily", axum::routing::get(indexes::daily))
         .route("/api/rates/risk-free", axum::routing::get(rates::risk_free))
         .route("/api/sniffer/status", axum::routing::get(sniffer::status))
         .route("/api/sniffer/items", axum::routing::get(sniffer::items))
+        .route(
+            "/api/forecast/model/train",
+            axum::routing::post(forecast::train_model),
+        )
+        .route("/api/quant/health", axum::routing::get(quant::health))
+        .route("/api/quant/macd", axum::routing::post(quant::macd))
+        .route(
+            "/api/quant/xalpha/metrics",
+            axum::routing::post(quant::xalpha_metrics),
+        )
+        .route(
+            "/api/quant/xalpha/metrics_batch_async",
+            axum::routing::post(quant::xalpha_metrics_batch_async),
+        )
+        .route("/api/quant/xalpha/grid", axum::routing::post(quant::xalpha_grid))
+        .route(
+            "/api/quant/xalpha/grid_batch_async",
+            axum::routing::post(quant::xalpha_grid_batch_async),
+        )
+        .route(
+            "/api/quant/xalpha/scheduled",
+            axum::routing::post(quant::xalpha_scheduled),
+        )
+        .route(
+            "/api/quant/xalpha/scheduled_batch_async",
+            axum::routing::post(quant::xalpha_scheduled_batch_async),
+        )
+        .route(
+            "/api/quant/xalpha/qdiipredict",
+            axum::routing::post(quant::xalpha_qdiipredict),
+        )
+        .route(
+            "/api/quant/xalpha/qdiipredict_batch_async",
+            axum::routing::post(quant::xalpha_qdiipredict_batch_async),
+        )
+        .route(
+            "/api/quant/xalpha/backtest",
+            axum::routing::post(quant::xalpha_backtest),
+        )
+        .route(
+            "/api/quant/fund-strategies/compare",
+            axum::routing::post(quant::fund_strategies_compare),
+        )
+        .route(
+            "/api/quant/pytrader/strategies",
+            axum::routing::get(quant::pytrader_strategies),
+        )
+        .route(
+            "/api/quant/pytrader/backtest",
+            axum::routing::post(quant::pytrader_backtest),
+        )
+        .route("/api/tasks/overview", axum::routing::get(tasks::overview))
+        .route("/api/tasks/jobs/{id}", axum::routing::get(tasks::job_detail))
+        .route("/api/tasks/jobs/{id}/runs", axum::routing::get(tasks::job_runs))
+        .route("/api/tasks/jobs/{id}/logs", axum::routing::get(tasks::job_logs))
+        .route("/api/tasks/runs/{id}/logs", axum::routing::get(tasks::run_logs))
+        // sim (paper trading / RL env)
+        .route(
+            "/api/sim/runs",
+            axum::routing::get(sim::list_runs).post(sim::create_run),
+        )
+        .route("/api/sim/runs/{id}", axum::routing::delete(sim::delete_run))
+        .route(
+            "/api/sim/runs/{id}/run",
+            axum::routing::post(sim::run_backtest),
+        )
+        .route(
+            "/api/sim/runs/{id}/train",
+            axum::routing::post(sim::train_auto),
+        )
+        .route(
+            "/api/sim/runs/{id}/train/rounds",
+            axum::routing::get(sim::train_rounds),
+        )
+        .route(
+            "/api/sim/envs/{id}/step",
+            axum::routing::post(sim::env_step),
+        )
+        .route(
+            "/api/sim/envs/{id}/observation",
+            axum::routing::get(sim::env_observation),
+        )
+        .route("/api/sim/runs/{id}/equity", axum::routing::get(sim::equity))
         .route(
             "/api/admin/sniffer/sync",
             axum::routing::post(sniffer::admin_sync),

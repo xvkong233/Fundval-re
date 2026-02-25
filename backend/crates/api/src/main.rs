@@ -7,7 +7,9 @@ use sqlx::Error as SqlxError;
 use sqlx::any::AnyPoolOptions;
 use sqlx::migrate::Migrator;
 use sqlx::postgres::PgPoolOptions;
+use tower::make::Shared;
 use tower_http::cors::{AllowOrigin, Any, CorsLayer};
+use tower_http::normalize_path::NormalizePath;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
@@ -182,33 +184,6 @@ async fn ensure_database_exists(database_url: &str) -> Result<(), SqlxError> {
     Ok(())
 }
 
-fn maybe_ensure_sqlite_parent_dir(database_url: &str) {
-    // 兼容：sqlite:data.db / sqlite://data.db / sqlite:///abs/path
-    // 对内存数据库与 query-only URL 直接跳过。
-    let url = database_url.trim();
-    if !url.starts_with("sqlite:") {
-        return;
-    }
-    if url.starts_with("sqlite::memory:") || url.starts_with("sqlite://:memory:") {
-        return;
-    }
-
-    let rest = url
-        .trim_start_matches("sqlite:")
-        .trim_start_matches('/')
-        .split('?')
-        .next()
-        .unwrap_or("")
-        .trim();
-    if rest.is_empty() {
-        return;
-    }
-
-    // 这里不尝试解析 URL 编码；仅用于“目录不存在导致无法创建 sqlite 文件”的常见场景。
-    let path = std::path::PathBuf::from(rest.replace('/', std::path::MAIN_SEPARATOR_STR));
-    let _ = api::db::ensure_parent_dir(&path);
-}
-
 async fn connect_any_pool(database_url: &str) -> Result<sqlx::AnyPool, SqlxError> {
     AnyPoolOptions::new()
         .max_connections(5)
@@ -234,8 +209,10 @@ async fn main() {
 
     let (database_url, db_kind) = api::db::resolve_database_url();
 
-    if db_kind == api::db::DatabaseKind::Sqlite {
-        maybe_ensure_sqlite_parent_dir(&database_url);
+    if db_kind == api::db::DatabaseKind::Sqlite
+        && let Err(e) = api::db::ensure_sqlite_db_file(&database_url)
+    {
+        tracing::warn!(error = %e, "failed to ensure sqlite db file");
     }
 
     let pool = match connect_any_pool(&database_url).await {
@@ -287,7 +264,7 @@ async fn main() {
         }
     }
 
-    let state = AppState::new(pool, config, jwt);
+    let state = AppState::new(pool, config, jwt, db_kind);
 
     if state.pool().is_some() {
         tokio::spawn(api::crawl::worker::background_task(state.clone()));
@@ -295,7 +272,10 @@ async fn main() {
 
     let cors = build_cors_layer(state.config().get_bool("debug", false));
 
-    let app = app(state).layer(TraceLayer::new_for_http()).layer(cors);
+    // 注意：NormalizePathLayer 作为普通 middleware 会在路由匹配之后才生效，
+    // 不能用于“尾斜杠归一化后再匹配路由”。这里必须把整个 Router 包一层 NormalizePath。
+    let router = app(state).layer(TraceLayer::new_for_http()).layer(cors);
+    let app = Shared::new(NormalizePath::trim_trailing_slash(router));
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     tracing::info!(%addr, "backend listening");

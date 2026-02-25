@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RelateTheme {
@@ -6,6 +6,25 @@ pub struct RelateTheme {
     pub sec_name: String,
     pub corr_1y: Option<f64>,
     pub ol2top: Option<f64>,
+}
+
+fn de_opt_f64<'de, D>(deserializer: D) -> Result<Option<f64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let v = serde_json::Value::deserialize(deserializer)?;
+    match v {
+        serde_json::Value::Null => Ok(None),
+        serde_json::Value::Number(n) => Ok(n.as_f64()),
+        serde_json::Value::String(s) => {
+            let s = s.trim();
+            if s.is_empty() {
+                return Ok(None);
+            }
+            s.parse::<f64>().map(Some).map_err(serde::de::Error::custom)
+        }
+        _ => Ok(None),
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -25,9 +44,9 @@ struct Jjxqy1_2ThemeItem {
     sec_code: Option<String>,
     #[serde(rename = "SEC_NAME")]
     sec_name: Option<String>,
-    #[serde(rename = "CORR_1Y")]
+    #[serde(default, rename = "CORR_1Y", deserialize_with = "de_opt_f64")]
     corr_1y: Option<f64>,
-    #[serde(rename = "OL2TOP")]
+    #[serde(default, rename = "OL2TOP", deserialize_with = "de_opt_f64")]
     ol2top: Option<f64>,
 }
 
@@ -160,7 +179,10 @@ pub async fn upsert_fund_relate_themes(
             INSERT INTO fund_relate_theme (
               fund_code, sec_code, sec_name, corr_1y, ol2top, source, fetched_at, created_at, updated_at
             ) VALUES (
-              $1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              $1, $2, $3,
+              CAST(CAST($4 AS TEXT) AS DOUBLE PRECISION),
+              CAST(CAST($5 AS TEXT) AS DOUBLE PRECISION),
+              $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
             ON CONFLICT (fund_code, sec_code, source) DO UPDATE
               SET sec_name = EXCLUDED.sec_name,
@@ -174,7 +196,7 @@ pub async fn upsert_fund_relate_themes(
             INSERT INTO fund_relate_theme (
               fund_code, sec_code, sec_name, corr_1y, ol2top, source, fetched_at, created_at, updated_at
             ) VALUES (
-              $1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              $1, $2, $3, CAST($4 AS REAL), CAST($5 AS REAL), $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
             ON CONFLICT (fund_code, sec_code, source) DO UPDATE
               SET sec_name = excluded.sec_name,
@@ -188,8 +210,8 @@ pub async fn upsert_fund_relate_themes(
             .bind(code)
             .bind(sec_code)
             .bind(sec_name)
-            .bind(t.corr_1y)
-            .bind(t.ol2top)
+            .bind(t.corr_1y.map(|v| v.to_string()))
+            .bind(t.ol2top.map(|v| v.to_string()))
             .bind(source)
             .execute(pool)
             .await;
@@ -203,8 +225,8 @@ pub async fn upsert_fund_relate_themes(
             .bind(code)
             .bind(sec_code)
             .bind(sec_name)
-            .bind(t.corr_1y)
-            .bind(t.ol2top)
+            .bind(t.corr_1y.map(|v| v.to_string()))
+            .bind(t.ol2top.map(|v| v.to_string()))
             .bind(source)
             .execute(pool)
             .await

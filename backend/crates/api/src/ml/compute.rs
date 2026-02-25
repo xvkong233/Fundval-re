@@ -213,7 +213,7 @@ async fn compute_position_percentile_and_bucket(
             JOIN fund f ON f.id = h.fund_id
             WHERE f.fund_code = $1
               AND h.source_name = $2
-              AND h.nav_date <= $3
+              AND h.nav_date <= DATE($3)
             ORDER BY h.nav_date DESC
             LIMIT 252
             "#,
@@ -291,7 +291,14 @@ async fn upsert_snapshot(
     as_of_date: &str,
     values: SnapshotValues,
 ) -> Result<(), String> {
-    sqlx::query(
+    let pos_pct = values.position_percentile_0_100.map(|v| v.to_string());
+    let dip_buy_5t = values.dip_buy_proba_5t.map(|v| v.to_string());
+    let dip_buy_20t = values.dip_buy_proba_20t.map(|v| v.to_string());
+    let magic_5t = values.magic_rebound_proba_5t.map(|v| v.to_string());
+    let magic_20t = values.magic_rebound_proba_20t.map(|v| v.to_string());
+
+    let is_postgres = crate::db::database_kind_from_pool(pool) == crate::db::DatabaseKind::Postgres;
+    let sql = if is_postgres {
         r#"
         INSERT INTO fund_signal_snapshot (
           fund_code, peer_code, as_of_date,
@@ -300,7 +307,13 @@ async fn upsert_snapshot(
           magic_rebound_proba_5t, magic_rebound_proba_20t,
           computed_at, created_at, updated_at
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (
+          $1,$2,DATE($3),
+          CAST(CAST($4 AS TEXT) AS DOUBLE PRECISION),$5,
+          CAST(CAST($6 AS TEXT) AS DOUBLE PRECISION),CAST(CAST($7 AS TEXT) AS DOUBLE PRECISION),
+          CAST(CAST($8 AS TEXT) AS DOUBLE PRECISION),CAST(CAST($9 AS TEXT) AS DOUBLE PRECISION),
+          CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        )
         ON CONFLICT (fund_code, peer_code, as_of_date) DO UPDATE SET
           position_percentile_0_100 = excluded.position_percentile_0_100,
           position_bucket = excluded.position_bucket,
@@ -310,17 +323,45 @@ async fn upsert_snapshot(
           magic_rebound_proba_20t = excluded.magic_rebound_proba_20t,
           computed_at = CURRENT_TIMESTAMP,
           updated_at = CURRENT_TIMESTAMP
-        "#,
-    )
+        "#
+    } else {
+        r#"
+        INSERT INTO fund_signal_snapshot (
+          fund_code, peer_code, as_of_date,
+          position_percentile_0_100, position_bucket,
+          dip_buy_proba_5t, dip_buy_proba_20t,
+          magic_rebound_proba_5t, magic_rebound_proba_20t,
+          computed_at, created_at, updated_at
+        )
+        VALUES (
+          $1,$2,DATE($3),
+          CAST($4 AS REAL),$5,
+          CAST($6 AS REAL),CAST($7 AS REAL),
+          CAST($8 AS REAL),CAST($9 AS REAL),
+          CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        )
+        ON CONFLICT (fund_code, peer_code, as_of_date) DO UPDATE SET
+          position_percentile_0_100 = excluded.position_percentile_0_100,
+          position_bucket = excluded.position_bucket,
+          dip_buy_proba_5t = excluded.dip_buy_proba_5t,
+          dip_buy_proba_20t = excluded.dip_buy_proba_20t,
+          magic_rebound_proba_5t = excluded.magic_rebound_proba_5t,
+          magic_rebound_proba_20t = excluded.magic_rebound_proba_20t,
+          computed_at = CURRENT_TIMESTAMP,
+          updated_at = CURRENT_TIMESTAMP
+        "#
+    };
+
+    sqlx::query(sql)
     .bind(fund_code)
     .bind(peer_code)
     .bind(as_of_date)
-    .bind(values.position_percentile_0_100)
+    .bind(pos_pct)
     .bind(values.position_bucket)
-    .bind(values.dip_buy_proba_5t)
-    .bind(values.dip_buy_proba_20t)
-    .bind(values.magic_rebound_proba_5t)
-    .bind(values.magic_rebound_proba_20t)
+    .bind(dip_buy_5t)
+    .bind(dip_buy_20t)
+    .bind(magic_5t)
+    .bind(magic_20t)
     .execute(pool)
     .await
     .map_err(|e| e.to_string())?;

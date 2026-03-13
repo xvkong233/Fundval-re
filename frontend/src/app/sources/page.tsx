@@ -20,7 +20,7 @@ const { Paragraph, Text, Title } = Typography;
 type AccuracyState =
   | { status: "idle" }
   | { status: "loading" }
-  | { status: "ok"; avg_error_rate: number; record_count: number }
+  | { status: "ok"; avg_error_rate: number | null; record_count: number }
   | { status: "error"; message: string };
 
 type HealthState =
@@ -229,7 +229,12 @@ export default function SourcesPage() {
                     const state = accuracyByName[record.name] ?? { status: "idle" };
                     if (state.status === "loading") return <Text type="secondary">加载中...</Text>;
                     if (state.status === "error") return <Text type="danger">{state.message}</Text>;
-                    if (state.status === "ok") return formatErrorRatePercent(state.avg_error_rate);
+                    if (state.status === "ok") {
+                      if (state.record_count === 0 || state.avg_error_rate === null) {
+                        return <Text type="secondary">无样本</Text>;
+                      }
+                      return formatErrorRatePercent(state.avg_error_rate);
+                    }
                     return "-";
                   },
                 },

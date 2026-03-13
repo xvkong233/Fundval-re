@@ -1,5 +1,5 @@
 use axum::{Json, extract::Query, http::StatusCode, response::IntoResponse};
-use chrono::{DateTime, Datelike, Duration, NaiveDate, SecondsFormat, Utc};
+use chrono::{Datelike, Duration, NaiveDate, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -218,8 +218,8 @@ pub async fn list(
     let count: i64 = count_row.get::<i64, _>("cnt");
 
     // page data
-        let list_sql = format!(
-            r#"
+    let list_sql = format!(
+        r#"
         SELECT
           CAST(id AS TEXT) as id,
           fund_code,
@@ -627,13 +627,15 @@ pub async fn estimate(
             if name.trim().eq_ignore_ascii_case("test fund") || name.trim() == "T" {
                 if let Ok(client) = eastmoney::build_client() {
                     let _ = ensure_fund_exists(pool, &client, &fund_code).await;
-                    sqlx::query("SELECT CAST(id AS TEXT) as id, fund_name FROM fund WHERE fund_code = $1")
-                        .bind(&fund_code)
-                        .fetch_optional(pool)
-                        .await
-                        .ok()
-                        .flatten()
-                        .or(Some(v))
+                    sqlx::query(
+                        "SELECT CAST(id AS TEXT) as id, fund_name FROM fund WHERE fund_code = $1",
+                    )
+                    .bind(&fund_code)
+                    .fetch_optional(pool)
+                    .await
+                    .ok()
+                    .flatten()
+                    .or(Some(v))
                 } else {
                     Some(v)
                 }
@@ -1133,7 +1135,8 @@ pub async fn batch_estimate(
 
             if enqueue_refresh {
                 // 请求触发：按自选级别优先级入队（让估值更“实时”）。
-                let _ = crate::crawl::scheduler::upsert_estimate_job(pool, code, source_name, 120).await;
+                let _ = crate::crawl::scheduler::upsert_estimate_job(pool, code, source_name, 120)
+                    .await;
             }
         }
 
@@ -1169,21 +1172,14 @@ pub async fn batch_estimate(
                 match source_name {
                     sources::SOURCE_TIANTIAN => match eastmoney::fetch_estimate(&client, &code).await {
                         Ok(Some(data)) => {
-                            let now = Utc::now();
-                            let _ = sqlx::query(
-                                r#"
-                                UPDATE fund
-                                SET estimate_nav = CAST($2 AS NUMERIC),
-                                    estimate_growth = CAST($3 AS NUMERIC),
-                                    estimate_time = CAST($4 AS TIMESTAMPTZ),
-                                    updated_at = CURRENT_TIMESTAMP
-                            WHERE CAST(id AS TEXT) = $1
-                                "#,
-                            )
+                            let estimate_time = format_naive_dt(data.estimate_time);
+                            let _ = sqlx::query(update_estimate_sql(
+                                crate::db::database_kind_from_pool(&pool) == DatabaseKind::Postgres,
+                            ))
                             .bind(&row.id)
                             .bind(data.estimate_nav.to_string())
                             .bind(data.estimate_growth.to_string())
-                            .bind(format_dt(now))
+                            .bind(&estimate_time)
                             .execute(&pool)
                             .await;
 
@@ -1203,7 +1199,7 @@ pub async fn batch_estimate(
                                   "fund_name": row.fund_name,
                                   "estimate_nav": data.estimate_nav.to_string(),
                                   "estimate_growth": data.estimate_growth.to_string(),
-                                  "estimate_time": format_dt(now),
+                                  "estimate_time": estimate_time,
                                   "latest_nav": row.latest_nav,
                                   "latest_nav_date": row.latest_nav_date,
                                   "from_cache": false
@@ -1486,15 +1482,9 @@ pub async fn batch_update_nav(
 
             match fetched {
                 Ok(Some(data)) => {
-                    let _ = sqlx::query(
-                        r#"
-                        UPDATE fund
-                        SET latest_nav = CAST($2 AS NUMERIC),
-                            latest_nav_date = CAST($3 AS DATE),
-                            updated_at = CURRENT_TIMESTAMP
-                        WHERE fund_code = $1
-                        "#,
-                    )
+                    let _ = sqlx::query(update_latest_nav_sql(
+                        crate::db::database_kind_from_pool(&pool) == DatabaseKind::Postgres,
+                    ))
                     .bind(&code)
                     .bind(data.nav.to_string())
                     .bind(data.nav_date.to_string())
@@ -1602,7 +1592,8 @@ pub async fn prices_refresh_batch_async(
     let priority = body.priority.unwrap_or(150).clamp(1, 1000);
 
     let task_id =
-        match tasks::enqueue_task_job(pool, "prices_refresh_batch", &payload, priority, created_by).await
+        match tasks::enqueue_task_job(pool, "prices_refresh_batch", &payload, priority, created_by)
+            .await
         {
             Ok(id) => id,
             Err(e) => {
@@ -2114,8 +2105,50 @@ async fn sync_nav_history_for_date(
     Ok(inserted_count)
 }
 
-fn format_dt(dt: DateTime<Utc>) -> String {
-    dt.to_rfc3339_opts(SecondsFormat::AutoSi, false)
+fn format_naive_dt(dt: chrono::NaiveDateTime) -> String {
+    dt.format("%Y-%m-%dT%H:%M:%S").to_string()
+}
+
+fn update_estimate_sql(is_postgres: bool) -> &'static str {
+    if is_postgres {
+        r#"
+            UPDATE fund
+            SET estimate_nav = CAST($2 AS NUMERIC),
+                estimate_growth = CAST($3 AS NUMERIC),
+                estimate_time = CAST($4 AS TIMESTAMPTZ),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE CAST(id AS TEXT) = $1
+        "#
+    } else {
+        r#"
+            UPDATE fund
+            SET estimate_nav = $2,
+                estimate_growth = $3,
+                estimate_time = $4,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE CAST(id AS TEXT) = $1
+        "#
+    }
+}
+
+fn update_latest_nav_sql(is_postgres: bool) -> &'static str {
+    if is_postgres {
+        r#"
+            UPDATE fund
+            SET latest_nav = CAST($2 AS NUMERIC),
+                latest_nav_date = CAST($3 AS DATE),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE fund_code = $1
+        "#
+    } else {
+        r#"
+            UPDATE fund
+            SET latest_nav = $2,
+                latest_nav_date = $3,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE fund_code = $1
+        "#
+    }
 }
 
 async fn upsert_estimate_accuracy(
@@ -2151,4 +2184,96 @@ async fn upsert_estimate_accuracy(
         .execute(pool)
         .await
         .map(|_| ())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{update_estimate_sql, update_latest_nav_sql};
+    use sqlx::{Row, migrate::Migrator};
+
+    static MIGRATOR_SQLITE: Migrator = sqlx::migrate!("../../migrations/sqlite");
+
+    async fn new_sqlite_pool() -> sqlx::AnyPool {
+        sqlx::any::install_default_drivers();
+
+        let pool = sqlx::any::AnyPoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("connect sqlite in-memory");
+
+        MIGRATOR_SQLITE
+            .run(&pool)
+            .await
+            .expect("run sqlite migrations");
+
+        pool
+    }
+
+    #[tokio::test]
+    async fn sqlite_estimate_update_preserves_full_timestamp_text() {
+        let pool = new_sqlite_pool().await;
+
+        sqlx::query(
+            r#"
+            INSERT INTO fund (id, fund_code, fund_name, created_at, updated_at)
+            VALUES ('fund-1', '000001', '测试基金', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .expect("insert fund");
+
+        sqlx::query(update_estimate_sql(false))
+            .bind("fund-1")
+            .bind("1.2345")
+            .bind("0.12")
+            .bind("2026-03-13T11:30:00")
+            .execute(&pool)
+            .await
+            .expect("update estimate");
+
+        let row = sqlx::query(
+            "SELECT CAST(estimate_time AS TEXT) AS estimate_time FROM fund WHERE id = $1",
+        )
+        .bind("fund-1")
+        .fetch_one(&pool)
+        .await
+        .expect("load fund");
+
+        assert_eq!(row.get::<String, _>("estimate_time"), "2026-03-13T11:30:00");
+    }
+
+    #[tokio::test]
+    async fn sqlite_latest_nav_update_preserves_full_date_text() {
+        let pool = new_sqlite_pool().await;
+
+        sqlx::query(
+            r#"
+            INSERT INTO fund (id, fund_code, fund_name, created_at, updated_at)
+            VALUES ('fund-1', '000001', '测试基金', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .expect("insert fund");
+
+        sqlx::query(update_latest_nav_sql(false))
+            .bind("000001")
+            .bind("1.2345")
+            .bind("2026-03-13")
+            .execute(&pool)
+            .await
+            .expect("update nav");
+
+        let row = sqlx::query(
+            "SELECT CAST(latest_nav_date AS TEXT) AS latest_nav_date FROM fund WHERE fund_code = $1",
+        )
+        .bind("000001")
+        .fetch_one(&pool)
+        .await
+        .expect("load fund");
+
+        assert_eq!(row.get::<String, _>("latest_nav_date"), "2026-03-13");
+    }
 }

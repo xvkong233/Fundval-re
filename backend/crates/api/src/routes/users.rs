@@ -198,9 +198,9 @@ pub async fn register(
     let inserted_id = sqlx::query_scalar::<_, i64>(
         r#"
         INSERT INTO auth_user (
-          password, last_login, is_superuser, username, first_name, last_name, email, is_staff, is_active, date_joined
+          password, last_login, is_superuser, username, first_name, last_name, email, is_staff, is_active
         )
-        VALUES ($1, NULL, FALSE, $2, '', '', $3, FALSE, TRUE, NOW())
+        VALUES ($1, NULL, FALSE, $2, '', '', $3, FALSE, TRUE)
         RETURNING id
         "#,
     )

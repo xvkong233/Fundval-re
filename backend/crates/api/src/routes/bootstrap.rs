@@ -140,9 +140,9 @@ pub async fn initialize(
         let result = sqlx::query(
             r#"
             INSERT INTO auth_user (
-              password, last_login, is_superuser, username, first_name, last_name, email, is_staff, is_active, date_joined
+              password, last_login, is_superuser, username, first_name, last_name, email, is_staff, is_active
             )
-            VALUES ($1, NULL, TRUE, $2, '', '', $3, TRUE, TRUE, NOW())
+            VALUES ($1, NULL, TRUE, $2, '', '', $3, TRUE, TRUE)
             "#,
         )
         .bind(password_hash)

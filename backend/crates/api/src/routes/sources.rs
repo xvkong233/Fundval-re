@@ -301,7 +301,7 @@ pub async fn accuracy(
     if record_count == 0 {
         return (
             StatusCode::OK,
-            Json(json!({ "avg_error_rate": 0, "record_count": 0 })),
+            Json(json!({ "avg_error_rate": serde_json::Value::Null, "record_count": 0 })),
         );
     }
 

@@ -62,36 +62,28 @@ async fn update_fund_estimate_fields(
     estimate_growth: Option<&str>,
     estimate_time_rfc3339: &str,
 ) -> Result<(), String> {
-    let sql_pg = r#"
+    let is_postgres = crate::db::database_kind_from_pool(pool) == crate::db::DatabaseKind::Postgres;
+    let sql = if is_postgres {
+        r#"
         UPDATE fund
         SET estimate_nav = CAST($2 AS NUMERIC),
             estimate_growth = CAST($3 AS NUMERIC),
             estimate_time = CAST($4 AS TIMESTAMPTZ),
             updated_at = CURRENT_TIMESTAMP
         WHERE fund_code = $1
-    "#;
-
-    let sql_any = r#"
+    "#
+    } else {
+        r#"
         UPDATE fund
         SET estimate_nav = $2,
             estimate_growth = $3,
             estimate_time = $4,
             updated_at = CURRENT_TIMESTAMP
         WHERE fund_code = $1
-    "#;
+    "#
+    };
 
-    let r = sqlx::query(sql_pg)
-        .bind(fund_code)
-        .bind(estimate_nav)
-        .bind(estimate_growth)
-        .bind(estimate_time_rfc3339)
-        .execute(pool)
-        .await;
-    if r.is_ok() {
-        return Ok(());
-    }
-
-    sqlx::query(sql_any)
+    sqlx::query(sql)
         .bind(fund_code)
         .bind(estimate_nav)
         .bind(estimate_growth)
@@ -109,33 +101,26 @@ async fn update_fund_latest_nav_fields(
     latest_nav: &str,
     latest_nav_date: &str,
 ) -> Result<(), String> {
-    let sql_pg = r#"
+    let is_postgres = crate::db::database_kind_from_pool(pool) == crate::db::DatabaseKind::Postgres;
+    let sql = if is_postgres {
+        r#"
         UPDATE fund
         SET latest_nav = CAST($2 AS NUMERIC),
             latest_nav_date = CAST($3 AS DATE),
             updated_at = CURRENT_TIMESTAMP
         WHERE fund_code = $1
-    "#;
-
-    let sql_any = r#"
+    "#
+    } else {
+        r#"
         UPDATE fund
         SET latest_nav = $2,
             latest_nav_date = $3,
             updated_at = CURRENT_TIMESTAMP
         WHERE fund_code = $1
-    "#;
+    "#
+    };
 
-    let r = sqlx::query(sql_pg)
-        .bind(fund_code)
-        .bind(latest_nav)
-        .bind(latest_nav_date)
-        .execute(pool)
-        .await;
-    if r.is_ok() {
-        return Ok(());
-    }
-
-    sqlx::query(sql_any)
+    sqlx::query(sql)
         .bind(fund_code)
         .bind(latest_nav)
         .bind(latest_nav_date)

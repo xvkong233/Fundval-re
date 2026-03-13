@@ -14,18 +14,19 @@ export type NormalizedSourceHealth = {
 };
 
 export type SourceAccuracyLike = {
-  avg_error_rate?: string | number;
+  avg_error_rate?: string | number | null;
   record_count?: number;
 } & Record<string, any>;
 
 export type NormalizedSourceAccuracy = {
-  avg_error_rate: number;
+  avg_error_rate: number | null;
   record_count: number;
 };
 
-const toNumber = (value: unknown): number => {
+const toNullableNumber = (value: unknown): number | null => {
+  if (value === null || typeof value === "undefined" || value === "") return null;
   const n = Number(value);
-  return Number.isFinite(n) ? n : 0;
+  return Number.isFinite(n) ? n : null;
 };
 
 export const normalizeSourceHealth = (input: SourceHealthLike): NormalizedSourceHealth => {
@@ -44,12 +45,13 @@ export const normalizeSourceHealth = (input: SourceHealthLike): NormalizedSource
 
 export const normalizeSourceAccuracy = (input: SourceAccuracyLike): NormalizedSourceAccuracy => {
   return {
-    avg_error_rate: toNumber(input?.avg_error_rate),
+    avg_error_rate: toNullableNumber(input?.avg_error_rate),
     record_count: Number.isFinite(Number(input?.record_count)) ? Number(input?.record_count) : 0,
   };
 };
 
-export const formatErrorRatePercent = (avgErrorRate: number): string => {
+export const formatErrorRatePercent = (avgErrorRate: number | null): string => {
+  if (avgErrorRate === null) return "-";
   return `${(avgErrorRate * 100).toFixed(2)}%`;
 };
 

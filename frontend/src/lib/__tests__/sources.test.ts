@@ -10,13 +10,22 @@ describe("normalizeSourceAccuracy", () => {
 
   test("handles missing fields safely", () => {
     const normalized = normalizeSourceAccuracy({});
-    expect(normalized).toEqual({ avg_error_rate: 0, record_count: 0 });
+    expect(normalized).toEqual({ avg_error_rate: null, record_count: 0 });
+  });
+
+  test("preserves no-sample state instead of coercing to zero", () => {
+    const normalized = normalizeSourceAccuracy({ avg_error_rate: null, record_count: 0 });
+    expect(normalized).toEqual({ avg_error_rate: null, record_count: 0 });
   });
 });
 
 describe("formatErrorRatePercent", () => {
   test("formats decimal as percent string", () => {
     expect(formatErrorRatePercent(0.0123)).toBe("1.23%");
+  });
+
+  test("returns placeholder for missing samples", () => {
+    expect(formatErrorRatePercent(null)).toBe("-");
   });
 });
 

@@ -117,6 +117,11 @@ struct PositionAggRow {
     estimate_nav: Option<Decimal>,
 }
 
+fn row_bool(row: &sqlx::any::AnyRow, column: &str) -> bool {
+    row.try_get::<bool, _>(column)
+        .unwrap_or_else(|_| row.try_get::<i64, _>(column).unwrap_or(0) != 0)
+}
+
 pub async fn list(
     axum::extract::State(state): axum::extract::State<AppState>,
     headers: axum::http::HeaderMap,
@@ -177,7 +182,7 @@ pub async fn list(
             id: row.get::<String, _>("id"),
             name: row.get::<String, _>("name"),
             parent_id: row.get::<Option<String>, _>("parent_id"),
-            is_default: row.get::<bool, _>("is_default"),
+            is_default: row_bool(&row, "is_default"),
             created_at: row.get::<String, _>("created_at"),
             updated_at: row.get::<String, _>("updated_at"),
         });
@@ -512,7 +517,7 @@ pub async fn retrieve(
         id: row.get::<String, _>("id"),
         name: row.get::<String, _>("name"),
         parent_id: row.get::<Option<String>, _>("parent_id"),
-        is_default: row.get::<bool, _>("is_default"),
+        is_default: row_bool(&row, "is_default"),
         created_at: row.get::<String, _>("created_at"),
         updated_at: row.get::<String, _>("updated_at"),
     };
@@ -569,7 +574,7 @@ pub async fn retrieve(
             id: r.get::<String, _>("id"),
             name: r.get::<String, _>("name"),
             parent_id: r.get::<Option<String>, _>("parent_id"),
-            is_default: r.get::<bool, _>("is_default"),
+            is_default: row_bool(&r, "is_default"),
             created_at: r.get::<String, _>("created_at"),
             updated_at: r.get::<String, _>("updated_at"),
         });
@@ -701,7 +706,7 @@ async fn update_internal(
         id: row.get::<String, _>("id"),
         name: row.get::<String, _>("name"),
         parent_id: row.get::<Option<String>, _>("parent_id"),
-        is_default: row.get::<bool, _>("is_default"),
+        is_default: row_bool(&row, "is_default"),
         created_at: row.get::<String, _>("created_at"),
         updated_at: row.get::<String, _>("updated_at"),
     };

@@ -47,6 +47,31 @@ export default function FundsPage() {
 
   const fundCodes = useMemo(() => funds.map((f) => f.fund_code).filter(Boolean), [funds]);
 
+  const openAddToWatchlist = useCallback(async (fund: Fund) => {
+    setSelectedFund(fund);
+    setWatchlistLoading(true);
+    try {
+      const res = await listWatchlists();
+      const list = Array.isArray(res.data) ? (res.data as Watchlist[]) : [];
+      setWatchlists(list);
+
+      const defaultId = pickDefaultWatchlistId(list);
+      if (!defaultId) {
+        message.warning("请先创建自选列表");
+        router.push("/watchlists");
+        return;
+      }
+
+      setSelectedWatchlistId(defaultId);
+      setWatchlistModalOpen(true);
+    } catch (error: any) {
+      const msg = error?.response?.data?.error || "加载自选列表失败";
+      message.error(msg);
+    } finally {
+      setWatchlistLoading(false);
+    }
+  }, [router]);
+
   const desktopColumns = useMemo(
     () => [
       {
@@ -336,31 +361,6 @@ export default function FundsPage() {
   }, [source]);
 
   // 不自动触发批量刷新：避免切页/搜索时重复入队导致上游封锁。
-
-  const openAddToWatchlist = useCallback(async (fund: Fund) => {
-    setSelectedFund(fund);
-    setWatchlistLoading(true);
-    try {
-      const res = await listWatchlists();
-      const list = Array.isArray(res.data) ? (res.data as Watchlist[]) : [];
-      setWatchlists(list);
-
-      const defaultId = pickDefaultWatchlistId(list);
-      if (!defaultId) {
-        message.warning("请先创建自选列表");
-        router.push("/watchlists");
-        return;
-      }
-
-      setSelectedWatchlistId(defaultId);
-      setWatchlistModalOpen(true);
-    } catch (error: any) {
-      const msg = error?.response?.data?.error || "加载自选列表失败";
-      message.error(msg);
-    } finally {
-      setWatchlistLoading(false);
-    }
-  }, [router]);
 
   const confirmAddToWatchlist = async () => {
     if (!selectedFund || !selectedWatchlistId) return;

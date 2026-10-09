@@ -11,6 +11,7 @@ pub mod index_series;
 pub mod jwt;
 pub mod ml;
 pub mod position_history;
+pub mod quant;
 pub mod rates;
 pub mod routes;
 pub mod sim;

@@ -19,6 +19,7 @@ pub mod rates;
 pub mod settings;
 pub mod sim;
 pub mod quant;
+pub mod quant_trading;
 pub mod sniffer;
 pub mod sources;
 pub mod tasks;
@@ -245,6 +246,14 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route(
             "/api/quant/pytrader/backtest",
             axum::routing::post(quant::pytrader_backtest),
+        )
+        .route(
+            "/api/quant-trading/backtest",
+            axum::routing::post(quant_trading::backtest),
+        )
+        .route(
+            "/api/quant-trading/signals/{fund_code}",
+            axum::routing::get(quant_trading::current_signal),
         )
         .route("/api/tasks/overview", axum::routing::get(tasks::overview))
         .route("/api/tasks/jobs/{id}", axum::routing::get(tasks::job_detail))

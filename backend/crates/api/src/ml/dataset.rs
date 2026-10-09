@@ -4,7 +4,7 @@ use sqlx::Row;
 
 use super::features::build_features;
 use super::signals::{
-    DIP_BUY_THRESHOLD_5T, DIP_BUY_THRESHOLD_20T, MAGIC_REBOUND_THRESHOLD_5T,
+    MAGIC_REBOUND_THRESHOLD_5T,
     MAGIC_REBOUND_THRESHOLD_20T,
 };
 
@@ -102,12 +102,6 @@ pub async fn build_trigger_samples_for_peer(
     } else {
         MAGIC_REBOUND_THRESHOLD_20T
     };
-    let dip_th = if h <= 5 {
-        DIP_BUY_THRESHOLD_5T
-    } else {
-        DIP_BUY_THRESHOLD_20T
-    };
-
     let mut base_code: Option<String> = None;
     let mut base_len: usize = 0;
     for (code, navs) in &series {
@@ -191,12 +185,13 @@ pub async fn build_trigger_samples_for_peer(
 
             let navs = series.get(&code).ok_or("missing navs")?;
             let nav_now = navs[idx].1;
-            let nav_future = navs[idx + h].1;
             if nav_now <= 0.0 {
                 continue;
             }
 
-            let dip_buy_success = (nav_future / nav_now - 1.0) > dip_th;
+            // dip_buy 标签：按策略交易是否盈利（止盈6%/止损3%/最长持有h天）
+            // 比单纯看涨幅更直接对应交易目标
+            let dip_buy_success = trade_profitable(navs, idx, h, 6.0, 3.0);
             let max_future = max_nav(navs, idx + 1, idx + h);
             let magic_rebound = (max_future / nav_now - 1.0) >= rebound_th;
 
@@ -291,12 +286,6 @@ pub async fn build_trigger_samples_for_all_funds(
     } else {
         MAGIC_REBOUND_THRESHOLD_20T
     };
-    let dip_th = if h <= 5 {
-        DIP_BUY_THRESHOLD_5T
-    } else {
-        DIP_BUY_THRESHOLD_20T
-    };
-
     let mut base_code: Option<String> = None;
     let mut base_len: usize = 0;
     for (code, navs) in &series {
@@ -376,12 +365,11 @@ pub async fn build_trigger_samples_for_all_funds(
 
             let navs = series.get(&code).ok_or("missing navs")?;
             let nav_now = navs[idx].1;
-            let nav_future = navs[idx + h].1;
             if nav_now <= 0.0 {
                 continue;
             }
 
-            let dip_buy_success = (nav_future / nav_now - 1.0) > dip_th;
+            let dip_buy_success = trade_profitable(navs, idx, h, 6.0, 3.0);
             let max_future = max_nav(navs, idx + 1, idx + h);
             let magic_rebound = (max_future / nav_now - 1.0) >= rebound_th;
 
@@ -419,8 +407,7 @@ fn drawdown_mag(navs: &[(String, f64)], idx: usize, lookback: usize) -> f64 {
     ((max_v - now) / max_v).max(0.0)
 }
 
-fn max_nav(navs: &[(String, f64)], start: usize, end: usize) -> f64 {
-    let mut max_v = f64::MIN;
+fn max_nav(navs: &[(String, f64)], start: usize, end: usize) -> f64 {    let mut max_v = f64::MIN;
     let end = end.min(navs.len().saturating_sub(1));
     if start > end {
         return 0.0;
@@ -431,4 +418,48 @@ fn max_nav(navs: &[(String, f64)], start: usize, end: usize) -> f64 {
         }
     }
     if max_v == f64::MIN { 0.0 } else { max_v }
+}
+
+/// 模拟一笔交易是否盈利（用于生成 dip_buy 标签）。
+/// 规则：止盈 take_profit_pct% / 止损 stop_loss_pct% / 最长持有 h 天 / 追踪止损3%。
+/// 直接预测"按策略交易是否盈利"，比预测涨幅更贴合交易目标。
+fn trade_profitable(
+    navs: &[(String, f64)],
+    idx: usize,
+    h: usize,
+    take_profit_pct: f64,
+    stop_loss_pct: f64,
+) -> bool {
+    if idx >= navs.len() {
+        return false;
+    }
+    let entry_nav = navs[idx].1;
+    if entry_nav <= 0.0 {
+        return false;
+    }
+    let tp_nav = entry_nav * (1.0 + take_profit_pct / 100.0);
+    let sl_nav = entry_nav * (1.0 - stop_loss_pct / 100.0);
+    let mut highest = entry_nav;
+
+    for k in 1..=h {
+        if idx + k >= navs.len() {
+            break;
+        }
+        let nav = navs[idx + k].1;
+        if nav > highest {
+            highest = nav;
+        }
+        if nav >= tp_nav {
+            return true;
+        }
+        if nav <= sl_nav {
+            return false;
+        }
+        // 追踪止损
+        if nav > entry_nav && (highest - nav) / highest * 100.0 >= 3.0 {
+            return (nav / entry_nav - 1.0) * 100.0 > 0.5;
+        }
+    }
+    let exit_idx = (idx + h).min(navs.len() - 1);
+    (navs[exit_idx].1 / entry_nav - 1.0) * 100.0 > 0.5
 }

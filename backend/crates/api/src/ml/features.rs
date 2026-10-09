@@ -18,6 +18,23 @@ pub const FEATURE_NAMES: [&str; 13] = [
     "trend20",      // 20日线性趋势斜率（动量方向）
 ];
 
+/// 透视因子特征名（追加在技术特征之后）
+pub const LOOKTHROUGH_FEATURE_NAMES: [&str; 3] = [
+    "lt_hhi",         // 持仓集中度 HHI [0,1]
+    "lt_top_weight",  // 第一大重仓占比 [0,1]
+    "lt_effective_n", // 有效持仓数 / 10 [0,1]
+];
+
+/// 完整特征名（13 技术 + 3 透视）
+pub fn full_feature_names() -> Vec<String> {
+    FEATURE_NAMES
+        .iter()
+        .chain(LOOKTHROUGH_FEATURE_NAMES.iter())
+        .map(|s| s.to_string())
+        .collect()
+}
+
+/// 兼容旧 13 维特征名
 pub fn feature_names() -> Vec<String> {
     FEATURE_NAMES.iter().map(|s| s.to_string()).collect()
 }

@@ -255,6 +255,10 @@ pub fn router(state: AppState) -> Router<AppState> {
             "/api/quant-trading/signals/{fund_code}",
             axum::routing::get(quant_trading::current_signal),
         )
+        .route(
+            "/api/quant-trading/daily",
+            axum::routing::post(quant_trading::daily_recommendations),
+        )
         .route("/api/tasks/overview", axum::routing::get(tasks::overview))
         .route("/api/tasks/jobs/{id}", axum::routing::get(tasks::job_detail))
         .route("/api/tasks/jobs/{id}/runs", axum::routing::get(tasks::job_runs))

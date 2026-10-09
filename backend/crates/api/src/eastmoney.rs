@@ -48,6 +48,25 @@ pub struct NavRow {
     pub daily_growth: Option<Decimal>,
 }
 
+#[derive(Debug, Clone)]
+pub struct HoldingItem {
+    pub stock_code: String,
+    pub stock_name: String,
+    /// 持仓占比（%）
+    pub weight_pct: f64,
+    /// 交易所前缀代码（如 "1"=上证，"0"=深证）
+    pub exchange: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct StockQuote {
+    pub stock_code: String,
+    pub stock_name: String,
+    pub price: Option<f64>,
+    /// 涨跌幅（%）
+    pub change_pct: Option<f64>,
+}
+
 fn extract_jsonpgz_payload(text: &str) -> Option<&str> {
     let text = text.trim();
     let start = text.find("jsonpgz(")? + "jsonpgz(".len();
@@ -92,13 +111,23 @@ pub fn build_client() -> Result<reqwest::Client, String> {
         HeaderValue::from_static("https://fund.eastmoney.com/"),
     );
 
-    reqwest::Client::builder()
+    let mut builder = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         // 使用接近浏览器的 UA，降低被上游拦截概率
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-        .default_headers(headers)
-        .build()
-        .map_err(|e| e.to_string())
+        .default_headers(headers);
+    // 显式使用环境代理（本沙箱出口经代理，reqwest 默认可能未启用）
+    for key in ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"] {
+        if let Ok(proxy_url) = std::env::var(key) {
+            if !proxy_url.trim().is_empty() {
+                if let Ok(proxy) = reqwest::Proxy::all(&proxy_url) {
+                    builder = builder.proxy(proxy);
+                    break;
+                }
+            }
+        }
+    }
+    builder.build().map_err(|e| e.to_string())
 }
 
 #[derive(Debug, Clone)]
@@ -523,6 +552,188 @@ pub async fn fetch_nav_history(
         });
     }
 
+    Ok(out)
+}
+
+/// 移动端历史净值（上游 FundVal-Live 移植：Web pingzhongdata API 已失效，
+/// 改用 FundMNewApi/FundMNHisNetList）。
+pub async fn fetch_nav_history_mobile(
+    client: &reqwest::Client,
+    fund_code: &str,
+) -> Result<Vec<NavRow>, String> {
+    let url = "https://fundmobapi.eastmoney.com/FundMNewApi/FundMNHisNetList";
+    let v: Value = client
+        .get(url)
+        .query(&[
+            ("FCODE", fund_code.trim()),
+            ("IsShareNet", "true"),
+            ("MobileKey", "1"),
+            ("appType", "ttjj"),
+            ("appVersion", "6.2.8"),
+            ("cToken", "1"),
+            ("deviceid", "1"),
+            ("pageIndex", "1"),
+            ("pageSize", "100000"),
+            ("plat", "Iphone"),
+            ("product", "EFund"),
+            ("serverVersion", "6.2.8"),
+            ("uToken", "1"),
+            ("userId", "1"),
+            ("version", "6.2.8"),
+        ])
+        .header("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X)")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .error_for_status()
+        .map_err(|e| e.to_string())?
+        .json::<Value>()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut out: Vec<NavRow> = Vec::new();
+    let items = v.get("Datas").and_then(|d| d.as_array()).cloned().unwrap_or_default();
+    for item in items {
+        let date_str = item.get("FSRQ").and_then(|x| x.as_str()).unwrap_or("");
+        let nav_str = item.get("DWJZ").and_then(|x| x.as_str()).unwrap_or("");
+        if date_str.is_empty() || nav_str.is_empty() {
+            continue;
+        }
+        let nav_date = match NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+            Ok(d) => d,
+            Err(_) => continue,
+        };
+        let unit_nav: Decimal = nav_str.trim().parse().unwrap_or(Decimal::ZERO);
+        if unit_nav <= Decimal::ZERO {
+            continue;
+        }
+        out.push(NavRow {
+            nav_date,
+            unit_nav,
+            accumulated_nav: None,
+            daily_growth: None,
+        });
+    }
+    // API 返回倒序，改为升序
+    out.sort_by(|a, b| a.nav_date.cmp(&b.nav_date));
+    Ok(out)
+}
+
+/// 基金持仓（前十大重仓股，含权重；上游 FundVal-Live 移植）。
+pub async fn fetch_fund_holdings(
+    client: &reqwest::Client,
+    fund_code: &str,
+) -> Result<Vec<HoldingItem>, String> {
+    let url = "https://fundmobapi.eastmoney.com/FundMNewApi/FundMNInverstPosition";
+    let v: Value = client
+        .get(url)
+        .query(&[
+            ("FCODE", fund_code.trim()),
+            ("deviceid", "x"),
+            ("plat", "Android"),
+            ("product", "EFund"),
+            ("version", "1.0.0"),
+        ])
+        .header("User-Agent", "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 Chrome/91.0.4472.120 Mobile Safari/537.36")
+        .header("Referer", "https://fundmobapi.eastmoney.com/")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .error_for_status()
+        .map_err(|e| e.to_string())?
+        .json::<Value>()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut out: Vec<HoldingItem> = Vec::new();
+    let stocks = v
+        .get("Datas")
+        .and_then(|d| d.get("fundStocks"))
+        .and_then(|s| s.as_array())
+        .cloned()
+        .unwrap_or_default();
+    for s in stocks {
+        let code = s.get("GPDM").and_then(|x| x.as_str()).unwrap_or("").trim();
+        let name = s.get("GPJC").and_then(|x| x.as_str()).unwrap_or("").trim();
+        let weight = s
+            .get("JZBL")
+            .and_then(|x| x.as_str())
+            .and_then(|x| x.trim().parse::<f64>().ok())
+            .unwrap_or(0.0);
+        let exch = s.get("NEWTEXCH").and_then(|x| x.as_str()).unwrap_or("").trim();
+        if code.is_empty() {
+            continue;
+        }
+        out.push(HoldingItem {
+            stock_code: code.to_string(),
+            stock_name: name.to_string(),
+            weight_pct: weight,
+            exchange: exch.to_string(),
+        });
+    }
+    Ok(out)
+}
+
+/// 批量股票行情（push2 ulist.np；上游 FundVal-Live 移植）。
+/// `secids`: 如 ["1.600519", "0.300308"]（前缀为交易所代码）。
+pub async fn fetch_stock_quotes_batch(
+    client: &reqwest::Client,
+    secids: &[String],
+) -> Result<Vec<StockQuote>, String> {
+    if secids.is_empty() {
+        return Ok(vec![]);
+    }
+    // push2 单次建议不超过 200 个
+    let mut out: Vec<StockQuote> = Vec::with_capacity(secids.len());
+    for chunk in secids.chunks(200) {
+        let url = "https://push2.eastmoney.com/api/qt/ulist.np/get";
+        let v: Value = client
+            .get(url)
+            .query(&[
+                ("secids", chunk.join(",").as_str()),
+                ("fields", "f12,f14,f2,f3"),
+                ("fltt", "2"),
+            ])
+            .header("User-Agent", "Mozilla/5.0")
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .error_for_status()
+            .map_err(|e| e.to_string())?
+            .json::<Value>()
+            .await
+            .map_err(|e| e.to_string())?;
+        let diff = v
+            .get("data")
+            .and_then(|d| d.get("diff"))
+            .and_then(|x| x.as_array())
+            .cloned()
+            .unwrap_or_default();
+        for item in diff {
+            let code = item.get("f12").and_then(|x| x.as_str()).unwrap_or("");
+            let name = item.get("f14").and_then(|x| x.as_str()).unwrap_or("");
+            let price = item.get("f2").and_then(|x| {
+                if x.is_string() {
+                    x.as_str().and_then(|s| if s == "-" { None } else { s.parse::<f64>().ok() })
+                } else {
+                    x.as_f64()
+                }
+            });
+            let chg = item.get("f3").and_then(|x| {
+                if x.is_string() {
+                    x.as_str().and_then(|s| if s == "-" { None } else { s.parse::<f64>().ok() })
+                } else {
+                    x.as_f64()
+                }
+            });
+            out.push(StockQuote {
+                stock_code: code.to_string(),
+                stock_name: name.to_string(),
+                price,
+                change_pct: chg,
+            });
+        }
+    }
     Ok(out)
 }
 

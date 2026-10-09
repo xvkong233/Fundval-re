@@ -423,7 +423,7 @@ fn max_nav(navs: &[(String, f64)], start: usize, end: usize) -> f64 {    let mut
 /// 模拟一笔交易是否盈利（用于生成 dip_buy 标签）。
 /// 规则：止盈 take_profit_pct% / 止损 stop_loss_pct% / 最长持有 h 天 / 追踪止损3%。
 /// 直接预测"按策略交易是否盈利"，比预测涨幅更贴合交易目标。
-fn trade_profitable(
+pub fn trade_profitable(
     navs: &[(String, f64)],
     idx: usize,
     h: usize,

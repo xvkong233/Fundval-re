@@ -18,10 +18,13 @@ use crate::ml::features::build_features;
 use crate::ml::train::{MlTask, get_sector_model};
 use crate::quant::backtest::backtest_single_fund;
 use crate::quant::calibration::PlattCalibrator;
+use crate::quant::daily::{generate_daily_recommendations, DailyRecommendation};
 use crate::quant::signal::{SignalGenerator, TradingSignal};
 use crate::quant::strategy::{Strategy, StrategyConfig};
 use crate::routes::auth;
 use crate::state::AppState;
+use chrono::{Local, Timelike};
+use std::collections::HashMap;
 
 #[derive(Debug, Deserialize)]
 pub struct BacktestRequest {
@@ -336,4 +339,137 @@ async fn load_nav_history(
         }
     }
     Ok(navs)
+}
+
+// ── 每日可操作建议 ──────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct DailyRequest {
+    /// 基金代码列表
+    pub fund_codes: Vec<String>,
+    /// 当前持仓：fund_code → 确认日期 (YYYY-MM-DD)
+    #[serde(default)]
+    pub positions: HashMap<String, String>,
+    #[serde(default = "default_buy_thresh")]
+    pub buy_threshold: f64,
+    #[serde(default = "default_sell_thresh")]
+    pub sell_threshold: f64,
+}
+
+fn default_buy_thresh() -> f64 { 0.60 }
+fn default_sell_thresh() -> f64 { 0.50 }
+
+#[derive(Debug, Serialize)]
+pub struct DailyResponse {
+    pub date: String,
+    pub is_trading_day: bool,
+    pub before_cutoff: bool,
+    pub recommendations: Vec<DailyRecommendation>,
+    pub summary: String,
+}
+
+/// POST /api/quant-trading/daily：生成每日可操作建议（含T+1规则）。
+///
+/// 为每只基金计算模型信号 + 股票透视，结合持仓状态输出 Buy/Sell/Hold/Wait。
+pub async fn daily_recommendations(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<DailyRequest>,
+) -> axum::response::Response {
+    let _user_id = match auth::authenticate(&state, &headers) {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+
+    let pool = match state.pool() {
+        Some(p) => p.clone(),
+        None => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({"error": "database not available"})),
+            )
+                .into_response()
+        }
+    };
+
+    let now = Local::now();
+    let today = now.date_naive();
+    let is_trading = crate::quant::daily::t1_rules::is_trading_day(today);
+    let before_cutoff = now.hour() < crate::quant::daily::t1_rules::CUTOFF_HOUR;
+
+    // 加载模型（复用 sector 模型）
+    let peer_code = "__all__";
+    let dip_model = match get_sector_model(&pool, peer_code, MlTask::DipBuy, 5).await {
+        Ok(Some(rec)) => rec.model,
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error": "未找到训练好的模型，请先运行ML训练"})),
+            )
+                .into_response()
+        }
+    };
+    let magic_model = match get_sector_model(&pool, peer_code, MlTask::MagicRebound, 5).await {
+        Ok(Some(rec)) => rec.model,
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error": "未找到训练好的模型"})),
+            )
+                .into_response()
+        }
+    };
+
+    // 解析持仓确认日期
+    let mut positions: HashMap<String, chrono::NaiveDate> = HashMap::new();
+    for (code, date_str) in &req.positions {
+        if let Ok(d) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+            positions.insert(code.clone(), d);
+        }
+    }
+
+    // 为每只基金计算信号
+    let mut signals: Vec<(String, String, f64, Option<f64>)> = Vec::new();
+    for fund_code in &req.fund_codes {
+        let navs = match load_nav_history(&pool, fund_code, "tiantian").await {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if navs.len() < 60 {
+            continue;
+        }
+        let idx = navs.len() - 1;
+        let feat = build_features(&navs, idx);
+        // 简化：用模型直接预测（实际应走 SignalGenerator + 校准）
+        let proba = dip_model.predict_proba(&feat).unwrap_or(0.5);
+        // TODO: 股票透视需持仓数据，暂为 None
+        signals.push((fund_code.clone(), fund_code.clone(), proba, None));
+    }
+
+    let recs = generate_daily_recommendations(
+        now,
+        &signals,
+        &positions,
+        req.buy_threshold,
+        req.sell_threshold,
+    );
+
+    let n_buy = recs.iter().filter(|r| matches!(r.action, crate::quant::daily::Action::Buy)).count();
+    let n_sell = recs.iter().filter(|r| matches!(r.action, crate::quant::daily::Action::Sell)).count();
+    let summary = format!(
+        "{}：建议买入{n_buy}只，卖出{n_sell}只，共评估{}只基金",
+        today, recs.len()
+    );
+
+    (
+        StatusCode::OK,
+        Json(DailyResponse {
+            date: today.to_string(),
+            is_trading_day: is_trading,
+            before_cutoff,
+            recommendations: recs,
+            summary,
+        }),
+    )
+        .into_response()
 }

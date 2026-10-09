@@ -143,7 +143,7 @@ async fn sim_auto_topk_ts_timing_invests_only_on_index_buy_signal() {
     let config = api::config::ConfigStore::load();
     config.set_string("quant_service_url", Some(stub_url));
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(Some(pool.clone()), config, jwt, api::db::DatabaseKind::Sqlite);
+    let state = AppState::new(Some(pool.clone()), config, jwt, api::db::DatabaseKind::Sqlite).with_spawn_background_workers(false);
     let token = state.jwt().issue_access_token("1");
     let app = api::service(state);
 
@@ -353,7 +353,7 @@ async fn sim_auto_topk_ts_timing_respects_buy_amount_percent_budget() {
     let config = api::config::ConfigStore::load();
     config.set_string("quant_service_url", Some(stub_url));
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(Some(pool.clone()), config, jwt, api::db::DatabaseKind::Sqlite);
+    let state = AppState::new(Some(pool.clone()), config, jwt, api::db::DatabaseKind::Sqlite).with_spawn_background_workers(false);
     let token = state.jwt().issue_access_token("1");
     let app = api::service(state);
 
@@ -551,7 +551,7 @@ async fn sim_auto_topk_ts_timing_adds_on_multiple_buy_signals_without_forced_liq
     let config = api::config::ConfigStore::load();
     config.set_string("quant_service_url", Some(stub_url));
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(Some(pool.clone()), config, jwt, api::db::DatabaseKind::Sqlite);
+    let state = AppState::new(Some(pool.clone()), config, jwt, api::db::DatabaseKind::Sqlite).with_spawn_background_workers(false);
     let token = state.jwt().issue_access_token("1");
     let app = api::service(state);
 
@@ -761,7 +761,7 @@ async fn sim_auto_topk_ts_timing_stop_profit_blocks_buy_on_same_day() {
     let config = api::config::ConfigStore::load();
     config.set_string("quant_service_url", Some(stub_url));
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(Some(pool.clone()), config, jwt, api::db::DatabaseKind::Sqlite);
+    let state = AppState::new(Some(pool.clone()), config, jwt, api::db::DatabaseKind::Sqlite).with_spawn_background_workers(false);
     let token = state.jwt().issue_access_token("1");
     let app = api::service(state);
 

@@ -25,7 +25,7 @@ async fn quant_metrics_batch_async_enqueues_one_task() {
 
     let config = api::config::ConfigStore::load();
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(Some(pool.clone()), config, jwt, api::db::DatabaseKind::Sqlite);
+    let state = AppState::new(Some(pool.clone()), config, jwt, api::db::DatabaseKind::Sqlite).with_spawn_background_workers(false);
     let token = state.jwt().issue_access_token("1");
     let app = api::service(state);
 
@@ -135,7 +135,7 @@ async fn quant_metrics_batch_task_executes_and_logs_per_fund_code() {
     let config = api::config::ConfigStore::load();
     config.set_string("quant_service_url", Some(stub_url));
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(Some(pool.clone()), config, jwt, api::db::DatabaseKind::Sqlite);
+    let state = AppState::new(Some(pool.clone()), config, jwt, api::db::DatabaseKind::Sqlite).with_spawn_background_workers(false);
     let token = state.jwt().issue_access_token("1");
     let app = api::service(state);
 
@@ -218,7 +218,7 @@ async fn quant_grid_batch_async_enqueues_one_task() {
 
     let config = api::config::ConfigStore::load();
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(Some(pool.clone()), config, jwt, api::db::DatabaseKind::Sqlite);
+    let state = AppState::new(Some(pool.clone()), config, jwt, api::db::DatabaseKind::Sqlite).with_spawn_background_workers(false);
     let token = state.jwt().issue_access_token("1");
     let app = api::service(state);
 
@@ -269,7 +269,7 @@ async fn quant_scheduled_batch_async_enqueues_one_task() {
 
     let config = api::config::ConfigStore::load();
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(Some(pool.clone()), config, jwt, api::db::DatabaseKind::Sqlite);
+    let state = AppState::new(Some(pool.clone()), config, jwt, api::db::DatabaseKind::Sqlite).with_spawn_background_workers(false);
     let token = state.jwt().issue_access_token("1");
     let app = api::service(state);
 
@@ -378,7 +378,7 @@ async fn quant_grid_and_scheduled_tasks_execute_and_log() {
     let config = api::config::ConfigStore::load();
     config.set_string("quant_service_url", Some(stub_url));
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(Some(pool.clone()), config, jwt, api::db::DatabaseKind::Sqlite);
+    let state = AppState::new(Some(pool.clone()), config, jwt, api::db::DatabaseKind::Sqlite).with_spawn_background_workers(false);
     let token = state.jwt().issue_access_token("1");
     let app = api::service(state);
 
@@ -500,7 +500,7 @@ async fn quant_qdiipredict_batch_async_enqueues_and_executes() {
     let config = api::config::ConfigStore::load();
     config.set_string("quant_service_url", Some(stub_url));
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(Some(pool.clone()), config, jwt, api::db::DatabaseKind::Sqlite);
+    let state = AppState::new(Some(pool.clone()), config, jwt, api::db::DatabaseKind::Sqlite).with_spawn_background_workers(false);
     let token = state.jwt().issue_access_token("1");
     let app = api::service(state);
 

@@ -355,7 +355,7 @@ pub async fn xalpha_metrics_batch_async(
     // best-effort：立即触发一次执行，减少等待下一轮 tick 的延迟。
     state.crawl_notify().notify_one();
     let pool2 = pool.clone();
-    if !cfg!(test) {
+    if state.spawn_background_workers() {
         tokio::spawn(async move {
             if let Err(e) = tasks::run_due_task_jobs(&pool2, 1).await {
                 tracing::warn!(error = %e, "task queue run_due_task_jobs failed (route trigger)");
@@ -427,7 +427,7 @@ pub async fn xalpha_grid_batch_async(
 
     state.crawl_notify().notify_one();
     let pool2 = pool.clone();
-    if !cfg!(test) {
+    if state.spawn_background_workers() {
         tokio::spawn(async move {
             if let Err(e) = tasks::run_due_task_jobs(&pool2, 1).await {
                 tracing::warn!(error = %e, "task queue run_due_task_jobs failed (route trigger)");
@@ -501,7 +501,7 @@ pub async fn xalpha_scheduled_batch_async(
 
     state.crawl_notify().notify_one();
     let pool2 = pool.clone();
-    if !cfg!(test) {
+    if state.spawn_background_workers() {
         tokio::spawn(async move {
             if let Err(e) = tasks::run_due_task_jobs(&pool2, 1).await {
                 tracing::warn!(error = %e, "task queue run_due_task_jobs failed (route trigger)");
@@ -587,7 +587,7 @@ pub async fn xalpha_qdiipredict_batch_async(
 
     state.crawl_notify().notify_one();
     let pool2 = pool.clone();
-    if !cfg!(test) {
+    if state.spawn_background_workers() {
         tokio::spawn(async move {
             if let Err(e) = tasks::run_due_task_jobs(&pool2, 1).await {
                 tracing::warn!(error = %e, "task queue run_due_task_jobs failed (route trigger)");

@@ -169,7 +169,7 @@ async fn fund_signals_batch_returns_best_peer_summary() {
     let config = api::config::ConfigStore::load();
     let jwt = api::jwt::JwtService::from_secret("test-secret");
     let pool2 = pool.clone();
-    let state = AppState::new(Some(pool), config, jwt, api::db::DatabaseKind::Sqlite);
+    let state = AppState::new(Some(pool), config, jwt, api::db::DatabaseKind::Sqlite).with_spawn_background_workers(false);
     let token = state.jwt().issue_access_token("1");
     let app = api::service(state);
 
@@ -313,7 +313,7 @@ async fn fund_signals_batch_includes_all_market_peer_even_without_relate_theme()
     let config = api::config::ConfigStore::load();
     let jwt = api::jwt::JwtService::from_secret("test-secret");
     let pool2 = pool.clone();
-    let state = AppState::new(Some(pool), config, jwt, api::db::DatabaseKind::Sqlite);
+    let state = AppState::new(Some(pool), config, jwt, api::db::DatabaseKind::Sqlite).with_spawn_background_workers(false);
     let token = state.jwt().issue_access_token("1");
     let app = api::service(state);
 

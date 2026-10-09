@@ -15,7 +15,7 @@ fn authed_req(uri: &str, token: &str) -> Request<Body> {
 async fn quant_health_requires_auth() {
     let config = api::config::ConfigStore::load();
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(None, config, jwt, api::db::DatabaseKind::Sqlite);
+    let state = AppState::new(None, config, jwt, api::db::DatabaseKind::Sqlite).with_spawn_background_workers(false);
     let app = api::service(state);
 
     let res = app
@@ -32,7 +32,7 @@ async fn quant_health_returns_502_when_service_unreachable() {
     config.set_string("quant_service_url", Some("http://127.0.0.1:1".to_string()));
     let jwt = api::jwt::JwtService::from_secret("test-secret");
     let token = jwt.issue_access_token("user-1");
-    let state = AppState::new(None, config, jwt, api::db::DatabaseKind::Sqlite);
+    let state = AppState::new(None, config, jwt, api::db::DatabaseKind::Sqlite).with_spawn_background_workers(false);
     let app = api::service(state);
 
     let res = app.oneshot(authed_req("/api/quant/health", &token)).await.unwrap();
@@ -43,7 +43,7 @@ async fn quant_health_returns_502_when_service_unreachable() {
 async fn quant_xalpha_qdiipredict_requires_auth() {
     let config = api::config::ConfigStore::load();
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(None, config, jwt, api::db::DatabaseKind::Sqlite);
+    let state = AppState::new(None, config, jwt, api::db::DatabaseKind::Sqlite).with_spawn_background_workers(false);
     let app = api::service(state);
 
     let res = app
@@ -65,7 +65,7 @@ async fn quant_xalpha_qdiipredict_requires_auth() {
 async fn quant_xalpha_backtest_requires_auth() {
     let config = api::config::ConfigStore::load();
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(None, config, jwt, api::db::DatabaseKind::Sqlite);
+    let state = AppState::new(None, config, jwt, api::db::DatabaseKind::Sqlite).with_spawn_background_workers(false);
     let app = api::service(state);
 
     let res = app
@@ -87,7 +87,7 @@ async fn quant_xalpha_backtest_requires_auth() {
 async fn quant_fund_strategies_compare_requires_auth() {
     let config = api::config::ConfigStore::load();
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(None, config, jwt, api::db::DatabaseKind::Sqlite);
+    let state = AppState::new(None, config, jwt, api::db::DatabaseKind::Sqlite).with_spawn_background_workers(false);
     let app = api::service(state);
 
     let res = app
@@ -109,7 +109,7 @@ async fn quant_fund_strategies_compare_requires_auth() {
 async fn quant_pytrader_strategies_requires_auth() {
     let config = api::config::ConfigStore::load();
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(None, config, jwt, api::db::DatabaseKind::Sqlite);
+    let state = AppState::new(None, config, jwt, api::db::DatabaseKind::Sqlite).with_spawn_background_workers(false);
     let app = api::service(state);
 
     let res = app
@@ -124,7 +124,7 @@ async fn quant_pytrader_strategies_requires_auth() {
 async fn quant_pytrader_backtest_requires_auth() {
     let config = api::config::ConfigStore::load();
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(None, config, jwt, api::db::DatabaseKind::Sqlite);
+    let state = AppState::new(None, config, jwt, api::db::DatabaseKind::Sqlite).with_spawn_background_workers(false);
     let app = api::service(state);
 
     let res = app
@@ -146,7 +146,7 @@ async fn quant_pytrader_backtest_requires_auth() {
 async fn indexes_daily_requires_auth() {
     let config = api::config::ConfigStore::load();
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(None, config, jwt, api::db::DatabaseKind::Sqlite);
+    let state = AppState::new(None, config, jwt, api::db::DatabaseKind::Sqlite).with_spawn_background_workers(false);
     let app = api::service(state);
 
     let res = app

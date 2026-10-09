@@ -34,6 +34,7 @@ fn new_state(pool: sqlx::AnyPool) -> AppState {
     config.set_string("bootstrap_key", Some("bootstrap-test-key".to_string()));
     let jwt = api::jwt::JwtService::from_secret("test-secret");
     AppState::new(Some(pool), config, jwt, api::db::DatabaseKind::Sqlite)
+        .with_spawn_background_workers(false)
 }
 
 async fn read_json(response: axum::response::Response) -> Value {

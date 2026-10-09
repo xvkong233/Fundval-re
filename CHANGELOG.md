@@ -6,6 +6,19 @@
 
 ## [Unreleased]
 
+### Added
+- 预测模型训练改用闭式岭回归（`train_ols_closed_form`）：20 维特征直接求解，比 3-epoch SGD 更稳定、更快，且不受学习率/epoch 超参影响；`OlsModel` 结构不变，前后端兼容。
+- 新增前端共享常量 `frontend/src/lib/forecast.ts`（训练参数 TS 镜像），与后端 `forecast` 模块常量保持同步。
+
+### Changed
+- 训练参数（`model_name`/`horizon`/`lag_k`）抽取为后端 `forecast` 模块共享常量，前后端统一引用，避免两处硬编码不一致导致分析任务查不到模型。
+- 合并两份重复的预测模型训练逻辑：抽取 `build_forecast_training_dataset`（数据集构建）、`fit_forecast_model`（训练）、`upsert_forecast_model_row`（模型落库）为模块级公共函数，`exec_forecast_model_train` 与 `train_global_model` 均复用。
+- 按 fund-analysis-v2 规划彻底替换旧版分析：删除 `GET /api/funds/{fund_code}/analytics` 路由及 `fund_analytics.rs`、相关路由测试和前端 `getFundAnalytics`（`analytics/` 纯函数模块及其单元测试保留）。
+
+### Fixed
+- 基金分析 v2 任务不再强依赖 quant-service：`metrics`/`macd`/`grid`/`scheduled` 四处调用失败时降级为 `{"error": ...}`（与 `ts` 调用一致），quant-service 未启动时预测链路仍可正常产出 forecast，快照可落库。
+- 修复集成测试偶发死锁：路由入队后 `tokio::spawn` 后台 worker 的 `if !cfg!(test)` 守卫在集成测试中失效（lib 并非以 test cfg 编译），导致测试内多个 worker 并发抢单连接 SQLite 池。改为 `AppState::spawn_background_workers` 显式开关（默认 true，生产行为不变），9 处路由改用该开关，集成测试统一关闭。
+
 ## [1.4.0] - 2026-02-21
 
 ### Added

@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { AuthedLayout } from "../../components/AuthedLayout";
 import { getTasksOverview, trainForecastModel } from "../../lib/api";
+import { defaultTrainForecastModelPayload } from "../../lib/forecast";
 
 const { Text } = Typography;
 const { useBreakpoint } = Grid;
@@ -226,12 +227,7 @@ export default function TasksPage() {
             onClick={async () => {
               setTrainLoading(true);
               try {
-                const r = await trainForecastModel({
-                  source: "tiantian",
-                  model_name: "global_ols_v1",
-                  horizon: 60,
-                  lag_k: 20,
-                });
+                const r = await trainForecastModel(defaultTrainForecastModelPayload());
                 const taskId = String(r?.data?.task_id ?? "");
                 if (taskId) {
                   message.success(`已入队：${taskId}`);

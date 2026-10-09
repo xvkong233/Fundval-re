@@ -2,6 +2,24 @@ use serde_json::{Value, json};
 use sqlx::Row;
 use uuid::Uuid;
 
+use crate::forecast::ols_sgd::{OlsModel, train_ols_closed_form};
+
+/// POST JSON 到 quant-service。失败时降级为 `{"error": ...}` 而不是让调用方任务整体失败。
+/// 预测链路（forecast）不依赖 metrics/macd/grid/scheduled 这些指标，
+/// quant-service 没启动时它们应静默降级，不能拖死 fund_analysis_v2 任务。
+async fn post_quant_json(client: &reqwest::Client, url: &str, body: Value) -> Value {
+    match client.post(url).json(&body).send().await {
+        Ok(r) => match r.error_for_status() {
+            Ok(r2) => r2
+                .json::<Value>()
+                .await
+                .unwrap_or_else(|e| json!({ "error": format!("quant json failed: {e}") })),
+            Err(e) => json!({ "error": format!("quant http error: {e}") }),
+        },
+        Err(e) => json!({ "error": format!("quant request failed: {e}") }),
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct TaskRunRow {
     pub id: String,
@@ -954,49 +972,21 @@ async fn exec_sniffer_sync(pool: &sqlx::AnyPool, run_id: &str, _job: &TaskJobRow
     }
 }
 
-async fn exec_forecast_model_train(pool: &sqlx::AnyPool, run_id: &str, job: &TaskJobRow) -> Result<(), String> {
-    use serde_json::Value;
-    use sqlx::Row;
-    use uuid::Uuid;
-
-    use crate::forecast::ols_sgd::{OlsModel, OlsTrainConfig, train_ols_sgd};
-
-    let payload: Value = serde_json::from_str(&job.payload_json).map_err(|e| e.to_string())?;
-
-    let source = payload
-        .get("source")
-        .and_then(|v| v.as_str())
-        .unwrap_or(crate::sources::SOURCE_TIANTIAN)
-        .trim()
-        .to_string();
-    let model_name = payload
-        .get("model_name")
-        .and_then(|v| v.as_str())
-        .unwrap_or("global_ols_v1")
-        .trim()
-        .to_string();
-    if model_name.is_empty() {
-        return Err("missing model_name".to_string());
-    }
-    let horizon = payload.get("horizon").and_then(|v| v.as_i64()).unwrap_or(60).clamp(1, 5000);
-    let lag_k = payload.get("lag_k").and_then(|v| v.as_i64()).unwrap_or(20).clamp(1, 400);
-
-    let _ = append_task_log(
-        pool,
-        run_id,
-        "INFO",
-        &format!("forecast_model_train: model_name={model_name} source={source} horizon={horizon} lag_k={lag_k}"),
-    )
-    .await;
-
-    let _ = append_task_log(pool, run_id, "INFO", "训练全市场预测模型：开始").await;
-
+/// 构建全市场预测模型的训练数据集：对每只基金取近 400 个净值点，
+/// 构造 lag_k 维对数收益率特征 -> 下一日对数收益率标签。
+/// 上限 max_samples 个样本；每扫描 200 只基金写一条进度日志。
+async fn build_forecast_training_dataset(
+    pool: &sqlx::AnyPool,
+    run_id: &str,
+    source: &str,
+    lag_k: i64,
+    max_samples: usize,
+) -> Result<(Vec<Vec<f64>>, Vec<f64>), String> {
     let fund_rows = sqlx::query("SELECT fund_code FROM fund ORDER BY fund_code ASC")
         .fetch_all(pool)
         .await
         .map_err(|e| e.to_string())?;
 
-    let max_samples: usize = 50_000;
     let mut x: Vec<Vec<f64>> = Vec::new();
     let mut y: Vec<f64> = Vec::new();
 
@@ -1023,7 +1013,7 @@ async fn exec_forecast_model_train(pool: &sqlx::AnyPool, run_id: &str, job: &Tas
             "#,
         )
         .bind(code.trim())
-        .bind(&source)
+        .bind(source)
         .fetch_all(pool)
         .await
         .map_err(|e| e.to_string())?;
@@ -1070,17 +1060,18 @@ async fn exec_forecast_model_train(pool: &sqlx::AnyPool, run_id: &str, job: &Tas
         }
     }
 
-    let _ = append_task_log(
-        pool,
-        run_id,
-        "INFO",
-        &format!("训练样本构建完成：samples={} dim={} horizon={horizon}", x.len(), lag_k),
-    )
-    .await;
+    Ok((x, y))
+}
 
-    let (model, sample_count) = if x.len() < 10 {
-        let _ = append_task_log(pool, run_id, "WARN", "训练样本过少，使用退化预测模型（mu=0）").await;
-        (
+/// 用闭式岭回归训练预测模型；样本过少（<10）时返回退化模型（mu=0）。
+fn fit_forecast_model(
+    x: &[Vec<f64>],
+    y: &[f64],
+    lag_k: i64,
+    l2: f64,
+) -> Result<(OlsModel, i64), String> {
+    if x.len() < 10 {
+        Ok((
             OlsModel {
                 weights: vec![0.0; lag_k as usize],
                 bias: 0.0,
@@ -1089,18 +1080,24 @@ async fn exec_forecast_model_train(pool: &sqlx::AnyPool, run_id: &str, job: &Tas
                 residual_sigma: 0.0,
             },
             x.len() as i64,
-        )
+        ))
     } else {
-        let cfg = OlsTrainConfig {
-            learning_rate: 0.01,
-            epochs: 3,
-            l2: 1e-4,
-        };
-        let m = train_ols_sgd(&x, &y, &cfg).ok_or_else(|| "模型训练失败（样本不足或数据异常）".to_string())?;
-        let _ = append_task_log(pool, run_id, "INFO", &format!("训练完成：residual_sigma={:.6}", m.residual_sigma)).await;
-        (m, x.len() as i64)
-    };
+        let m = train_ols_closed_form(x, y, l2)
+            .ok_or_else(|| "模型训练失败（样本不足或数据异常）".to_string())?;
+        Ok((m, x.len() as i64))
+    }
+}
 
+/// upsert forecast_model 行（Postgres/SQLite 双 SQL 兼容）。
+async fn upsert_forecast_model_row(
+    pool: &sqlx::AnyPool,
+    model_name: &str,
+    source: &str,
+    horizon: i64,
+    lag_k: i64,
+    model: &OlsModel,
+    sample_count: i64,
+) -> Result<(), String> {
     let id = Uuid::new_v4().to_string();
     let weights_json = serde_json::to_string(&model.weights).map_err(|e| e.to_string())?;
     let mean_json = serde_json::to_string(&model.mean).map_err(|e| e.to_string())?;
@@ -1139,10 +1136,10 @@ async fn exec_forecast_model_train(pool: &sqlx::AnyPool, run_id: &str, job: &Tas
           updated_at = CURRENT_TIMESTAMP
     "#;
 
-    if sqlx::query(sql_pg)
+    let pg_result = sqlx::query(sql_pg)
         .bind(&id)
-        .bind(&model_name)
-        .bind(&source)
+        .bind(model_name)
+        .bind(source)
         .bind(horizon)
         .bind(lag_k)
         .bind(&weights_json)
@@ -1152,13 +1149,13 @@ async fn exec_forecast_model_train(pool: &sqlx::AnyPool, run_id: &str, job: &Tas
         .bind(model.residual_sigma)
         .bind(sample_count)
         .execute(pool)
-        .await
-        .is_err()
+        .await;
+    if pg_result.is_err()
     {
         sqlx::query(sql_any)
             .bind(&id)
-            .bind(&model_name)
-            .bind(&source)
+            .bind(model_name)
+            .bind(source)
             .bind(horizon)
             .bind(lag_k)
             .bind(&weights_json)
@@ -1171,6 +1168,75 @@ async fn exec_forecast_model_train(pool: &sqlx::AnyPool, run_id: &str, job: &Tas
             .await
             .map_err(|e| e.to_string())?;
     }
+
+    Ok(())
+}
+
+async fn exec_forecast_model_train(pool: &sqlx::AnyPool, run_id: &str, job: &TaskJobRow) -> Result<(), String> {
+    use serde_json::Value;
+
+    let payload: Value = serde_json::from_str(&job.payload_json).map_err(|e| e.to_string())?;
+
+    let source = payload
+        .get("source")
+        .and_then(|v| v.as_str())
+        .unwrap_or(crate::sources::SOURCE_TIANTIAN)
+        .trim()
+        .to_string();
+    let model_name = payload
+        .get("model_name")
+        .and_then(|v| v.as_str())
+        .unwrap_or(crate::forecast::FORECAST_MODEL_NAME)
+        .trim()
+        .to_string();
+    if model_name.is_empty() {
+        return Err("missing model_name".to_string());
+    }
+    let horizon = payload
+        .get("horizon")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(crate::forecast::FORECAST_HORIZON)
+        .clamp(1, 5000);
+    let lag_k = payload
+        .get("lag_k")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(crate::forecast::FORECAST_LAG_K)
+        .clamp(1, 400);
+
+    let _ = append_task_log(
+        pool,
+        run_id,
+        "INFO",
+        &format!("forecast_model_train: model_name={model_name} source={source} horizon={horizon} lag_k={lag_k}"),
+    )
+    .await;
+
+    let _ = append_task_log(pool, run_id, "INFO", "训练全市场预测模型：开始").await;
+
+    let (x, y) = build_forecast_training_dataset(pool, run_id, &source, lag_k, 50_000).await?;
+
+    let _ = append_task_log(
+        pool,
+        run_id,
+        "INFO",
+        &format!("训练样本构建完成：samples={} dim={} horizon={horizon}", x.len(), lag_k),
+    )
+    .await;
+
+    if x.len() < 10 {
+        let _ = append_task_log(pool, run_id, "WARN", "训练样本过少，使用退化预测模型（mu=0）").await;
+    }
+    // 闭式岭回归：20 维直接求解，比 SGD 更稳定且不受学习率/epoch 超参影响
+    let (model, sample_count) = fit_forecast_model(&x, &y, lag_k, 1e-4)?;
+    let _ = append_task_log(
+        pool,
+        run_id,
+        "INFO",
+        &format!("训练完成（闭式岭回归）：residual_sigma={:.6}", model.residual_sigma),
+    )
+    .await;
+
+    upsert_forecast_model_row(pool, &model_name, &source, horizon, lag_k, &model, sample_count).await?;
 
     let _ = append_task_log(
         pool,
@@ -1192,11 +1258,9 @@ async fn exec_fund_analysis_v2_compute(
     use sqlx::Row;
     use uuid::Uuid;
 
-    use crate::forecast::ols_sgd::{OlsModel, OlsTrainConfig, train_ols_sgd};
+    use crate::forecast::ols_sgd::OlsModel;
 
-    const MODEL_NAME: &str = "global_ols_v1";
-    const FORECAST_HORIZON: i64 = 60;
-    const LAG_K: i64 = 20;
+    use crate::forecast::{FORECAST_HORIZON, FORECAST_LAG_K as LAG_K, FORECAST_MODEL_NAME as MODEL_NAME};
 
     let payload: Value = serde_json::from_str(&job.payload_json).map_err(|e| e.to_string())?;
     let fund_code = payload
@@ -1356,184 +1420,15 @@ async fn exec_fund_analysis_v2_compute(
         )))
     }
 
-    async fn upsert_forecast_model(
-        pool: &sqlx::AnyPool,
-        model_name: &str,
-        source: &str,
-        horizon: i64,
-        lag_k: i64,
-        model: &OlsModel,
-        sample_count: i64,
-    ) -> Result<(), String> {
-        let id = Uuid::new_v4().to_string();
-        let weights_json = serde_json::to_string(&model.weights).map_err(|e| e.to_string())?;
-        let mean_json = serde_json::to_string(&model.mean).map_err(|e| e.to_string())?;
-        let std_json = serde_json::to_string(&model.std).map_err(|e| e.to_string())?;
-
-        let sql_pg = r#"
-            INSERT INTO forecast_model (
-              id, model_name, source, horizon, lag_k, weights_json, bias, mean_json, std_json, residual_sigma,
-              sample_count, trained_at, created_at, updated_at
-            )
-            VALUES (($1)::uuid,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
-            ON CONFLICT (model_name, source, horizon, lag_k) DO UPDATE SET
-              weights_json = excluded.weights_json,
-              bias = excluded.bias,
-              mean_json = excluded.mean_json,
-              std_json = excluded.std_json,
-              residual_sigma = excluded.residual_sigma,
-              sample_count = excluded.sample_count,
-              trained_at = excluded.trained_at,
-              updated_at = CURRENT_TIMESTAMP
-        "#;
-        let sql_any = r#"
-            INSERT INTO forecast_model (
-              id, model_name, source, horizon, lag_k, weights_json, bias, mean_json, std_json, residual_sigma,
-              sample_count, trained_at, created_at, updated_at
-            )
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
-            ON CONFLICT (model_name, source, horizon, lag_k) DO UPDATE SET
-              weights_json = excluded.weights_json,
-              bias = excluded.bias,
-              mean_json = excluded.mean_json,
-              std_json = excluded.std_json,
-              residual_sigma = excluded.residual_sigma,
-              sample_count = excluded.sample_count,
-              trained_at = excluded.trained_at,
-              updated_at = CURRENT_TIMESTAMP
-        "#;
-
-        if sqlx::query(sql_pg)
-            .bind(&id)
-            .bind(model_name)
-            .bind(source)
-            .bind(horizon)
-            .bind(lag_k)
-            .bind(&weights_json)
-            .bind(model.bias)
-            .bind(&mean_json)
-            .bind(&std_json)
-            .bind(model.residual_sigma)
-            .bind(sample_count)
-            .execute(pool)
-            .await
-            .is_err()
-        {
-            sqlx::query(sql_any)
-                .bind(&id)
-                .bind(model_name)
-                .bind(source)
-                .bind(horizon)
-                .bind(lag_k)
-                .bind(&weights_json)
-                .bind(model.bias)
-                .bind(&mean_json)
-                .bind(&std_json)
-                .bind(model.residual_sigma)
-                .bind(sample_count)
-                .execute(pool)
-                .await
-                .map_err(|e| e.to_string())?;
-        }
-
-        Ok(())
-    }
-
     async fn train_global_model(
         pool: &sqlx::AnyPool,
         run_id: &str,
         source: &str,
-        horizon: i64,
         lag_k: i64,
     ) -> Result<(OlsModel, i64), String> {
         let _ = append_task_log(pool, run_id, "INFO", "训练全市场预测模型：开始").await;
 
-        let fund_rows = sqlx::query("SELECT fund_code FROM fund ORDER BY fund_code ASC")
-            .fetch_all(pool)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        let max_samples: usize = 50_000;
-        let mut x: Vec<Vec<f64>> = Vec::new();
-        let mut y: Vec<f64> = Vec::new();
-
-        for (idx, r) in fund_rows.iter().enumerate() {
-            if idx % 200 == 0 {
-                let _ = append_task_log(
-                    pool,
-                    run_id,
-                    "INFO",
-                    &format!("训练数据扫描进度 {idx}/{}", fund_rows.len()),
-                )
-                .await;
-            }
-
-            let code: String = r.get("fund_code");
-            let nav_rows = sqlx::query(
-                r#"
-                SELECT CAST(h.nav_date AS TEXT) as nav_date, CAST(h.unit_nav AS TEXT) as unit_nav
-                FROM fund_nav_history h
-                JOIN fund f ON f.id = h.fund_id
-                WHERE f.fund_code = $1 AND h.source_name = $2
-                ORDER BY h.nav_date DESC
-                LIMIT 400
-                "#,
-            )
-            .bind(code.trim())
-            .bind(source)
-            .fetch_all(pool)
-            .await
-            .map_err(|e| e.to_string())?;
-
-            if nav_rows.len() < (lag_k as usize + 3) {
-                continue;
-            }
-
-            let mut navs: Vec<f64> = Vec::with_capacity(nav_rows.len());
-            for rr in nav_rows.into_iter().rev() {
-                let v: String = rr.get("unit_nav");
-                if let Ok(f) = v.trim().parse::<f64>() {
-                    if f > 0.0 {
-                        navs.push(f);
-                    }
-                }
-            }
-            if navs.len() < (lag_k as usize + 3) {
-                continue;
-            }
-
-            let mut rets: Vec<f64> = Vec::with_capacity(navs.len().saturating_sub(1));
-            for (a, b) in navs.iter().zip(navs.iter().skip(1)) {
-                if *a > 0.0 && *b > 0.0 {
-                    rets.push((b / a).ln());
-                }
-            }
-            if rets.len() < (lag_k as usize + 2) {
-                continue;
-            }
-
-            for i in (lag_k as usize)..rets.len() {
-                if x.len() >= max_samples {
-                    break;
-                }
-                let mut feat: Vec<f64> = Vec::with_capacity(lag_k as usize);
-                let start = i - lag_k as usize;
-                feat.extend_from_slice(&rets[start..i]);
-                x.push(feat);
-                y.push(rets[i]);
-            }
-            if x.len() >= max_samples {
-                break;
-            }
-        }
-
-        let _ = append_task_log(
-            pool,
-            run_id,
-            "INFO",
-            &format!("训练样本构建完成：samples={} dim={} horizon={horizon}", x.len(), lag_k),
-        )
-        .await;
+        let (x, y) = build_forecast_training_dataset(pool, run_id, source, lag_k, 50_000).await?;
 
         if x.len() < 10 {
             let _ = append_task_log(
@@ -1543,34 +1438,19 @@ async fn exec_fund_analysis_v2_compute(
                 "训练样本过少，使用退化预测模型（mu=0）",
             )
             .await;
-            return Ok((
-                OlsModel {
-                    weights: vec![0.0; lag_k as usize],
-                    bias: 0.0,
-                    mean: vec![0.0; lag_k as usize],
-                    std: vec![1.0; lag_k as usize],
-                    residual_sigma: 0.0,
-                },
-                x.len() as i64,
-            ));
         }
-
-        let cfg = OlsTrainConfig {
-            learning_rate: 0.01,
-            epochs: 3,
-            l2: 1e-4,
-        };
-        let model = train_ols_sgd(&x, &y, &cfg).ok_or_else(|| "模型训练失败（样本不足或数据异常）".to_string())?;
+        // 闭式岭回归：20 维直接求解，比 SGD 更稳定且不受学习率/epoch 超参影响
+        let (model, sample_count) = fit_forecast_model(&x, &y, lag_k, 1e-4)?;
 
         let _ = append_task_log(
             pool,
             run_id,
             "INFO",
-            &format!("训练完成：residual_sigma={:.6}", model.residual_sigma),
+            &format!("训练完成（闭式岭回归）：residual_sigma={:.6}", model.residual_sigma),
         )
         .await;
 
-        Ok((model, x.len() as i64))
+        Ok((model, sample_count))
     }
 
     fn trained_date_prefix(trained_at: &str) -> &str {
@@ -1596,15 +1476,15 @@ async fn exec_fund_analysis_v2_compute(
                 )
                 .await;
                 let (m2, sample_count) =
-                    train_global_model(pool, run_id, &source, FORECAST_HORIZON, LAG_K).await?;
-                let _ = upsert_forecast_model(pool, MODEL_NAME, &source, FORECAST_HORIZON, LAG_K, &m2, sample_count).await;
+                    train_global_model(pool, run_id, &source, LAG_K).await?;
+                let _ = upsert_forecast_model_row(pool, MODEL_NAME, &source, FORECAST_HORIZON, LAG_K, &m2, sample_count).await;
                 m2
             }
         }
         None => {
             let _ = append_task_log(pool, run_id, "INFO", "预测模型缺失，触发训练").await;
-            let (m, sample_count) = train_global_model(pool, run_id, &source, FORECAST_HORIZON, LAG_K).await?;
-            let _ = upsert_forecast_model(pool, MODEL_NAME, &source, FORECAST_HORIZON, LAG_K, &m, sample_count).await;
+            let (m, sample_count) = train_global_model(pool, run_id, &source, LAG_K).await?;
+            let _ = upsert_forecast_model_row(pool, MODEL_NAME, &source, FORECAST_HORIZON, LAG_K, &m, sample_count).await;
             m
         }
     };
@@ -1922,36 +1802,26 @@ async fn exec_fund_analysis_v2_compute(
         )
         .await;
 
-        let metrics_resp = client
-            .post(&url_metrics)
-            .json(&json!({
+        let metrics_resp = post_quant_json(
+            &client,
+            &url_metrics,
+            json!({
               "series": series_json.clone(),
               "risk_free_annual": risk_free_annual
-            }))
-            .send()
-            .await
-            .map_err(|e| format!("metrics request failed: {e}"))?
-            .error_for_status()
-            .map_err(|e| format!("metrics http error: {e}"))?
-            .json::<Value>()
-            .await
-            .map_err(|e| format!("metrics json failed: {e}"))?;
+            }),
+        )
+        .await;
 
-        let macd_resp = client
-            .post(&url_macd)
-            .json(&json!({
+        let macd_resp = post_quant_json(
+            &client,
+            &url_macd,
+            json!({
               "series": macd_series_json.clone(),
               "sell_position": 0.75,
               "buy_position": 0.5
-            }))
-            .send()
-            .await
-            .map_err(|e| format!("macd request failed: {e}"))?
-            .error_for_status()
-            .map_err(|e| format!("macd http error: {e}"))?
-            .json::<Value>()
-            .await
-            .map_err(|e| format!("macd json failed: {e}"))?;
+            }),
+        )
+        .await;
 
         let ts_resp = {
             let start_date_str = seed_navs.first().map(|x| x.0.clone()).unwrap_or_default();
@@ -2032,36 +1902,26 @@ async fn exec_fund_analysis_v2_compute(
             }
         };
 
-        let grid_resp = client
-            .post(&url_grid)
-            .json(&json!({
+        let grid_resp = post_quant_json(
+            &client,
+            &url_grid,
+            json!({
               "series": series_json.clone(),
               "grid_step_pct": grid_step_pct
-            }))
-            .send()
-            .await
-            .map_err(|e| format!("grid request failed: {e}"))?
-            .error_for_status()
-            .map_err(|e| format!("grid http error: {e}"))?
-            .json::<Value>()
-            .await
-            .map_err(|e| format!("grid json failed: {e}"))?;
+            }),
+        )
+        .await;
 
-        let scheduled_resp = client
-            .post(&url_scheduled)
-            .json(&json!({
+        let scheduled_resp = post_quant_json(
+            &client,
+            &url_scheduled,
+            json!({
               "series": series_json.clone(),
               "every_n": every_n,
               "amount": amount
-            }))
-            .send()
-            .await
-            .map_err(|e| format!("scheduled request failed: {e}"))?
-            .error_for_status()
-            .map_err(|e| format!("scheduled http error: {e}"))?
-            .json::<Value>()
-            .await
-            .map_err(|e| format!("scheduled json failed: {e}"))?;
+            }),
+        )
+        .await;
 
         windows_out.push(json!({
           "window": window,

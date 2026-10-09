@@ -138,7 +138,7 @@ async fn fund_analysis_v2_retrains_forecast_model_when_stale() {
     let config = api::config::ConfigStore::load();
     config.set_string("quant_service_url", Some(stub_url));
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(Some(pool.clone()), config, jwt, api::db::DatabaseKind::Sqlite);
+    let state = AppState::new(Some(pool.clone()), config, jwt, api::db::DatabaseKind::Sqlite).with_spawn_background_workers(false);
     let token = state.jwt().issue_access_token("1");
     let app = api::service(state);
 

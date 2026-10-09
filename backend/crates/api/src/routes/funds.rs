@@ -1609,7 +1609,7 @@ pub async fn prices_refresh_batch_async(
     state.crawl_notify().notify_one();
 
     let pool2 = pool.clone();
-    if !cfg!(test) {
+    if state.spawn_background_workers() {
         tokio::spawn(async move {
             if let Err(e) = tasks::run_due_task_jobs(&pool2, 1).await {
                 tracing::warn!(error = %e, "task queue run_due_task_jobs failed (route trigger)");

@@ -110,7 +110,7 @@ async fn tasks_job_detail_and_logs_work() {
 
     let config = api::config::ConfigStore::load();
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(Some(pool), config, jwt, api::db::DatabaseKind::Sqlite);
+    let state = AppState::new(Some(pool), config, jwt, api::db::DatabaseKind::Sqlite).with_spawn_background_workers(false);
     let app = api::app(state);
 
     let access = seed_user_and_login(&app).await;

@@ -8,7 +8,6 @@ pub mod bootstrap;
 pub mod crawl_config;
 pub mod errors;
 pub mod forecast;
-pub mod fund_analytics;
 pub mod fund_analysis_v2;
 pub mod fund_signals;
 pub mod funds;
@@ -73,10 +72,6 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route(
             "/api/funds/{fund_code}/estimate",
             axum::routing::get(funds::estimate),
-        )
-        .route(
-            "/api/funds/{fund_code}/analytics",
-            axum::routing::get(fund_analytics::retrieve),
         )
         .route(
             "/api/funds/{fund_code}/analysis_v2",

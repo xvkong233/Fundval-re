@@ -16,7 +16,7 @@ async fn body_json(res: axum::response::Response) -> Value {
 async fn fund_analysis_v2_requires_auth() {
     let config = api::config::ConfigStore::load();
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(None, config, jwt, api::db::DatabaseKind::Sqlite);
+    let state = AppState::new(None, config, jwt, api::db::DatabaseKind::Sqlite).with_spawn_background_workers(false);
     let app = api::service(state);
 
     let res = app
@@ -47,7 +47,7 @@ async fn fund_analysis_v2_compute_enqueues_task_job() {
 
     let config = api::config::ConfigStore::load();
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(Some(pool.clone()), config, jwt, api::db::DatabaseKind::Sqlite);
+    let state = AppState::new(Some(pool.clone()), config, jwt, api::db::DatabaseKind::Sqlite).with_spawn_background_workers(false);
     let token = state.jwt().issue_access_token("1");
     let app = api::service(state);
 
@@ -112,7 +112,7 @@ async fn fund_analysis_v2_retrieve_returns_missing_placeholder_when_absent() {
 
     let config = api::config::ConfigStore::load();
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(Some(pool.clone()), config, jwt, api::db::DatabaseKind::Sqlite);
+    let state = AppState::new(Some(pool.clone()), config, jwt, api::db::DatabaseKind::Sqlite).with_spawn_background_workers(false);
     let token = state.jwt().issue_access_token("1");
     let app = api::service(state);
 

@@ -66,7 +66,7 @@ async fn batch_estimate_enqueues_refresh_jobs_when_stale_or_missing() {
     config.set_bool("estimate_async_enabled", true);
     config.set_i64("estimate_cache_ttl", Some(5));
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(Some(pool.clone()), config, jwt, api::db::DatabaseKind::Sqlite);
+    let state = AppState::new(Some(pool.clone()), config, jwt, api::db::DatabaseKind::Sqlite).with_spawn_background_workers(false);
     let app = api::service(state);
 
     let res = app
@@ -138,7 +138,7 @@ async fn batch_estimate_does_not_enqueue_when_enqueue_refresh_is_false() {
     config.set_bool("estimate_async_enabled", true);
     config.set_i64("estimate_cache_ttl", Some(5));
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(Some(pool.clone()), config, jwt, api::db::DatabaseKind::Sqlite);
+    let state = AppState::new(Some(pool.clone()), config, jwt, api::db::DatabaseKind::Sqlite).with_spawn_background_workers(false);
     let app = api::service(state);
 
     let res = app

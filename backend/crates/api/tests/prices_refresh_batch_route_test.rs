@@ -75,7 +75,7 @@ async fn prices_refresh_batch_async_enqueues_one_task_job() {
 
     let config = api::config::ConfigStore::load();
     let jwt = api::jwt::JwtService::from_secret("test-secret");
-    let state = AppState::new(Some(pool.clone()), config, jwt, api::db::DatabaseKind::Sqlite);
+    let state = AppState::new(Some(pool.clone()), config, jwt, api::db::DatabaseKind::Sqlite).with_spawn_background_workers(false);
     let app = api::app(state);
 
     let access = seed_user_and_login(&app).await;

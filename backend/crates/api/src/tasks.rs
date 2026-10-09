@@ -973,13 +973,16 @@ async fn exec_sniffer_sync(pool: &sqlx::AnyPool, run_id: &str, _job: &TaskJobRow
 }
 
 /// 构建全市场预测模型的训练数据集：对每只基金取近 400 个净值点，
-/// 构造 lag_k 维对数收益率特征 -> 下一日对数收益率标签。
+/// 构造 8 维技术特征 -> 下一日对数收益率标签。
 /// 上限 max_samples 个样本；每扫描 200 只基金写一条进度日志。
+///
+/// 特征定义见 `crate::ml::features::build_forecast_features`。
+/// `lag_k` 参数保留用于兼容旧调用，仅作为最小历史长度要求（实际特征维度固定为 8）。
 async fn build_forecast_training_dataset(
     pool: &sqlx::AnyPool,
     run_id: &str,
     source: &str,
-    lag_k: i64,
+    _lag_k: i64,
     max_samples: usize,
 ) -> Result<(Vec<Vec<f64>>, Vec<f64>), String> {
     let fund_rows = sqlx::query("SELECT fund_code FROM fund ORDER BY fund_code ASC")
@@ -1018,7 +1021,7 @@ async fn build_forecast_training_dataset(
         .await
         .map_err(|e| e.to_string())?;
 
-        if nav_rows.len() < (lag_k as usize + 3) {
+        if nav_rows.len() < 30 {
             continue;
         }
 
@@ -1031,29 +1034,19 @@ async fn build_forecast_training_dataset(
                 }
             }
         }
-        if navs.len() < (lag_k as usize + 3) {
+        if navs.len() < 30 {
             continue;
         }
 
-        let mut rets: Vec<f64> = Vec::with_capacity(navs.len().saturating_sub(1));
-        for (a, b) in navs.iter().zip(navs.iter().skip(1)) {
-            if *a > 0.0 && *b > 0.0 {
-                rets.push((b / a).ln());
-            }
-        }
-        if rets.len() < (lag_k as usize + 2) {
-            continue;
-        }
-
-        for i in (lag_k as usize)..rets.len() {
+        // 8 维技术特征 -> 下一日对数收益
+        for i in 24..navs.len().saturating_sub(1) {
             if x.len() >= max_samples {
                 break;
             }
-            let mut feat: Vec<f64> = Vec::with_capacity(lag_k as usize);
-            let start = i - lag_k as usize;
-            feat.extend_from_slice(&rets[start..i]);
-            x.push(feat);
-            y.push(rets[i]);
+            if let Some(feat) = crate::ml::features::build_forecast_features(&navs, i) {
+                x.push(feat);
+                y.push((navs[i + 1] / navs[i]).ln());
+            }
         }
         if x.len() >= max_samples {
             break;
@@ -1067,16 +1060,17 @@ async fn build_forecast_training_dataset(
 fn fit_forecast_model(
     x: &[Vec<f64>],
     y: &[f64],
-    lag_k: i64,
+    _lag_k: i64,
     l2: f64,
 ) -> Result<(OlsModel, i64), String> {
+    let dim = x.first().map(|r| r.len()).unwrap_or(8);
     if x.len() < 10 {
         Ok((
             OlsModel {
-                weights: vec![0.0; lag_k as usize],
+                weights: vec![0.0; dim],
                 bias: 0.0,
-                mean: vec![0.0; lag_k as usize],
-                std: vec![1.0; lag_k as usize],
+                mean: vec![0.0; dim],
+                std: vec![1.0; dim],
                 residual_sigma: 0.0,
             },
             x.len() as i64,
@@ -1560,20 +1554,18 @@ async fn exec_fund_analysis_v2_compute(
             continue;
         }
 
-        // build last LAG_K log-returns from seed navs
-        let mut rets: Vec<f64> = Vec::with_capacity(seed_navs.len().saturating_sub(1));
-        for ((_, a), (_, b)) in seed_navs.iter().zip(seed_navs.iter().skip(1)) {
-            if *a > 0.0 && *b > 0.0 {
-                rets.push((b / a).ln());
-            }
-        }
-        let mut hist: Vec<f64> = Vec::new();
-        let k = LAG_K as usize;
-        if rets.len() >= k {
-            hist.extend_from_slice(&rets[rets.len() - k..]);
-        } else {
-            hist.extend(std::iter::repeat(0.0).take(k - rets.len()));
-            hist.extend_from_slice(&rets);
+        // 维护 NAV 序列（含预测值），每步用 8 维技术特征预测下一日收益
+        let mut nav_series: Vec<f64> = seed_navs.iter().map(|x| x.1).collect();
+        // 历史不足25点时无法计算技术特征，降级为 mu=0 的平坦预测（保持任务完成）
+        let use_tech_features = nav_series.len() >= 25;
+        if !use_tech_features {
+            let _ = append_task_log(
+                pool,
+                run_id,
+                "WARN",
+                &format!("[{fund_code}] window={window} 历史不足25点，使用平坦预测"),
+            )
+            .await;
         }
 
         // forecast horizon=60
@@ -1587,11 +1579,16 @@ async fn exec_fund_analysis_v2_compute(
         let z = 1.96_f64;
 
         for step in 1..=FORECAST_HORIZON {
-            let mu = model
-                .predict(&hist)
-                .unwrap_or(0.0)
-                .max(-0.15)
-                .min(0.15);
+            let mu = if use_tech_features {
+                let idx = nav_series.len() - 1;
+                let feat = crate::ml::features::build_forecast_features(&nav_series, idx);
+                feat.and_then(|f| model.predict(&f))
+                    .unwrap_or(0.0)
+                    .max(-0.15)
+                    .min(0.15)
+            } else {
+                0.0
+            };
 
             cum_mu += mu;
             let nav_mean = base_nav * cum_mu.exp();
@@ -1604,6 +1601,10 @@ async fn exec_fund_analysis_v2_compute(
             nav_max = nav_max.max(nav_mean);
             nav_series_mean.push(nav_mean);
 
+            // 将预测的 NAV 追加到序列，供下一步特征计算
+            let prev_nav = *nav_series.last().unwrap_or(&base_nav);
+            nav_series.push((prev_nav * mu.exp()).max(0.01));
+
             forecast_points.push(json!({
               "step": step,
               "nav": nav_mean,
@@ -1611,11 +1612,6 @@ async fn exec_fund_analysis_v2_compute(
               "ci_high": nav_high,
               "mu": mu
             }));
-
-            hist.push(mu);
-            if hist.len() > k {
-                hist.remove(0);
-            }
         }
 
         let mut low_idx = 0_usize;

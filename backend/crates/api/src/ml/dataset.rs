@@ -2,7 +2,11 @@ use std::collections::{BTreeMap, HashMap};
 
 use sqlx::Row;
 
-use super::signals::{MAGIC_REBOUND_THRESHOLD_5T, MAGIC_REBOUND_THRESHOLD_20T};
+use super::features::build_features;
+use super::signals::{
+    DIP_BUY_THRESHOLD_5T, DIP_BUY_THRESHOLD_20T, MAGIC_REBOUND_THRESHOLD_5T,
+    MAGIC_REBOUND_THRESHOLD_20T,
+};
 
 #[derive(Debug, Clone, Copy)]
 pub struct DatasetConfig {
@@ -98,6 +102,11 @@ pub async fn build_trigger_samples_for_peer(
     } else {
         MAGIC_REBOUND_THRESHOLD_20T
     };
+    let dip_th = if h <= 5 {
+        DIP_BUY_THRESHOLD_5T
+    } else {
+        DIP_BUY_THRESHOLD_20T
+    };
 
     let mut base_code: Option<String> = None;
     let mut base_len: usize = 0;
@@ -175,7 +184,7 @@ pub async fn build_trigger_samples_for_peer(
         let top_k = ((n as f64) * 0.2).ceil().max(1.0) as usize;
         let top_k = top_k.min(n);
 
-        for (rank, (code, idx, dd_mag)) in dd_items.into_iter().enumerate() {
+        for (rank, (code, idx, _)) in dd_items.into_iter().enumerate() {
             if rank >= top_k {
                 break;
             }
@@ -187,18 +196,16 @@ pub async fn build_trigger_samples_for_peer(
                 continue;
             }
 
-            let dip_buy_success = (nav_future / nav_now - 1.0) > 0.0;
+            let dip_buy_success = (nav_future / nav_now - 1.0) > dip_th;
             let max_future = max_nav(navs, idx + 1, idx + h);
             let magic_rebound = (max_future / nav_now - 1.0) >= rebound_th;
 
-            let ret5 = simple_return(navs, idx, 5).unwrap_or(0.0);
-            let ret20 = simple_return(navs, idx, 20).unwrap_or(ret5);
-            let vol20 = vol(navs, idx, 20).unwrap_or(0.0);
+            let features = build_features(navs, idx);
 
             out.push(TriggerSample {
                 fund_code: code,
                 as_of_date: d.clone(),
-                features: vec![dd_mag, ret5, ret20, vol20],
+                features,
                 dip_buy_success,
                 magic_rebound,
             });
@@ -284,6 +291,11 @@ pub async fn build_trigger_samples_for_all_funds(
     } else {
         MAGIC_REBOUND_THRESHOLD_20T
     };
+    let dip_th = if h <= 5 {
+        DIP_BUY_THRESHOLD_5T
+    } else {
+        DIP_BUY_THRESHOLD_20T
+    };
 
     let mut base_code: Option<String> = None;
     let mut base_len: usize = 0;
@@ -357,7 +369,7 @@ pub async fn build_trigger_samples_for_all_funds(
         let top_k = ((n as f64) * 0.2).ceil().max(1.0) as usize;
         let top_k = top_k.min(n);
 
-        for (rank, (code, idx, dd_mag)) in dd_items.into_iter().enumerate() {
+        for (rank, (code, idx, _)) in dd_items.into_iter().enumerate() {
             if rank >= top_k {
                 break;
             }
@@ -369,18 +381,16 @@ pub async fn build_trigger_samples_for_all_funds(
                 continue;
             }
 
-            let dip_buy_success = (nav_future / nav_now - 1.0) > 0.0;
+            let dip_buy_success = (nav_future / nav_now - 1.0) > dip_th;
             let max_future = max_nav(navs, idx + 1, idx + h);
             let magic_rebound = (max_future / nav_now - 1.0) >= rebound_th;
 
-            let ret5 = simple_return(navs, idx, 5).unwrap_or(0.0);
-            let ret20 = simple_return(navs, idx, 20).unwrap_or(ret5);
-            let vol20 = vol(navs, idx, 20).unwrap_or(0.0);
+            let features = build_features(navs, idx);
 
             out.push(TriggerSample {
                 fund_code: code,
                 as_of_date: d.clone(),
-                features: vec![dd_mag, ret5, ret20, vol20],
+                features,
                 dip_buy_success,
                 magic_rebound,
             });
@@ -421,45 +431,4 @@ fn max_nav(navs: &[(String, f64)], start: usize, end: usize) -> f64 {
         }
     }
     if max_v == f64::MIN { 0.0 } else { max_v }
-}
-
-fn simple_return(navs: &[(String, f64)], idx: usize, lookback: usize) -> Option<f64> {
-    if idx < lookback || idx >= navs.len() {
-        return None;
-    }
-    let base = navs[idx - lookback].1;
-    let now = navs[idx].1;
-    if base <= 0.0 {
-        return None;
-    }
-    Some(now / base - 1.0)
-}
-
-fn vol(navs: &[(String, f64)], idx: usize, lookback: usize) -> Option<f64> {
-    if idx < lookback || idx >= navs.len() {
-        return None;
-    }
-    let start = idx + 1 - lookback;
-    let mut rets: Vec<f64> = Vec::with_capacity(lookback);
-    for i in (start + 1)..=idx {
-        let prev = navs[i - 1].1;
-        let now = navs[i].1;
-        if prev <= 0.0 || now <= 0.0 {
-            continue;
-        }
-        rets.push(now / prev - 1.0);
-    }
-    if rets.len() < 2 {
-        return None;
-    }
-    let mean = rets.iter().sum::<f64>() / (rets.len() as f64);
-    let var = rets
-        .iter()
-        .map(|r| {
-            let d = r - mean;
-            d * d
-        })
-        .sum::<f64>()
-        / (rets.len() as f64);
-    Some(var.sqrt())
 }

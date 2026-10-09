@@ -170,12 +170,8 @@ async fn predict_one(
 
 fn compute_features(navs: &[(String, f64)]) -> Result<Vec<f64>, String> {
     let idx = navs.len().saturating_sub(1);
-    let lookback = navs.len().clamp(2, 252);
-    let dd_mag = drawdown_mag(navs, idx, lookback);
-    let ret5 = simple_return(navs, idx, 5).unwrap_or(0.0);
-    let ret20 = simple_return(navs, idx, 20).unwrap_or(ret5);
-    let vol20 = vol(navs, idx, 20).unwrap_or(0.0);
-    Ok(vec![dd_mag, ret5, ret20, vol20])
+    // 与训练侧完全一致的 8 维特征（见 ml::features::build_features）
+    Ok(super::features::build_features(navs, idx))
 }
 
 async fn compute_position_percentile_and_bucket(
@@ -384,45 +380,4 @@ fn drawdown_mag(navs: &[(String, f64)], idx: usize, lookback: usize) -> f64 {
         return 0.0;
     }
     ((max_v - now) / max_v).max(0.0)
-}
-
-fn simple_return(navs: &[(String, f64)], idx: usize, lookback: usize) -> Option<f64> {
-    if idx < lookback || idx >= navs.len() {
-        return None;
-    }
-    let base = navs[idx - lookback].1;
-    let now = navs[idx].1;
-    if base <= 0.0 {
-        return None;
-    }
-    Some(now / base - 1.0)
-}
-
-fn vol(navs: &[(String, f64)], idx: usize, lookback: usize) -> Option<f64> {
-    if idx < lookback || idx >= navs.len() {
-        return None;
-    }
-    let start = idx + 1 - lookback;
-    let mut rets: Vec<f64> = Vec::with_capacity(lookback);
-    for i in (start + 1)..=idx {
-        let prev = navs[i - 1].1;
-        let now = navs[i].1;
-        if prev <= 0.0 || now <= 0.0 {
-            continue;
-        }
-        rets.push(now / prev - 1.0);
-    }
-    if rets.len() < 2 {
-        return None;
-    }
-    let mean = rets.iter().sum::<f64>() / (rets.len() as f64);
-    let var = rets
-        .iter()
-        .map(|r| {
-            let d = r - mean;
-            d * d
-        })
-        .sum::<f64>()
-        / (rets.len() as f64);
-    Some(var.sqrt())
 }

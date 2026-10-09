@@ -103,7 +103,7 @@ async fn train_persists_sector_model_and_can_infer() {
 
     let p = rec
         .model
-        .predict_proba(&[0.1, 0.0, 0.0, 0.0])
+        .predict_proba(&[0.1, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.01, 0.05, 0.0, 0.0, 0.0])
         .expect("predict");
     assert!((0.0..=1.0).contains(&p));
 }

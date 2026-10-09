@@ -5,6 +5,8 @@ pub struct LogRegTrainConfig {
     pub learning_rate: f64,
     pub epochs: usize,
     pub l2: f64,
+    /// 正样本权重（类别不平衡时 >1）。1.0 表示不加权。
+    pub pos_weight: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,13 +87,18 @@ pub fn train_logreg(x: &[Vec<f64>], y: &[f64], cfg: &LogRegTrainConfig) -> Optio
 
     let lr = cfg.learning_rate.clamp(1e-6, 10.0);
     let l2 = cfg.l2.max(0.0);
+    let pos_weight = cfg.pos_weight.max(1e-6);
 
     for _ in 0..cfg.epochs.max(1) {
         let mut grad_w = vec![0.0_f64; d];
         let mut grad_b = 0.0_f64;
+        let mut w_sum = 0.0_f64;
 
         for (row, &yy) in x.iter().zip(y.iter()) {
             let yy = if yy >= 0.5 { 1.0 } else { 0.0 };
+            // 样本权重：正样本加权以平衡类别
+            let sw = if yy >= 0.5 { pos_weight } else { 1.0 };
+            w_sum += sw;
 
             let mut z = b;
             let mut xs = vec![0.0_f64; d];
@@ -101,7 +108,7 @@ pub fn train_logreg(x: &[Vec<f64>], y: &[f64], cfg: &LogRegTrainConfig) -> Optio
                 z += w[j] * s;
             }
             let p = sigmoid(z);
-            let err = p - yy;
+            let err = (p - yy) * sw;
 
             for j in 0..d {
                 grad_w[j] += err * xs[j];
@@ -109,11 +116,11 @@ pub fn train_logreg(x: &[Vec<f64>], y: &[f64], cfg: &LogRegTrainConfig) -> Optio
             grad_b += err;
         }
 
-        let inv_n = 1.0 / (n as f64);
+        let inv_w = 1.0 / w_sum.max(1e-12);
         for j in 0..d {
-            grad_w[j] = grad_w[j] * inv_n + l2 * w[j];
+            grad_w[j] = grad_w[j] * inv_w + l2 * w[j];
         }
-        grad_b *= inv_n;
+        grad_b *= inv_w;
 
         for j in 0..d {
             w[j] -= lr * grad_w[j];

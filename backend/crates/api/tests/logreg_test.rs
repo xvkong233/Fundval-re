@@ -14,6 +14,7 @@ fn logreg_learns_simple_or() {
         learning_rate: 0.5,
         epochs: 800,
         l2: 0.1,
+        pos_weight: 1.0,
     };
 
     let model = train_logreg(&x, &y, &cfg).expect("train");

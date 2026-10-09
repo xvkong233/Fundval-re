@@ -3,7 +3,6 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
 import {
   Button,
-  Card,
   Checkbox,
   Form,
   Grid,
@@ -12,7 +11,6 @@ import {
   Popconfirm,
   Select,
   Space,
-  Statistic,
   Table,
   type TableColumnsType,
   Typography,
@@ -47,7 +45,7 @@ function formatPercent(v: any): string {
 function pnlColor(v: any): string | undefined {
   const n = toNumber(v);
   if (n === null) return undefined;
-  return n >= 0 ? "#cf1322" : "#3f8600";
+  return n >= 0 ? "#DC2626" : "#16A34A";
 }
 
 export default function AccountsPage() {
@@ -335,9 +333,9 @@ export default function AccountsPage() {
 
   return (
     <AuthedLayout title="账户">
-      <Card
-        title="账户管理"
-        extra={
+      <div className="fv-card">
+        <div className="fv-cardHead">
+          <div className="fv-cardTitle">账户管理</div>
           <div className="fv-toolbarScroll">
             <Space wrap>
               <Button onClick={() => setShowAllSummary((v) => !v)}>
@@ -351,39 +349,52 @@ export default function AccountsPage() {
               </Button>
             </Space>
           </div>
-        }
-      >
-        {!showAllSummary ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <Select
-              style={{ width: isMobile ? "100%" : 320, maxWidth: "100%" }}
-              placeholder="选择父账户"
-              value={selectedParentId ?? undefined}
-              onChange={(v) => setSelectedParentId(v)}
-              options={parentAccounts.map((a) => ({
-                label: `${a.name}${a.is_default ? " (默认)" : ""}`,
-                value: a.id,
-              }))}
-            />
+        </div>
+        <div className="fv-cardBody">
+          {!showAllSummary ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <Select
+                style={{ width: isMobile ? "100%" : 320, maxWidth: "100%" }}
+                placeholder="选择父账户"
+                value={selectedParentId ?? undefined}
+                onChange={(v) => setSelectedParentId(v)}
+                options={parentAccounts.map((a) => ({
+                  label: `${a.name}${a.is_default ? " (默认)" : ""}`,
+                  value: a.id,
+                }))}
+              />
 
-            <Card size="small" title={selectedParent ? `汇总：${selectedParent.name}` : "汇总"}>
-              <div className="fv-kpiGrid4">
-                <Statistic title="持仓成本" value={formatMoney(selectedParent?.holding_cost)} />
-                <Statistic title="持仓市值" value={formatMoney(selectedParent?.holding_value)} />
-                <Statistic
-                  title="总盈亏"
-                  valueStyle={{ color: pnlColor(selectedParent?.pnl) }}
-                  value={formatMoney(selectedParent?.pnl)}
-                />
-                <Statistic
-                  title="收益率"
-                  valueStyle={{ color: pnlColor(selectedParent?.pnl_rate) }}
-                  value={formatPercent(selectedParent?.pnl_rate)}
-                />
+              <div className="fv-card">
+                <div className="fv-cardHead">
+                  <div className="fv-cardTitle">{selectedParent ? `汇总：${selectedParent.name}` : "汇总"}</div>
+                </div>
+                <div className="fv-cardBody">
+                  <div className="fv-kpiGrid">
+                    <div className="fv-kpi">
+                      <div className="fv-kpiLabel">持仓成本</div>
+                      <div className="fv-kpiValue fv-num">{formatMoney(selectedParent?.holding_cost)}</div>
+                    </div>
+                    <div className="fv-kpi">
+                      <div className="fv-kpiLabel">持仓市值</div>
+                      <div className="fv-kpiValue fv-num">{formatMoney(selectedParent?.holding_value)}</div>
+                    </div>
+                    <div className="fv-kpi">
+                      <div className="fv-kpiLabel">总盈亏</div>
+                      <div className="fv-kpiValue fv-num" style={{ color: pnlColor(selectedParent?.pnl) }}>
+                        {formatMoney(selectedParent?.pnl)}
+                      </div>
+                    </div>
+                    <div className="fv-kpi">
+                      <div className="fv-kpiLabel">收益率</div>
+                      <div className="fv-kpiValue fv-num" style={{ color: pnlColor(selectedParent?.pnl_rate) }}>
+                        {formatPercent(selectedParent?.pnl_rate)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
-            </Card>
 
-            <Table<Account>
+              <Table<Account>
               rowKey={(r) => r.id}
               loading={loading}
               columns={columns}
@@ -400,18 +411,33 @@ export default function AccountsPage() {
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <Card size="small" title="全部账户汇总">
-              <div className="fv-kpiGrid4">
-                <Statistic title="持仓成本" value={formatMoney(allSummary.holding_cost)} />
-                <Statistic title="持仓市值" value={formatMoney(allSummary.holding_value)} />
-                <Statistic title="预估市值" value={formatMoney(allSummary.estimate_value)} />
-                <Statistic
-                  title="今日盈亏(预估)"
-                  valueStyle={{ color: pnlColor(allSummary.today_pnl) }}
-                  value={formatMoney(allSummary.today_pnl)}
-                />
+            <div className="fv-card">
+              <div className="fv-cardHead">
+                <div className="fv-cardTitle">全部账户汇总</div>
               </div>
-            </Card>
+              <div className="fv-cardBody">
+                <div className="fv-kpiGrid">
+                  <div className="fv-kpi">
+                    <div className="fv-kpiLabel">持仓成本</div>
+                    <div className="fv-kpiValue fv-num">{formatMoney(allSummary.holding_cost)}</div>
+                  </div>
+                  <div className="fv-kpi">
+                    <div className="fv-kpiLabel">持仓市值</div>
+                    <div className="fv-kpiValue fv-num">{formatMoney(allSummary.holding_value)}</div>
+                  </div>
+                  <div className="fv-kpi">
+                    <div className="fv-kpiLabel">预估市值</div>
+                    <div className="fv-kpiValue fv-num">{formatMoney(allSummary.estimate_value)}</div>
+                  </div>
+                  <div className="fv-kpi">
+                    <div className="fv-kpiLabel">今日盈亏(预估)</div>
+                    <div className="fv-kpiValue fv-num" style={{ color: pnlColor(allSummary.today_pnl) }}>
+                      {formatMoney(allSummary.today_pnl)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
 
             <Table<Account>
               rowKey={(r) => r.id}
@@ -429,7 +455,8 @@ export default function AccountsPage() {
             />
           </div>
         )}
-      </Card>
+        </div>
+      </div>
 
       <Modal
         title={modalMode === "create" ? "创建账户" : "编辑账户"}

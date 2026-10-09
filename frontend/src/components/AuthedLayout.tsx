@@ -2,7 +2,9 @@
 
 import {
   AppstoreOutlined,
+  BellOutlined,
   DashboardOutlined,
+  ExperimentOutlined,
   FundOutlined,
   LineChartOutlined,
   MenuFoldOutlined,
@@ -12,7 +14,7 @@ import {
   UnorderedListOutlined,
   WalletOutlined,
 } from "@ant-design/icons";
-import { Button, Drawer, Grid, Layout, Menu, Spin, Typography } from "antd";
+import { Avatar, Button, Drawer, Grid, Layout, Menu, Spin } from "antd";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import React, { useEffect, useMemo, useState } from "react";
@@ -20,7 +22,6 @@ import { useAuth } from "../contexts/AuthContext";
 import { isAuthenticated } from "../lib/auth";
 
 const { Header, Sider, Content } = Layout;
-const { Text } = Typography;
 const { useBreakpoint } = Grid;
 
 const FV_SIDER_PREF_KEY = "fv_sider_collapsed";
@@ -63,6 +64,26 @@ const NAV_ROUTES: Record<NavKey, string> = {
   tasks: "/tasks",
 };
 
+const NAV_SECTIONS: { title: string; keys: NavKey[] }[] = [
+  { title: "总览", keys: ["dashboard"] },
+  { title: "资产", keys: ["accounts", "positions", "watchlists"] },
+  { title: "研究", keys: ["funds", "sniffer", "strategies", "sim"] },
+  { title: "系统", keys: ["tasks", "settings"] },
+];
+
+const NAV_META: Record<NavKey, { icon: React.ReactNode; label: string }> = {
+  dashboard: { icon: <DashboardOutlined />, label: "仪表盘" },
+  accounts: { icon: <WalletOutlined />, label: "账户" },
+  positions: { icon: <FundOutlined />, label: "持仓" },
+  watchlists: { icon: <StarOutlined />, label: "自选" },
+  funds: { icon: <LineChartOutlined />, label: "基金" },
+  sniffer: { icon: <AppstoreOutlined />, label: "嗅探" },
+  strategies: { icon: <ExperimentOutlined />, label: "策略" },
+  sim: { icon: <FundOutlined />, label: "模拟盘" },
+  tasks: { icon: <UnorderedListOutlined />, label: "任务队列" },
+  settings: { icon: <SettingOutlined />, label: "设置" },
+};
+
 export function AuthedLayout({
   title,
   subtitle,
@@ -77,17 +98,14 @@ export function AuthedLayout({
   const router = useRouter();
   const pathname = usePathname();
   const screens = useBreakpoint();
-  const isMobile = !screens.md; // < 768px
-  const isTablet = Boolean(screens.md) && !screens.lg; // 768px~992px
+  const isMobile = !screens.md;
 
   const { user, logout, loading } = useAuth();
   const [clientAuthed, setClientAuthed] = useState<boolean | null>(null);
-
-  const [collapsed, setCollapsed] = useState<boolean>(true);
+  const [collapsed, setCollapsed] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
-    // 不能在 SSR 阶段依赖 localStorage；这里用 client-side effect 决定是否渲染受保护内容。
     setClientAuthed(isAuthenticated());
   }, []);
 
@@ -98,187 +116,170 @@ export function AuthedLayout({
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    // 首次加载：桌面端读取用户偏好；移动端/平板默认折叠（更干净）。
-    if (isMobile || isTablet) {
-      setCollapsed(true);
-      return;
-    }
-    setCollapsed(readSiderCollapsedPreference() ?? false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
     if (isMobile) {
       setCollapsed(true);
       setMobileNavOpen(false);
       return;
     }
-    if (isTablet) {
-      setCollapsed(true);
-      return;
-    }
-    // 桌面端：切换回桌面时，恢复偏好。
     setCollapsed(readSiderCollapsedPreference() ?? false);
-  }, [isMobile, isTablet, screens.lg]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMobile]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (!isMobile && !isTablet) writeSiderCollapsedPreference(collapsed);
-  }, [collapsed, isMobile, isTablet]);
+    if (!isMobile) writeSiderCollapsedPreference(collapsed);
+  }, [collapsed, isMobile]);
 
   const selectedKeys = useMemo<NavKey[]>(() => {
     if (!pathname) return [];
-    if (pathname.startsWith("/watchlists")) return ["watchlists"];
-    if (pathname.startsWith("/accounts")) return ["accounts"];
-    if (pathname.startsWith("/positions")) return ["positions"];
-    if (pathname.startsWith("/settings")) return ["settings"];
-    if (pathname.startsWith("/dashboard")) return ["dashboard"];
-    if (pathname.startsWith("/sniffer")) return ["sniffer"];
-    if (pathname.startsWith("/sim")) return ["sim"];
-    if (pathname.startsWith("/funds")) return ["funds"];
-    if (pathname.startsWith("/tasks")) return ["tasks"];
-    if (pathname.startsWith("/strategies")) return ["strategies"];
+    for (const k of Object.keys(NAV_ROUTES) as NavKey[]) {
+      if (k === "strategies" && pathname.startsWith("/strategies")) return [k];
+      if (k !== "strategies" && (pathname === NAV_ROUTES[k] || pathname.startsWith(NAV_ROUTES[k] + "/")))
+        return [k];
+    }
     return [];
   }, [pathname]);
 
-  const primaryNavItems = useMemo(
-    () => [
-      { key: "dashboard", icon: <DashboardOutlined />, label: "仪表盘" },
-      { key: "accounts", icon: <WalletOutlined />, label: "账户" },
-      { key: "positions", icon: <FundOutlined />, label: "持仓" },
-      { key: "watchlists", icon: <StarOutlined />, label: "自选" },
-      { key: "sniffer", icon: <AppstoreOutlined />, label: "嗅探" },
-      { key: "strategies", icon: <LineChartOutlined />, label: "策略" },
-      { key: "funds", icon: <FundOutlined />, label: "基金" },
-      { key: "sim", icon: <FundOutlined />, label: "模拟盘" },
-      { key: "settings", icon: <SettingOutlined />, label: "设置" },
-    ],
-    []
-  );
-
-  const bottomNavItems = useMemo(() => [{ key: "tasks", icon: <UnorderedListOutlined />, label: "任务队列" }], []);
-
   const go = (key: string) => {
-    const k = key as NavKey;
-    const url = NAV_ROUTES[k];
+    const url = NAV_ROUTES[key as NavKey];
     if (url) router.push(url);
     if (isMobile) setMobileNavOpen(false);
   };
 
-  const renderNav = (opts?: { compact?: boolean }) => (
+  const menuItems = useMemo(() => {
+    const items: any[] = [];
+    for (const sec of NAV_SECTIONS) {
+      items.push({
+        key: `section-${sec.title}`,
+        type: "group",
+        label: collapsed ? undefined : <span className="fv-siderSection">{sec.title}</span>,
+        children: sec.keys.map((k) => ({
+          key: k,
+          icon: NAV_META[k].icon,
+          label: NAV_META[k].label,
+        })),
+      });
+    }
+    return items;
+  }, [collapsed]);
+
+  const renderNav = () => (
     <>
-      <div className="fv-siderBrand">
-        <Link href="/dashboard" style={{ color: "inherit" }} onClick={() => isMobile && setMobileNavOpen(false)}>
-          Fundval
-        </Link>
-      </div>
+      <Link
+        href="/dashboard"
+        className="fv-siderBrand"
+        style={{ textDecoration: "none" }}
+        onClick={() => isMobile && setMobileNavOpen(false)}
+      >
+        <span className="fv-siderBrandMark">F</span>
+        {!collapsed && (
+          <span>
+            <span className="fv-siderBrandName">Fundval</span>
+            <div className="fv-siderBrandSub">基金智能分析</div>
+          </span>
+        )}
+      </Link>
       <div className="fv-siderMenu">
         <Menu
-          theme="dark"
           mode="inline"
           selectedKeys={selectedKeys}
-          items={primaryNavItems as any}
+          items={menuItems}
           onClick={(e) => go(String(e.key))}
-          inlineCollapsed={Boolean(opts?.compact)}
+          inlineCollapsed={collapsed}
+          style={{ borderRight: 0, background: "transparent" }}
         />
       </div>
-      <div className="fv-siderBottom">
-        <Menu
-          theme="dark"
-          mode="inline"
-          selectedKeys={selectedKeys}
-          items={bottomNavItems as any}
-          onClick={(e) => go(String(e.key))}
-          inlineCollapsed={Boolean(opts?.compact)}
-        />
+      <div className="fv-siderUser">
+        <Avatar style={{ background: "#4F46E5", flexShrink: 0 }}>
+          {(user?.username ?? "U").slice(0, 1).toUpperCase()}
+        </Avatar>
+        {!collapsed && (
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontWeight: 600, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis" }}>
+              {user?.username ?? "用户"}
+            </div>
+            <Button
+              type="link"
+              size="small"
+              style={{ padding: 0, height: "auto", fontSize: 12 }}
+              onClick={() => {
+                logout();
+                router.push("/login");
+              }}
+            >
+              退出登录
+            </Button>
+          </div>
+        )}
       </div>
     </>
   );
 
   return (
     <Layout className="fv-shell">
-      {!isMobile ? (
+      {!isMobile && (
         <Sider
           className="fv-sider"
-          width={240}
-          collapsedWidth={72}
+          width={248}
+          collapsedWidth={76}
           collapsible
           trigger={null}
           collapsed={collapsed}
-          onCollapse={(v) => setCollapsed(v)}
         >
-          {renderNav({ compact: collapsed })}
+          {renderNav()}
         </Sider>
-      ) : null}
+      )}
 
       <Layout className="fv-main">
         <Header className="fv-header">
           <div className="fv-headerLeft">
             <Button
+              type="text"
               aria-label={isMobile ? "打开导航" : collapsed ? "展开侧边栏" : "收起侧边栏"}
               icon={isMobile ? <MenuUnfoldOutlined /> : collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
               onClick={() => {
                 if (isMobile) setMobileNavOpen(true);
                 else setCollapsed((v) => !v);
               }}
-              style={{ flexShrink: 0 }}
             />
-
-            <div className="fv-headerTitleWrap">
-              <div className="fv-titleRow">
-                <div className="fv-title" title={typeof title === "string" ? title : undefined}>
-                  {title ?? "Fundval"}
-                </div>
-                {subtitle ? <div className="fv-subtitle">{subtitle}</div> : null}
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 16, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {title ?? "Fundval"}
               </div>
+              {subtitle ? (
+                <div style={{ fontSize: 12, color: "var(--fv-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {subtitle}
+                </div>
+              ) : null}
             </div>
-
-            {!isMobile && extra ? <div className="fv-headerExtra">{extra}</div> : null}
           </div>
-
           <div className="fv-headerRight">
-            {!isMobile ? <Text type="secondary">{user?.username ? `你好，${user.username}` : ""}</Text> : null}
-            <Button
-              onClick={() => {
-                logout();
-                router.push("/login");
-              }}
-            >
-              退出
-            </Button>
+            {extra}
+            <Button type="text" icon={<BellOutlined />} aria-label="通知" />
           </div>
         </Header>
 
         <Content className="fv-content">
           {loading || clientAuthed !== true ? (
             <div className="fv-loading">
-              <Spin />
+              <Spin size="large" />
             </div>
           ) : (
-            <div className="fv-page fv-pagePad fv-pageBody">
-              {isMobile && extra ? <div className="fv-mobileActions">{extra}</div> : null}
-              {children}
-            </div>
+            <div className="fv-page">{children}</div>
           )}
         </Content>
       </Layout>
 
       <Drawer
         placement="left"
-        width={300}
+        width={280}
         open={mobileNavOpen}
         onClose={() => setMobileNavOpen(false)}
-        title={<span className="fv-drawerTitle">Fundval</span>}
-        styles={{
-          header: {
-            background: "#001529",
-            borderBottom: "1px solid rgba(255,255,255,0.08)",
-          },
-          body: { padding: 0, background: "#001529" },
-        }}
+        styles={{ body: { padding: 0 } }}
+        title={null}
+        closable={false}
       >
-        <div className="fv-drawerNav">{renderNav({ compact: false })}</div>
+        <div className="fv-drawerNav">{renderNav()}</div>
       </Drawer>
     </Layout>
   );

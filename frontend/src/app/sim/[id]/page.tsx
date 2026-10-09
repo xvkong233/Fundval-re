@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
   Button,
-  Card,
   Col,
   Descriptions,
   Divider,
@@ -191,7 +190,7 @@ export default function SimRunDetailPage() {
   if (loading) {
     return (
       <AuthedLayout title="模拟盘详情">
-        <Card loading />
+        <div className="fv-card"><div className="fv-cardBody">加载中...</div></div>
       </AuthedLayout>
     );
   }
@@ -224,8 +223,9 @@ export default function SimRunDetailPage() {
   return (
     <AuthedLayout title={pageTitle} subtitle={pageSubtitle}>
       <Space direction="vertical" size={12} style={{ width: "100%" }}>
-        <Card>
-          <Row gutter={12} align="middle" justify="space-between">
+        <div className="fv-card">
+          <div className="fv-cardBody">
+            <Row gutter={12} align="middle" justify="space-between">
             <Col>
               <Space wrap>
                 <Tag color={run.mode === "env" ? "blue" : "purple"}>{run.mode}</Tag>
@@ -275,57 +275,71 @@ export default function SimRunDetailPage() {
             <Descriptions.Item label="卖出费率">{pct(run.sell_fee_rate)}</Descriptions.Item>
             <Descriptions.Item label="赎回到账">{`T+${run.settlement_days}`}</Descriptions.Item>
           </Descriptions>
-        </Card>
+          </div>
+        </div>
 
         {run.mode === "backtest" ? (
-          <Card
-            title="权益曲线"
-            extra={
+          <div className="fv-card">
+            <div className="fv-cardHead">
+              <div className="fv-cardTitle">权益曲线</div>
               <Space>
                 {backtestReturn !== null ? (
-                  <Tag color={backtestReturn >= 0 ? "red" : "green"}>区间收益：{pct(backtestReturn)}</Tag>
+                  <span className={`fv-pill ${backtestReturn >= 0 ? "fv-pillUp" : "fv-pillDown"}`}>
+                    区间收益：{pct(backtestReturn)}
+                  </span>
                 ) : null}
                 <Button onClick={() => void loadEquity()} loading={equityLoading}>
                   刷新曲线
                 </Button>
               </Space>
-            }
-          >
-            {equity.length ? (
-              <ReactECharts option={equityOption} style={{ height: 360 }} notMerge />
-            ) : (
-              <Empty description="暂无权益数据（可先运行回测）" />
-            )}
-          </Card>
+            </div>
+            <div className="fv-cardBody">
+              {equity.length ? (
+                <ReactECharts option={equityOption} style={{ height: 360 }} notMerge />
+              ) : (
+                <div className="fv-empty">
+                  <Empty description="暂无权益数据（可先运行回测）" />
+                </div>
+              )}
+            </div>
+          </div>
         ) : null}
 
         {run.mode === "env" ? (
-          <Card
-            title="Observation"
-            extra={
+          <div className="fv-card">
+            <div className="fv-cardHead">
+              <div className="fv-cardTitle">Observation</div>
               <Text type="secondary">
-                说明：这是只读状态，不会推进交易日。训练请前往 <Link href="/sim">模拟盘</Link> 的“强化训练（实验）”。
+                说明：这是只读状态，不会推进交易日。训练请前往 <Link href="/sim">模拟盘</Link> 的"强化训练（实验）"。
               </Text>
-            }
-          >
-            {obs ? (
-              <Space direction="vertical" size={12} style={{ width: "100%" }}>
-                <Descriptions bordered size="small" column={3}>
-                  <Descriptions.Item label="日期">{obs.date}</Descriptions.Item>
-                  <Descriptions.Item label="总权益">{obs.total_equity}</Descriptions.Item>
-                  <Descriptions.Item label="现金(可用)">{obs.cash_available}</Descriptions.Item>
-                  <Descriptions.Item label="现金(冻结)">{obs.cash_frozen}</Descriptions.Item>
-                  <Descriptions.Item label="现金(应收)">{obs.cash_receivable}</Descriptions.Item>
-                  <Descriptions.Item label="持仓数">{obs.positions?.length ?? 0}</Descriptions.Item>
-                </Descriptions>
-                <Card title="持仓" size="small" bodyStyle={{ padding: 0 }}>
-                  <Table rowKey="fund_code" columns={positionColumns} dataSource={obs.positions ?? []} pagination={false} />
-                </Card>
-              </Space>
-            ) : (
-              <Empty description={obsLoading ? "加载中…" : "暂无数据"} />
-            )}
-          </Card>
+            </div>
+            <div className="fv-cardBody">
+              {obs ? (
+                <Space direction="vertical" size={12} style={{ width: "100%" }}>
+                  <Descriptions bordered size="small" column={3}>
+                    <Descriptions.Item label="日期">{obs.date}</Descriptions.Item>
+                    <Descriptions.Item label="总权益">{obs.total_equity}</Descriptions.Item>
+                    <Descriptions.Item label="现金(可用)">{obs.cash_available}</Descriptions.Item>
+                    <Descriptions.Item label="现金(冻结)">{obs.cash_frozen}</Descriptions.Item>
+                    <Descriptions.Item label="现金(应收)">{obs.cash_receivable}</Descriptions.Item>
+                    <Descriptions.Item label="持仓数">{obs.positions?.length ?? 0}</Descriptions.Item>
+                  </Descriptions>
+                  <div className="fv-card">
+                    <div className="fv-cardHead">
+                      <div className="fv-cardTitle">持仓</div>
+                    </div>
+                    <div className="fv-cardBody" style={{ padding: 0 }}>
+                      <Table rowKey="fund_code" columns={positionColumns} dataSource={obs.positions ?? []} pagination={false} />
+                    </div>
+                  </div>
+                </Space>
+              ) : (
+                <div className="fv-empty">
+                  <Empty description={obsLoading ? "加载中…" : "暂无数据"} />
+                </div>
+              )}
+            </div>
+          </div>
         ) : null}
       </Space>
     </AuthedLayout>

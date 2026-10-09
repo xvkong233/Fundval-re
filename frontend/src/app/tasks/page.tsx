@@ -1,7 +1,7 @@
 "use client";
 
 import { ReloadOutlined, ThunderboltOutlined } from "@ant-design/icons";
-import { Button, Card, Grid, Result, Segmented, Space, Table, Tag, Typography, message } from "antd";
+import { Button, Grid, Result, Segmented, Space, Table, Tag, Typography, message } from "antd";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -253,10 +253,9 @@ export default function TasksPage() {
     >
       {error ? <Result status="error" title="任务队列" subTitle={error} /> : null}
 
-      <Card
-        styles={{ body: { padding: 12 } }}
-        title={<Text strong>任务列表</Text>}
-        extra={
+      <div className="fv-card">
+        <div className="fv-cardHead">
+          <div className="fv-cardTitle">任务列表</div>
           <Segmented
             size="small"
             value={view}
@@ -268,9 +267,9 @@ export default function TasksPage() {
               { label: `已完成 (${recentJobIds.size})`, value: "done" },
             ]}
           />
-        }
-      >
-        <Table
+        </div>
+        <div className="fv-cardBody">
+          <Table
           rowKey={(r) => String((r as any).id)}
           size={isMobile ? "small" : "middle"}
           loading={loading}
@@ -318,7 +317,8 @@ export default function TasksPage() {
             style: { cursor: "pointer" },
           })}
         />
-      </Card>
+        </div>
+      </div>
     </AuthedLayout>
   );
 }

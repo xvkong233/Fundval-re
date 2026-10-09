@@ -13,7 +13,6 @@
     import {
       AutoComplete,
       Button,
-      Card,
       Empty,
       Grid,
       Input,
@@ -416,7 +415,7 @@
                       </Text>
                     ) : null}
                   </div>
-                  <div style={{ fontSize: 12, color: positive ? "#cf1322" : "#3f8600" }}>
+                  <div style={{ fontSize: 12, color: positive ? "#DC2626" : "#16A34A" }}>
                     {growthText !== "-" && Number.isFinite(v) && v >= 0 ? "+" : ""}
                     {growthText}
                     <Text type="secondary" style={{ marginLeft: 4, fontSize: 11 }}>
@@ -563,7 +562,7 @@
             const text = Number.isFinite(v) ? v.toFixed(2) : String(g);
             const positive = Number.isFinite(v) ? v >= 0 : !String(g).startsWith("-");
             return (
-              <span style={{ color: positive ? "#cf1322" : "#3f8600", whiteSpace: "nowrap" }}>
+              <span style={{ color: positive ? "#DC2626" : "#16A34A", whiteSpace: "nowrap" }}>
                 {Number.isFinite(v) && v >= 0 ? "+" : ""}
                 {text}
               </span>
@@ -618,8 +617,9 @@
         title="自选"
         subtitle={lastUpdateTime ? `更新于 ${lastUpdateTime.toLocaleTimeString()}` : undefined}
       >
-        <Card>
-          <Tabs
+        <div className="fv-card">
+          <div className="fv-cardBody">
+            <Tabs
            activeKey={activeWatchlistId ?? undefined}
            onChange={(k) => setActiveWatchlistId(k)}
            items={watchlists.map((w) => ({ key: w.id, label: w.name ?? w.id }))}
@@ -803,7 +803,8 @@
               )}
             </div>
           )}
-       </Card>
+          </div>
+        </div>
 
        <Modal
          title="新建自选列表"

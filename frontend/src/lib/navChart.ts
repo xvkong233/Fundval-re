@@ -231,7 +231,7 @@ export function buildNavChartOption(
         name: kind === "low" ? "预测拐点(低)" : "预测拐点(高)",
         coord: [futureDates[step - 1], nav],
         value: nav,
-        itemStyle: { color: kind === "low" ? "#22C55E" : "#EF4444" },
+        itemStyle: { color: kind === "low" ? "#16A34A" : "#DC2626" },
         symbol: "circle",
         symbolSize: 18,
         label: { show: false },
@@ -245,8 +245,8 @@ export function buildNavChartOption(
         data: forecastData,
         smooth: true,
         showSymbol: false,
-        lineStyle: { width: 2, color: "#8B5CF6" },
-        itemStyle: { color: "#8B5CF6" },
+        lineStyle: { width: 2, type: "dashed", color: "#F97316" },
+        itemStyle: { color: "#F97316" },
         markPoint: extremaPoints.length
           ? {
               symbol: "pin",

@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowLeftOutlined, ReloadOutlined } from "@ant-design/icons";
-import { Alert, Button, Card, Collapse, Descriptions, Grid, Input, Result, Space, Table, Tag, Typography, message } from "antd";
+import { Alert, Button, Collapse, Descriptions, Grid, Input, Result, Space, Table, Tag, Typography, message } from "antd";
 import type { TableColumnsType } from "antd";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -285,17 +285,16 @@ export default function TaskDetailPage({ params }: { params: { taskId: string } 
         ) : null}
         {showCards ? (
           <>
-            <Card
-              title={
-                <Space size={8} wrap={false}>
-                  <Text strong>任务</Text>
+            <div className="fv-card">
+              <div className="fv-cardHead">
+                <div className="fv-cardTitle">
+                  任务
                   {job?.status ? statusTag(String(job.status)) : null}
                   {job?.task_type ? <Tag>{String(job.task_type)}</Tag> : null}
-                </Space>
-              }
-              styles={{ body: { padding: 12 } }}
-            >
-              <Descriptions size="small" column={2} bordered>
+                </div>
+              </div>
+              <div className="fv-cardBody">
+                <Descriptions size="small" column={2} bordered>
                 <Descriptions.Item label="状态">{job?.status ? statusTag(String(job.status)) : "-"}</Descriptions.Item>
                 <Descriptions.Item label="类型">{job?.task_type ? String(job.task_type) : "-"}</Descriptions.Item>
                 <Descriptions.Item label="创建">{job?.created_at ? String(job.created_at) : "-"}</Descriptions.Item>
@@ -337,12 +336,13 @@ export default function TaskDetailPage({ params }: { params: { taskId: string } 
                   ]}
                 />
               </div>
-            </Card>
+              </div>
+            </div>
 
-            <Card
-              title={
-                <Space size={8} wrap={false}>
-                  <Text strong>日志</Text>
+            <div className="fv-card">
+              <div className="fv-cardHead">
+                <div className="fv-cardTitle">
+                  日志
                   {lastRun?.status ? statusTag(String(lastRun.status)) : null}
                   {lastRun?.id ? (
                     <Text
@@ -352,9 +352,7 @@ export default function TaskDetailPage({ params }: { params: { taskId: string } 
                       run_id={String(lastRun.id)}
                     </Text>
                   ) : null}
-                </Space>
-              }
-              extra={
+                </div>
                 <div className="fv-toolbarScroll">
                   <Space size={8} wrap={false}>
                     <Button size="small" icon={<ReloadOutlined />} loading={logsLoading} onClick={() => void loadLogs()}>
@@ -382,14 +380,13 @@ export default function TaskDetailPage({ params }: { params: { taskId: string } 
                     />
                   </Space>
                 </div>
-              }
-              styles={{ body: { padding: 0 } }}
-            >
-              {loading ? (
-                <div style={{ padding: 16 }}>
-                  <Text type="secondary">加载中...</Text>
-                </div>
-              ) : filteredLogRows.length ? (
+              </div>
+              <div className="fv-cardBody" style={{ padding: 0 }}>
+                {loading ? (
+                  <div style={{ padding: 16 }}>
+                    <Text type="secondary">加载中...</Text>
+                  </div>
+                ) : filteredLogRows.length ? (
                 <Table
                   rowKey="key"
                   columns={logColumns as any}
@@ -406,10 +403,15 @@ export default function TaskDetailPage({ params }: { params: { taskId: string } 
               ) : (
                 <Result status="info" title="暂无日志" subTitle="任务尚未开始或尚未输出日志" />
               )}
-            </Card>
+              </div>
+            </div>
 
-            <Card title="最近运行" styles={{ body: { padding: 12 } }}>
-              {runs.length ? (
+            <div className="fv-card">
+              <div className="fv-cardHead">
+                <div className="fv-cardTitle">最近运行</div>
+              </div>
+              <div className="fv-cardBody">
+                {runs.length ? (
                 <Space direction="vertical" style={{ width: "100%" }} size={8}>
                   {runs.map((r) => (
                     <div
@@ -448,7 +450,8 @@ export default function TaskDetailPage({ params }: { params: { taskId: string } 
               ) : (
                 <Text type="secondary">暂无运行记录</Text>
               )}
-            </Card>
+              </div>
+            </div>
           </>
         ) : null}
       </Space>

@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Card, Grid, Input, Modal, Select, Space, Table, Tag, Typography, message } from "antd";
+import { Button, Grid, Input, Modal, Select, Space, Table, Typography, message } from "antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ReloadOutlined, SearchOutlined, StarOutlined } from "@ant-design/icons";
@@ -125,7 +125,7 @@ export default function FundsPage() {
           const v = Number(nav);
           return (
             <span style={{ whiteSpace: "nowrap" }}>
-              {Number.isFinite(v) ? v.toFixed(4) : String(nav)}
+              <span className="fv-num">{Number.isFinite(v) ? v.toFixed(4) : String(nav)}</span>
               <Text type="secondary" style={{ fontSize: 11, marginLeft: 4 }}>
                 {dateStr}
               </Text>
@@ -145,7 +145,7 @@ export default function FundsPage() {
           const tStr = t && t.includes("T") ? `(${t.slice(5, 16).replace("T", " ")})` : "";
           return (
             <span style={{ whiteSpace: "nowrap" }}>
-              {text}
+              <span className="fv-num">{text}</span>
               {tStr ? (
                 <Text type="secondary" style={{ fontSize: 11, marginLeft: 4 }}>
                   {tStr}
@@ -165,7 +165,7 @@ export default function FundsPage() {
           const text = Number.isFinite(v) ? v.toFixed(2) : String(g);
           const positive = Number.isFinite(v) ? v >= 0 : String(g).startsWith("-");
           return (
-            <span style={{ color: positive ? "#cf1322" : "#3f8600" }}>
+            <span className={`fv-pill fv-num ${positive ? "fv-pillUp" : "fv-pillDown"}`} style={{ whiteSpace: "nowrap" }}>
               {Number.isFinite(v) && v >= 0 ? "+" : ""}
               {text}
             </span>
@@ -237,16 +237,18 @@ export default function FundsPage() {
           return (
             <div style={{ whiteSpace: "nowrap" }}>
               <div>
-                <Text>{navText}</Text>
+                <span className="fv-num">{navText}</span>
                 {tStr ? (
                   <Text type="secondary" style={{ fontSize: 11, marginLeft: 4 }}>
                     {tStr}
                   </Text>
                 ) : null}
               </div>
-              <div style={{ fontSize: 12, color: positive ? "#cf1322" : "#3f8600" }}>
-                {Number.isFinite(gv) && gv >= 0 ? "+" : ""}
-                {gText}%
+              <div style={{ marginTop: 4 }}>
+                <span className={`fv-pill fv-num ${positive ? "fv-pillUp" : "fv-pillDown"}`}>
+                  {Number.isFinite(gv) && gv >= 0 ? "+" : ""}
+                  {gText}%
+                </span>
               </div>
             </div>
           );
@@ -382,42 +384,54 @@ export default function FundsPage() {
       title="基金"
       subtitle={lastUpdateTime ? `更新于 ${lastUpdateTime.toLocaleTimeString()}` : undefined}
     >
-      <Card styles={{ body: { padding: isMobile ? 12 : 16 } }}>
-        <div className="fv-toolbar">
-          <div className="fv-toolbarLeft">
-            <Input.Search
-              allowClear
-              placeholder="搜索基金代码或名称"
-              enterButton={<SearchOutlined />}
-              style={{ width: isMobile ? "100%" : 420 }}
-              onSearch={(value) => {
-                setSearch(value);
-                setPage(1);
-                void loadFunds({ page: 1, search: value });
-              }}
-            />
-          </div>
-          <div className="fv-toolbarRight fv-toolbarScroll">
-            <Space>
-              <Select
-                style={{ minWidth: 160 }}
-                loading={sourcesLoading}
-                value={source}
-                onChange={(v) => setSource(String(v))}
-                options={(sources.length ? sources : [{ name: "tiantian" }]).map((s) => ({
-                  label: `${sourceDisplayName(s.name)} (${s.name})`,
-                  value: s.name,
-                }))}
-              />
-              <Tag color="blue">{sourceDisplayName(source)}</Tag>
-              <Button icon={<ReloadOutlined />} loading={refreshing} onClick={() => void refreshEstimatesAndNavs(fundCodes)}>
-                刷新估值/净值
-              </Button>
-            </Space>
-          </div>
+      <div className="fv-pageHead">
+        <div>
+          <h1 className="fv-pageTitle">基金</h1>
+          <div className="fv-pageDesc">搜索基金代码或名称，刷新实时估值与净值数据。</div>
         </div>
+        <div className="fv-pageActions">
+          <Input.Search
+            allowClear
+            placeholder="搜索基金代码或名称"
+            enterButton={<SearchOutlined />}
+            style={{ width: isMobile ? "100%" : 360 }}
+            onSearch={(value) => {
+              setSearch(value);
+              setPage(1);
+              void loadFunds({ page: 1, search: value });
+            }}
+          />
+          <Button
+            type="primary"
+            icon={<ReloadOutlined />}
+            loading={refreshing}
+            onClick={() => void refreshEstimatesAndNavs(fundCodes)}
+          >
+            刷新估值/净值
+          </Button>
+        </div>
+      </div>
 
-        <div style={{ marginTop: 16 }}>
+      <div className="fv-card">
+        <div className="fv-cardBody">
+          <div className="fv-toolbar">
+            <div className="fv-toolbarLeft">
+              <Space>
+                <Select
+                  style={{ minWidth: 160 }}
+                  loading={sourcesLoading}
+                  value={source}
+                  onChange={(v) => setSource(String(v))}
+                  options={(sources.length ? sources : [{ name: "tiantian" }]).map((s) => ({
+                    label: `${sourceDisplayName(s.name)} (${s.name})`,
+                    value: s.name,
+                  }))}
+                />
+                <span className="fv-pill fv-pillPrimary">{sourceDisplayName(source)}</span>
+              </Space>
+            </div>
+          </div>
+
           <Table<Fund>
             rowKey={(r) => r.fund_code}
             loading={loading}
@@ -460,7 +474,7 @@ export default function FundsPage() {
             />
           </div>
         </Modal>
-      </Card>
+      </div>
     </AuthedLayout>
   );
 }

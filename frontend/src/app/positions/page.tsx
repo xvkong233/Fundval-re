@@ -12,7 +12,6 @@ import {
 import {
   AutoComplete,
   Button,
-  Card,
   Checkbox,
   Col,
   DatePicker,
@@ -27,7 +26,6 @@ import {
   Row,
   Select,
   Space,
-  Statistic,
   Table,
   Tabs,
   Tag,
@@ -117,7 +115,7 @@ function fixed4(v: any): string {
 function pnlColor(v: any): string | undefined {
   const n = toNumber(v);
   if (n === null) return undefined;
-  return n >= 0 ? "#cf1322" : "#3f8600";
+  return n >= 0 ? "#DC2626" : "#16A34A";
 }
 
 function asYmd(dateValue: any): string | null {
@@ -147,7 +145,7 @@ export default function PositionsPage() {
     <Suspense
       fallback={
         <AuthedLayout title="持仓">
-          <Card loading />
+          <div className="fv-card"><div className="fv-cardBody">加载中...</div></div>
         </AuthedLayout>
       }
     >
@@ -723,9 +721,9 @@ function PositionsInner() {
 
   return (
     <AuthedLayout title="持仓">
-      <Card
-        title="持仓管理"
-        extra={
+      <div className="fv-card">
+        <div className="fv-cardHead">
+          <div className="fv-cardTitle">持仓管理</div>
           <div className="fv-toolbarScroll">
             <Space wrap>
               <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void loadAccounts()}>
@@ -739,42 +737,60 @@ function PositionsInner() {
               </Button>
             </Space>
           </div>
-        }
-      >
-        {childAccounts.length === 0 ? (
-          <Empty description="请先创建子账户（子账户才能持仓）" />
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <Select
-              style={{ width: 420, maxWidth: "100%" }}
-              value={selectedAccountId ?? undefined}
-              onChange={(v) => setSelectedAccountId(v)}
-              placeholder="选择子账户"
-              options={childAccountOptions}
-            />
+        </div>
+        <div className="fv-cardBody">
+          {childAccounts.length === 0 ? (
+            <div className="fv-empty">
+              <Empty description="请先创建子账户（子账户才能持仓）" />
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <Select
+                style={{ width: 420, maxWidth: "100%" }}
+                value={selectedAccountId ?? undefined}
+                onChange={(v) => setSelectedAccountId(v)}
+                placeholder="选择子账户"
+                options={childAccountOptions}
+              />
 
-            <Card size="small" title={selectedAccount ? `账户：${selectedAccount.name}` : "账户汇总"}>
-              <div className="fv-kpiGrid4">
-                <Statistic title="持仓成本" value={money(accountStats.holding_cost)} />
-                <Statistic title="持仓市值" value={money(accountStats.holding_value)} />
-                <Statistic title="总盈亏" valueStyle={{ color: pnlColor(accountStats.pnl) }} value={money(accountStats.pnl)} />
-                <Statistic
-                  title="今日盈亏(预估)"
-                  valueStyle={{ color: pnlColor(accountStats.today_pnl) }}
-                  value={money(accountStats.today_pnl)}
-                />
+              <div className="fv-card">
+                <div className="fv-cardHead">
+                  <div className="fv-cardTitle">{selectedAccount ? `账户：${selectedAccount.name}` : "账户汇总"}</div>
+                </div>
+                <div className="fv-cardBody">
+                  <div className="fv-kpiGrid">
+                    <div className="fv-kpi">
+                      <div className="fv-kpiLabel">持仓成本</div>
+                      <div className="fv-kpiValue fv-num">{money(accountStats.holding_cost)}</div>
+                    </div>
+                    <div className="fv-kpi">
+                      <div className="fv-kpiLabel">持仓市值</div>
+                      <div className="fv-kpiValue fv-num">{money(accountStats.holding_value)}</div>
+                    </div>
+                    <div className="fv-kpi">
+                      <div className="fv-kpiLabel">总盈亏</div>
+                      <div className="fv-kpiValue fv-num" style={{ color: pnlColor(accountStats.pnl) }}>
+                        {money(accountStats.pnl)}
+                      </div>
+                    </div>
+                    <div className="fv-kpi">
+                      <div className="fv-kpiLabel">今日盈亏(预估)</div>
+                      <div className="fv-kpiValue fv-num" style={{ color: pnlColor(accountStats.today_pnl) }}>
+                        {money(accountStats.today_pnl)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
-            </Card>
 
-            <Card
-              size="small"
-              title="数据可视化"
-              extra={
-                <Checkbox checked={compactHistoryChart} onChange={(e) => setCompactHistoryChart(e.target.checked)}>
-                  紧凑
-                </Checkbox>
-              }
-            >
+              <div className="fv-card">
+                <div className="fv-cardHead">
+                  <div className="fv-cardTitle">数据可视化</div>
+                  <Checkbox checked={compactHistoryChart} onChange={(e) => setCompactHistoryChart(e.target.checked)}>
+                    紧凑
+                  </Checkbox>
+                </div>
+                <div className="fv-cardBody">
               <Tabs
                 items={[
                   {
@@ -841,7 +857,8 @@ function PositionsInner() {
                   },
                 ]}
               />
-            </Card>
+              </div>
+            </div>
 
             <div className="fv-toolbar">
               <div className="fv-toolbarLeft fv-toolbarScroll">
@@ -878,25 +895,31 @@ function PositionsInner() {
             />
           </div>
         )}
-      </Card>
+        </div>
+      </div>
 
-      <Card title="操作流水" style={{ marginTop: 16 }}>
-        <Table<Operation>
-          rowKey={(r) => r.id}
-          loading={opsLoading}
-          dataSource={operations}
-          pagination={{
-            pageSize: isMobile ? 10 : 20,
-            simple: isMobile,
-            showLessItems: isMobile,
-            showSizeChanger: !isMobile,
-          }}
-          size={isMobile ? "small" : "middle"}
-          scroll={isMobile ? undefined : { x: "max-content" }}
-          locale={{ emptyText: selectedAccountId ? "暂无操作流水" : "请选择子账户" }}
-          columns={operationsColumns as any}
-        />
-      </Card>
+      <div className="fv-card" style={{ marginTop: 16 }}>
+        <div className="fv-cardHead">
+          <div className="fv-cardTitle">操作流水</div>
+        </div>
+        <div className="fv-cardBody">
+          <Table<Operation>
+            rowKey={(r) => r.id}
+            loading={opsLoading}
+            dataSource={operations}
+            pagination={{
+              pageSize: isMobile ? 10 : 20,
+              simple: isMobile,
+              showLessItems: isMobile,
+              showSizeChanger: !isMobile,
+            }}
+            size={isMobile ? "small" : "middle"}
+            scroll={isMobile ? undefined : { x: "max-content" }}
+            locale={{ emptyText: selectedAccountId ? "暂无操作流水" : "请选择子账户" }}
+            columns={operationsColumns as any}
+          />
+        </div>
+      </div>
 
       <Modal
         title={opModalMode === "sell" ? "减仓" : opModalMode === "buy" ? "加仓" : "创建操作"}

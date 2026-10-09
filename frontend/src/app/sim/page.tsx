@@ -4,7 +4,6 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import {
   Button,
-  Card,
   Col,
   Grid,
   DatePicker,
@@ -42,7 +41,7 @@ import {
 import { useRouter } from "next/navigation";
 
 const ReactECharts = dynamic(() => import("echarts-for-react"), { ssr: false });
-const { Title, Text, Paragraph } = Typography;
+const { Text, Paragraph } = Typography;
 
 function asYmd(dateValue: any): string | null {
   if (!dateValue) return null;
@@ -362,7 +361,7 @@ export default function SimPage() {
         title: "最佳收益",
         dataIndex: "best_total_return",
         width: 110,
-        render: (v) => <Text style={{ color: (v as number) >= 0 ? "#cf1322" : "#3f8600" }}>{pct(v as number)}</Text>,
+        render: (v) => <Text className={`fv-num ${Number(v) >= 0 ? "fv-up" : "fv-down"}`}>{pct(v as number)}</Text>,
       },
       {
         title: "期末权益",
@@ -545,12 +544,14 @@ export default function SimPage() {
             label: "运行列表",
             children: (
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                <Card
-                  title="运行列表"
-                  extra={<Text type="secondary">点击名称进入详情页</Text>}
-                >
-                  <div className="fv-toolbarScroll">
-                    <Space wrap={false}>
+                <div className="fv-card">
+                  <div className="fv-cardHead">
+                    <div className="fv-cardTitle">运行列表</div>
+                    <Text type="secondary">点击名称进入详情页</Text>
+                  </div>
+                  <div className="fv-cardBody">
+                    <div className="fv-toolbarScroll">
+                      <Space wrap={false}>
                       <Button icon={<ReloadOutlined />} onClick={() => void reloadRuns()} loading={loading}>
                         刷新
                       </Button>
@@ -589,30 +590,33 @@ export default function SimPage() {
                         清空选择
                       </Button>
                     </Space>
+                    </div>
                   </div>
-                </Card>
+                </div>
 
-                <Card bodyStyle={{ padding: 0 }}>
-                  <Table
-                    rowKey="id"
-                    loading={loading}
-                    columns={runColumns}
-                    dataSource={runs}
-                    pagination={{
-                      pageSize: isMobile ? 10 : 20,
-                      simple: isMobile,
-                      showLessItems: isMobile,
-                      showSizeChanger: !isMobile,
-                    }}
-                    rowSelection={{
-                      selectedRowKeys: selectedRunIds,
-                      onChange: (keys) => setSelectedRunIds(keys.map((k) => String(k))),
-                      preserveSelectedRowKeys: true,
-                    }}
-                    size={isMobile ? "small" : "middle"}
-                    scroll={isMobile ? undefined : { x: "max-content" }}
-                  />
-                </Card>
+                <div className="fv-card">
+                  <div className="fv-cardBody" style={{ padding: 0 }}>
+                    <Table
+                      rowKey="id"
+                      loading={loading}
+                      columns={runColumns}
+                      dataSource={runs}
+                      pagination={{
+                        pageSize: isMobile ? 10 : 20,
+                        simple: isMobile,
+                        showLessItems: isMobile,
+                        showSizeChanger: !isMobile,
+                      }}
+                      rowSelection={{
+                        selectedRowKeys: selectedRunIds,
+                        onChange: (keys) => setSelectedRunIds(keys.map((k) => String(k))),
+                        preserveSelectedRowKeys: true,
+                      }}
+                      size={isMobile ? "small" : "middle"}
+                      scroll={isMobile ? undefined : { x: "max-content" }}
+                    />
+                  </div>
+                </div>
               </div>
             ),
           },
@@ -621,22 +625,25 @@ export default function SimPage() {
             label: "自动交易训练（全市场）",
             children: (
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                <Card>
-                  <Row gutter={12}>
-                    <Col span={24}>
-                      <Title level={5} style={{ margin: 0 }}>
-                        说明
-                      </Title>
-                      <Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
-                        本功能在服务端执行“全市场自动交易”的策略搜索（CEM），每轮会找到一组更优的线性权重（基于预测信号快照）。
-                        训练完成后会把最佳权重写回该 run，随后可直接点击“运行回测”生成权益曲线。
-                      </Paragraph>
-                    </Col>
-                  </Row>
-                </Card>
+                <div className="fv-card">
+                  <div className="fv-cardBody">
+                    <Row gutter={12}>
+                      <Col span={24}>
+                        <div className="fv-cardTitle" style={{ margin: 0 }}>
+                          说明
+                        </div>
+                        <Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
+                          本功能在服务端执行"全市场自动交易"的策略搜索（CEM），每轮会找到一组更优的线性权重（基于预测信号快照）。
+                          训练完成后会把最佳权重写回该 run，随后可直接点击"运行回测"生成权益曲线。
+                        </Paragraph>
+                      </Col>
+                    </Row>
+                  </div>
+                </div>
 
-                <Card>
-                  <Form<TrainFormValues>
+                <div className="fv-card">
+                  <div className="fv-cardBody">
+                    <Form<TrainFormValues>
                     form={trainForm}
                     layout="vertical"
                     initialValues={{
@@ -788,43 +795,56 @@ export default function SimPage() {
                       </Space>
                     </div>
                   </Form>
-                </Card>
+                  </div>
+                </div>
 
                 <Row gutter={12}>
                   <Col xs={24} lg={12}>
-                    <Card title="训练曲线" extra={<Text type="secondary">轮次收益 vs 最佳</Text>}>
-                      <ReactECharts option={trainChartOption} style={{ height: 320 }} notMerge />
-                    </Card>
+                    <div className="fv-card">
+                      <div className="fv-cardHead">
+                        <div className="fv-cardTitle">训练曲线</div>
+                        <Text type="secondary">轮次收益 vs 最佳</Text>
+                      </div>
+                      <div className="fv-cardBody">
+                        <ReactECharts option={trainChartOption} style={{ height: 320 }} notMerge />
+                      </div>
+                    </div>
                   </Col>
                   <Col xs={24} lg={12}>
-                    <Card
-                      title="日志"
-                      extra={
+                    <div className="fv-card">
+                      <div className="fv-cardHead">
+                        <div className="fv-cardTitle">日志</div>
                         <Button size="small" onClick={() => navigator.clipboard?.writeText(trainLog ?? "")}>
                           复制
                         </Button>
-                      }
-                    >
-                      <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{trainLog || "—"}</pre>
-                    </Card>
+                      </div>
+                      <div className="fv-cardBody">
+                        <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{trainLog || "—"}</pre>
+                      </div>
+                    </div>
                   </Col>
                 </Row>
 
-                <Card title="结果明细" bodyStyle={{ padding: 0 }}>
-                  <Table
-                    rowKey={(r) => String(r.round)}
-                    columns={trainColumns}
-                    dataSource={trainResults}
-                    pagination={{
-                      pageSize: isMobile ? 10 : 20,
-                      simple: isMobile,
-                      showLessItems: isMobile,
-                      showSizeChanger: !isMobile,
-                    }}
-                    size={isMobile ? "small" : "middle"}
-                    scroll={isMobile ? undefined : { x: "max-content" }}
-                  />
-                </Card>
+                <div className="fv-card">
+                  <div className="fv-cardHead">
+                    <div className="fv-cardTitle">结果明细</div>
+                  </div>
+                  <div className="fv-cardBody" style={{ padding: 0 }}>
+                    <Table
+                      rowKey={(r) => String(r.round)}
+                      columns={trainColumns}
+                      dataSource={trainResults}
+                      pagination={{
+                        pageSize: isMobile ? 10 : 20,
+                        simple: isMobile,
+                        showLessItems: isMobile,
+                        showSizeChanger: !isMobile,
+                      }}
+                      size={isMobile ? "small" : "middle"}
+                      scroll={isMobile ? undefined : { x: "max-content" }}
+                    />
+                  </div>
+                </div>
               </div>
             ),
           },

@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Card, Descriptions, Form, Input, InputNumber, Result, Select, Space, Spin, Statistic, Switch, Typography, message, theme } from "antd";
+import { Button, Descriptions, Form, Input, InputNumber, Result, Select, Space, Spin, Switch, Typography, message, theme } from "antd";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AuthedLayout } from "../../components/AuthedLayout";
@@ -9,7 +9,7 @@ import { getChangePasswordErrorMessage } from "../../lib/changePassword";
 import { useAuth } from "../../contexts/AuthContext";
 import { normalizeUserSummary } from "../../lib/userSummary";
 
-const { Paragraph, Text, Title } = Typography;
+const { Paragraph, Text } = Typography;
 
 type ChangePasswordValues = {
   old_password: string;
@@ -213,33 +213,36 @@ export default function SettingsPage() {
 
   return (
     <AuthedLayout title="设置">
-      <Card style={{ marginBottom: 16 }}>
-        <Title level={3} style={{ marginTop: 0 }}>
-          系统设置
-        </Title>
-        <Paragraph type="secondary">
-          Web 版本默认通过 <Text code>/api</Text> 反向代理访问后端，无需配置服务器地址。
-        </Paragraph>
-        <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-          如需切换后端地址，请在部署阶段调整 <Text code>API_PROXY_TARGET</Text>（或 Docker 环境变量）。
-        </Paragraph>
+      <div className="fv-card fv-section">
+        <div className="fv-cardHead">
+          <div className="fv-cardTitle">系统设置</div>
+        </div>
+        <div className="fv-cardBody">
+          <Paragraph type="secondary">
+            Web 版本默认通过 <Text code>/api</Text> 反向代理访问后端，无需配置服务器地址。
+          </Paragraph>
+          <Paragraph type="secondary" style={{ marginBottom: 0 }}>
+            如需切换后端地址，请在部署阶段调整 <Text code>API_PROXY_TARGET</Text>（或 Docker 环境变量）。
+          </Paragraph>
 
-        <Space style={{ marginTop: 16 }} wrap>
-          <Link href="/server-config" prefetch={false}>
-            <Button>查看服务器配置说明</Button>
-          </Link>
-          <Link href="/sources" prefetch={false}>
-            <Button>查看数据源状态</Button>
-          </Link>
+          <Space style={{ marginTop: 16 }} wrap>
+            <Link href="/server-config" prefetch={false}>
+              <Button>查看服务器配置说明</Button>
+            </Link>
+            <Link href="/sources" prefetch={false}>
+              <Button>查看数据源状态</Button>
+            </Link>
           </Space>
-        </Card>
+        </div>
+      </div>
 
-        <Card style={{ marginBottom: 16 }}>
-          <Title level={3} style={{ marginTop: 0 }}>
-            数据源 Token
-          </Title>
+      <div className="fv-card fv-section">
+        <div className="fv-cardHead">
+          <div className="fv-cardTitle">数据源 Token</div>
+        </div>
+        <div className="fv-cardBody">
           <Paragraph type="secondary" style={{ marginBottom: 8 }}>
-            Tushare 数据源需要在此配置 Token（仅管理员可操作）。配置后可在“数据源状态”页面查看 <Text strong>Tushare</Text>{" "}
+            Tushare 数据源需要在此配置 Token（仅管理员可操作）。配置后可在"数据源状态"页面查看 <Text strong>Tushare</Text>{" "}
             的健康度。
           </Paragraph>
 
@@ -294,12 +297,14 @@ export default function SettingsPage() {
               </Form>
             </Space>
           )}
-        </Card>
+        </div>
+      </div>
 
-        <Card style={{ marginBottom: 16 }}>
-          <Title level={3} style={{ marginTop: 0 }}>
-            净值缓存爬虫（管理员）
-          </Title>
+      <div className="fv-card fv-section">
+        <div className="fv-cardHead">
+          <div className="fv-cardTitle">净值缓存爬虫（管理员）</div>
+        </div>
+        <div className="fv-cardBody">
           <Paragraph type="secondary" style={{ marginBottom: 8 }}>
             后台会按固定节奏分批同步基金净值（优先自选与持仓），用于基金详情/嗅探等页面的缓存与计算。为降低被数据源封锁的风险，可在此调慢频率、设置每日上限、以及配置失败时的备用数据源。
           </Paragraph>
@@ -377,14 +382,16 @@ export default function SettingsPage() {
               </Form>
             </Space>
           )}
-        </Card>
+        </div>
+      </div>
 
-      <Card style={{ marginBottom: 16 }}>
-        <Title level={3} style={{ marginTop: 0 }}>
-          账号信息
-        </Title>
+      <div className="fv-card fv-section">
+        <div className="fv-cardHead">
+          <div className="fv-cardTitle">账号信息</div>
+        </div>
+        <div className="fv-cardBody">
 
-        {profileLoading ? (
+          {profileLoading ? (
           <div style={{ padding: "16px 0", display: "flex", justifyContent: "center" }}>
             <Spin />
           </div>
@@ -417,51 +424,34 @@ export default function SettingsPage() {
             />
 
             {normalizedSummary ? (
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-                  gap: 12,
-                }}
-              >
-                <Card size="small" styles={{ body: { padding: 12 } }}>
-                  <Statistic title="账户数" value={normalizedSummary.account_count} />
-                </Card>
-                <Card size="small" styles={{ body: { padding: 12 } }}>
-                  <Statistic title="持仓数" value={normalizedSummary.position_count} />
-                </Card>
-                <Card size="small" styles={{ body: { padding: 12 } }}>
-                  <Statistic
-                    title="总成本"
-                    value={normalizedSummary.total_cost}
-                    precision={2}
-                    prefix="¥"
-                  />
-                </Card>
-                <Card size="small" styles={{ body: { padding: 12 } }}>
-                  <Statistic
-                    title="总市值"
-                    value={normalizedSummary.total_value}
-                    precision={2}
-                    prefix="¥"
-                  />
-                </Card>
-                <Card size="small" styles={{ body: { padding: 12 } }}>
-                  <Statistic
-                    title="总盈亏"
-                    value={normalizedSummary.total_pnl}
-                    precision={2}
-                    prefix="¥"
-                    valueStyle={{
-                      color: normalizedSummary.total_pnl >= 0 ? "#cf1322" : "#3f8600",
-                    }}
-                    suffix={
-                      normalizedSummary.total_pnl_rate === null
-                        ? ""
-                        : ` (${normalizedSummary.total_pnl_rate >= 0 ? "+" : ""}${normalizedSummary.total_pnl_rate.toFixed(2)}%)`
-                    }
-                  />
-                </Card>
+              <div className="fv-kpiGrid">
+                <div className="fv-kpi">
+                  <div className="fv-kpiLabel">账户数</div>
+                  <div className="fv-kpiValue fv-num">{normalizedSummary.account_count}</div>
+                </div>
+                <div className="fv-kpi">
+                  <div className="fv-kpiLabel">持仓数</div>
+                  <div className="fv-kpiValue fv-num">{normalizedSummary.position_count}</div>
+                </div>
+                <div className="fv-kpi">
+                  <div className="fv-kpiLabel">总成本</div>
+                  <div className="fv-kpiValue fv-num">¥{Number(normalizedSummary.total_cost).toFixed(2)}</div>
+                </div>
+                <div className="fv-kpi">
+                  <div className="fv-kpiLabel">总市值</div>
+                  <div className="fv-kpiValue fv-num">¥{Number(normalizedSummary.total_value).toFixed(2)}</div>
+                </div>
+                <div className="fv-kpi">
+                  <div className="fv-kpiLabel">总盈亏</div>
+                  <div
+                    className={`fv-kpiValue fv-num ${normalizedSummary.total_pnl >= 0 ? "fv-up" : "fv-down"}`}
+                  >
+                    ¥{Number(normalizedSummary.total_pnl).toFixed(2)}
+                    {normalizedSummary.total_pnl_rate === null
+                      ? ""
+                      : ` (${normalizedSummary.total_pnl_rate >= 0 ? "+" : ""}${normalizedSummary.total_pnl_rate.toFixed(2)}%)`}
+                  </div>
+                </div>
               </div>
             ) : (
               <div
@@ -477,14 +467,16 @@ export default function SettingsPage() {
             )}
           </Space>
         )}
-      </Card>
+        </div>
+      </div>
 
-      <Card>
-        <Title level={3} style={{ marginTop: 0 }}>
-          账号安全
-        </Title>
+      <div className="fv-card fv-section">
+        <div className="fv-cardHead">
+          <div className="fv-cardTitle">账号安全</div>
+        </div>
+        <div className="fv-cardBody">
 
-        {done ? (
+          {done ? (
           <Result
             status="success"
             title="密码修改成功"
@@ -560,7 +552,8 @@ export default function SettingsPage() {
             </Space>
           </Form>
         )}
-      </Card>
+        </div>
+      </div>
     </AuthedLayout>
   );
 }

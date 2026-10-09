@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Card, DatePicker, Form, Grid, Input, InputNumber, Select, Space, Statistic, Table, Tabs, Typography, message } from "antd";
+import { Button, DatePicker, Form, Grid, Input, InputNumber, Select, Space, Table, Tabs, Typography, message } from "antd";
 import React, { useMemo, useState } from "react";
 import dayjs from "dayjs";
 
@@ -74,11 +74,13 @@ export default function StrategiesComparePage() {
       title="策略对比（Qbot/fund-strategies）"
       subtitle="基于 fund-strategies TS 策略（服务端计算）"
     >
-      <Card
-        title="对比参数"
-        extra={<Text type="secondary">参考指数用于 MACD 择时；上证指数用于“高位止盈”阈值判断</Text>}
-      >
-        <Form
+      <div className="fv-card">
+        <div className="fv-cardHead">
+          <div className="fv-cardTitle">对比参数</div>
+          <Text type="secondary">参考指数用于 MACD 择时；上证指数用于"高位止盈"阈值判断</Text>
+        </div>
+        <div className="fv-cardBody">
+          <Form
           form={form}
           layout="vertical"
           initialValues={{
@@ -231,23 +233,44 @@ export default function StrategiesComparePage() {
             </Form.Item>
           </div>
         </Form>
-      </Card>
+        </div>
+      </div>
 
-      <Card style={{ marginTop: 16 }} title="结果预览" loading={loading}>
-        <Tabs
-          size={isMobile ? "small" : "middle"}
-          items={[
-            {
-              key: "a",
-              label: "策略A",
-              children: (
-                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  <div className="fv-kpiGrid4">
-                    <Statistic title="期末总资产" value={lastA ? lastA.total_amount : "-"} />
-                    <Statistic title="累计收益" value={lastA ? lastA.accumulated_profit : "-"} />
-                    <Statistic title="累计收益率" value={lastA ? `${(lastA.total_profit_rate * 100).toFixed(2)}%` : "-"} />
-                    <Statistic title="期末仓位" value={lastA ? `${(lastA.position * 100).toFixed(1)}%` : "-"} />
-                  </div>
+      <div className="fv-card" style={{ marginTop: 16 }}>
+        <div className="fv-cardHead">
+          <div className="fv-cardTitle">结果预览</div>
+        </div>
+        <div className="fv-cardBody">
+          <Tabs
+            size={isMobile ? "small" : "middle"}
+            items={[
+              {
+                key: "a",
+                label: "策略A",
+                children: (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                    <div className="fv-kpiGrid">
+                      <div className="fv-kpi">
+                        <div className="fv-kpiLabel">期末总资产</div>
+                        <div className="fv-kpiValue fv-num">{lastA ? lastA.total_amount : "-"}</div>
+                      </div>
+                      <div className="fv-kpi">
+                        <div className="fv-kpiLabel">累计收益</div>
+                        <div className={`fv-kpiValue fv-num ${lastA ? (lastA.accumulated_profit >= 0 ? "fv-up" : "fv-down") : ""}`}>
+                          {lastA ? lastA.accumulated_profit : "-"}
+                        </div>
+                      </div>
+                      <div className="fv-kpi">
+                        <div className="fv-kpiLabel">累计收益率</div>
+                        <div className={`fv-kpiValue fv-num ${lastA ? (lastA.total_profit_rate >= 0 ? "fv-up" : "fv-down") : ""}`}>
+                          {lastA ? `${(lastA.total_profit_rate * 100).toFixed(2)}%` : "-"}
+                        </div>
+                      </div>
+                      <div className="fv-kpi">
+                        <div className="fv-kpiLabel">期末仓位</div>
+                        <div className="fv-kpiValue fv-num">{lastA ? `${(lastA.position * 100).toFixed(1)}%` : "-"}</div>
+                      </div>
+                    </div>
                   <Table
                     rowKey="date"
                     size={isMobile ? "small" : "middle"}
@@ -265,11 +288,27 @@ export default function StrategiesComparePage() {
               label: "策略B",
               children: (
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  <div className="fv-kpiGrid4">
-                    <Statistic title="期末总资产" value={lastB ? lastB.total_amount : "-"} />
-                    <Statistic title="累计收益" value={lastB ? lastB.accumulated_profit : "-"} />
-                    <Statistic title="累计收益率" value={lastB ? `${(lastB.total_profit_rate * 100).toFixed(2)}%` : "-"} />
-                    <Statistic title="期末仓位" value={lastB ? `${(lastB.position * 100).toFixed(1)}%` : "-"} />
+                  <div className="fv-kpiGrid">
+                    <div className="fv-kpi">
+                      <div className="fv-kpiLabel">期末总资产</div>
+                      <div className="fv-kpiValue fv-num">{lastB ? lastB.total_amount : "-"}</div>
+                    </div>
+                    <div className="fv-kpi">
+                      <div className="fv-kpiLabel">累计收益</div>
+                      <div className={`fv-kpiValue fv-num ${lastB ? (lastB.accumulated_profit >= 0 ? "fv-up" : "fv-down") : ""}`}>
+                        {lastB ? lastB.accumulated_profit : "-"}
+                      </div>
+                    </div>
+                    <div className="fv-kpi">
+                      <div className="fv-kpiLabel">累计收益率</div>
+                      <div className={`fv-kpiValue fv-num ${lastB ? (lastB.total_profit_rate >= 0 ? "fv-up" : "fv-down") : ""}`}>
+                        {lastB ? `${(lastB.total_profit_rate * 100).toFixed(2)}%` : "-"}
+                      </div>
+                    </div>
+                    <div className="fv-kpi">
+                      <div className="fv-kpiLabel">期末仓位</div>
+                      <div className="fv-kpiValue fv-num">{lastB ? `${(lastB.position * 100).toFixed(1)}%` : "-"}</div>
+                    </div>
                   </div>
                   <Table
                     rowKey="date"
@@ -285,7 +324,8 @@ export default function StrategiesComparePage() {
             },
           ]}
         />
-      </Card>
+        </div>
+      </div>
     </AuthedLayout>
   );
 }

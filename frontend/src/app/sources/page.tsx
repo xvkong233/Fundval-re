@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Card, InputNumber, Result, Space, Spin, Table, Tag, Typography, message } from "antd";
+import { Button, InputNumber, Result, Space, Spin, Table, Tag, Typography, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ReloadOutlined } from "@ant-design/icons";
@@ -15,7 +15,7 @@ import {
   type SourceItem,
 } from "../../lib/sources";
 
-const { Paragraph, Text, Title } = Typography;
+const { Paragraph, Text } = Typography;
 
 type AccuracyState =
   | { status: "idle" }
@@ -134,39 +134,42 @@ export default function SourcesPage() {
   return (
     <AuthedLayout title="数据源">
       <Space direction="vertical" size="large" style={{ width: "100%" }}>
-        <Card>
-          <Title level={3} style={{ marginTop: 0 }}>
-            数据源状态
-          </Title>
-          <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            当前页展示服务端可用数据源及其整体准确率（平均误差率）。准确率按最近 N 条记录统计。
-          </Paragraph>
-          <Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
-            如需了解数据源与部署配置，请查看 <Link href="/server-config">服务器配置说明</Link>。
-          </Paragraph>
-        </Card>
+        <div className="fv-card">
+          <div className="fv-cardHead">
+            <div className="fv-cardTitle">数据源状态</div>
+          </div>
+          <div className="fv-cardBody">
+            <Paragraph type="secondary" style={{ marginBottom: 0 }}>
+              当前页展示服务端可用数据源及其整体准确率（平均误差率）。准确率按最近 N 条记录统计。
+            </Paragraph>
+            <Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
+              如需了解数据源与部署配置，请查看 <Link href="/server-config">服务器配置说明</Link>。
+            </Paragraph>
+          </div>
+        </div>
 
-        <Card>
-          <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
-            <Space wrap>
-              <Text type="secondary">统计天数</Text>
-              <InputNumber
-                min={1}
-                max={3650}
-                value={days}
-                onChange={(v) => setDays(typeof v === "number" ? v : 100)}
-              />
-              <Text type="secondary">默认 100</Text>
-            </Space>
-            <Space wrap>
-              <Button icon={<ReloadOutlined />} onClick={() => void refreshHealth()} disabled={!canRefresh}>
-                刷新健康度
-              </Button>
-              <Button icon={<ReloadOutlined />} onClick={() => void refreshAllAccuracy()} disabled={!canRefresh}>
-                刷新准确率
-              </Button>
-            </Space>
-          </Space>
+        <div className="fv-card">
+          <div className="fv-cardBody">
+            <div className="fv-toolbar">
+              <Space wrap>
+                <Text type="secondary">统计天数</Text>
+                <InputNumber
+                  min={1}
+                  max={3650}
+                  value={days}
+                  onChange={(v) => setDays(typeof v === "number" ? v : 100)}
+                />
+                <Text type="secondary">默认 100</Text>
+              </Space>
+              <Space wrap>
+                <Button icon={<ReloadOutlined />} onClick={() => void refreshHealth()} disabled={!canRefresh}>
+                  刷新健康度
+                </Button>
+                <Button icon={<ReloadOutlined />} onClick={() => void refreshAllAccuracy()} disabled={!canRefresh}>
+                  刷新准确率
+                </Button>
+              </Space>
+            </div>
 
           {loading ? (
             <div style={{ padding: "24px 0", display: "flex", justifyContent: "center" }}>
@@ -267,7 +270,8 @@ export default function SourcesPage() {
               ]}
             />
           )}
-        </Card>
+          </div>
+        </div>
       </Space>
     </AuthedLayout>
   );

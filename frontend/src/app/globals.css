@@ -1,36 +1,34 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
+  --background: #f4f5f7;
+  --foreground: #1a1d26;
   --fv-surface: #ffffff;
-  --fv-surface-2: rgba(255, 255, 255, 0.7);
-  --fv-border: rgba(15, 23, 42, 0.10);
-  --fv-muted: rgba(15, 23, 42, 0.62);
-  --fv-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
-  --fv-shadow-md: 0 10px 30px rgba(15, 23, 42, 0.10);
+  --fv-border: #eceef1;
+  --fv-border-soft: #f0f1f4;
+  --fv-muted: #6b7280;
+  --fv-faint: #9ca3af;
+  --fv-primary: #4f46e5;
+  --fv-primary-soft: #eef0ff;
+  --fv-up: #dc2626;
+  --fv-up-soft: #fef2f2;
+  --fv-down: #16a34a;
+  --fv-down-soft: #f0fdf4;
+  --fv-warn: #d97706;
+  --fv-warn-soft: #fffbeb;
+  --fv-shadow-sm: 0 1px 2px rgba(26, 29, 38, 0.05);
+  --fv-shadow-md: 0 8px 24px rgba(26, 29, 38, 0.08);
+  --fv-shadow-lg: 0 16px 48px rgba(26, 29, 38, 0.12);
+  --fv-radius: 16px;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--fv-font-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, "Noto Sans",
-    "Liberation Sans", sans-serif;
+  --font-sans: var(--fv-font-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", Roboto, Arial, "Noto Sans", sans-serif;
   --font-mono: var(--fv-font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
     "Courier New", monospace;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #070b12;
-    --foreground: #e5e7eb;
-    --fv-surface: rgba(255, 255, 255, 0.06);
-    --fv-surface-2: rgba(255, 255, 255, 0.08);
-    --fv-border: rgba(255, 255, 255, 0.10);
-    --fv-muted: rgba(229, 231, 235, 0.70);
-    --fv-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.30);
-    --fv-shadow-md: 0 10px 30px rgba(0, 0, 0, 0.40);
-  }
 }
 
 html,
@@ -44,9 +42,11 @@ body {
   font-family: var(--font-sans);
   margin: 0;
   overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-/* ---------- Fundval utility classes (release-grade consistency) ---------- */
+/* ---------- 布局骨架 ---------- */
 
 .fv-shell {
   min-height: 100vh;
@@ -57,60 +57,332 @@ body {
   overflow: hidden;
 }
 
+.fv-sider {
+  border-right: 1px solid var(--fv-border-soft);
+  box-shadow: 2px 0 12px rgba(26, 29, 38, 0.03);
+  z-index: 5;
+}
+
+.fv-siderBrand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 20px 20px 16px;
+}
+
+.fv-siderBrandMark {
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 800;
+  font-size: 17px;
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.35);
+  flex-shrink: 0;
+}
+
+.fv-siderBrandName {
+  font-weight: 750;
+  font-size: 17px;
+  letter-spacing: 0.2px;
+  color: var(--foreground);
+}
+
+.fv-siderBrandSub {
+  font-size: 11px;
+  color: var(--fv-faint);
+  margin-top: 1px;
+}
+
+.fv-siderMenu {
+  flex: 1;
+  overflow: auto;
+  padding: 4px 0;
+}
+
+.fv-siderSection {
+  padding: 14px 24px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--fv-faint);
+  text-transform: uppercase;
+}
+
+.fv-siderBottom {
+  margin-top: auto;
+  border-top: 1px solid var(--fv-border-soft);
+  padding: 8px 0;
+}
+
+.fv-siderUser {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--fv-border-soft);
+}
+
 .fv-header {
-  background: rgba(255, 255, 255, 0.88);
-  padding: 0 16px;
+  background: rgba(255, 255, 255, 0.85);
+  padding: 0 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  flex-wrap: nowrap;
-  overflow: hidden;
   z-index: 10;
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
-}
-
-@media (prefers-color-scheme: dark) {
-  .fv-header {
-    background: rgba(2, 6, 23, 0.72);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.10);
-  }
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--fv-border-soft);
+  height: 64px;
 }
 
 .fv-headerLeft {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   min-width: 0;
   flex: 1;
 }
 
-.fv-headerTitleWrap {
-  min-width: 0;
-  flex: 1;
-}
-
-.fv-headerExtra {
-  flex-shrink: 0;
-  white-space: nowrap;
-  max-width: 46vw;
-  overflow-x: auto;
-  overflow-y: hidden;
-}
-
-.fv-mobileActions {
+.fv-headerRight {
   display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-bottom: 12px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-gutter: stable;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
 }
 
-.fv-mobileActions .ant-space {
-  flex-wrap: nowrap !important;
+.fv-content {
+  background: transparent;
+  overflow: auto;
+  flex: 1;
+}
+
+.fv-page {
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 28px 28px 40px;
+}
+
+@media (max-width: 767px) {
+  .fv-page {
+    padding: 16px 14px 28px;
+  }
+  .fv-header {
+    padding: 0 14px;
+  }
+}
+
+.fv-loading {
+  padding: 48px 24px;
+  display: flex;
+  justify-content: center;
+}
+
+/* ---------- 页面头 ---------- */
+
+.fv-pageHead {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 22px;
+  flex-wrap: wrap;
+}
+
+.fv-pageTitle {
+  font-size: 24px;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.fv-pageDesc {
+  color: var(--fv-muted);
+  font-size: 13px;
+  margin-top: 6px;
+}
+
+.fv-pageActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* ---------- KPI 卡片 ---------- */
+
+.fv-kpiGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+@media (max-width: 1100px) {
+  .fv-kpiGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .fv-kpiGrid {
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+}
+
+.fv-kpi {
+  background: var(--fv-surface);
+  border: 1px solid var(--fv-border-soft);
+  border-radius: var(--fv-radius);
+  padding: 18px 20px;
+  box-shadow: var(--fv-shadow-sm);
+  position: relative;
+  overflow: hidden;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.fv-kpi:hover {
+  box-shadow: var(--fv-shadow-md);
+}
+
+.fv-kpiLabel {
+  font-size: 12.5px;
+  color: var(--fv-muted);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fv-kpiValue {
+  font-size: 27px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  margin-top: 8px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+
+.fv-kpiFoot {
+  margin-top: 8px;
+  font-size: 12.5px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fv-kpiAccent {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: 3px;
+}
+
+/* ---------- 通用卡片 ---------- */
+
+.fv-card {
+  background: var(--fv-surface);
+  border: 1px solid var(--fv-border-soft);
+  border-radius: var(--fv-radius);
+  box-shadow: var(--fv-shadow-sm);
+}
+
+.fv-cardHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 22px 0;
+}
+
+.fv-cardTitle {
+  font-size: 15px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fv-cardTitle::before {
+  content: "";
+  width: 4px;
+  height: 16px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #4f46e5, #7c3aed);
+  flex-shrink: 0;
+}
+
+.fv-cardBody {
+  padding: 18px 22px 22px;
+}
+
+.fv-section {
+  margin-bottom: 20px;
+}
+
+/* ---------- 涨跌色 ---------- */
+
+.fv-up {
+  color: var(--fv-up);
+}
+.fv-down {
+  color: var(--fv-down);
+}
+.fv-muted {
+  color: var(--fv-muted);
+}
+
+.fv-num {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-sans);
+  font-weight: 600;
+}
+
+.fv-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.fv-pillUp {
+  background: var(--fv-up-soft);
+  color: var(--fv-up);
+}
+
+.fv-pillDown {
+  background: var(--fv-down-soft);
+  color: var(--fv-down);
+}
+
+.fv-pillNeutral {
+  background: #f3f4f6;
+  color: var(--fv-muted);
+}
+
+.fv-pillPrimary {
+  background: var(--fv-primary-soft);
+  color: var(--fv-primary);
+}
+
+/* ---------- 空状态 / 工具 ---------- */
+
+.fv-empty {
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--fv-faint);
 }
 
 .fv-toolbar {
@@ -118,282 +390,46 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  width: 100%;
-  min-width: 0;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
 }
 
-.fv-toolbarLeft {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex: 1;
-  min-width: 0;
-}
-
-.fv-toolbarRight {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-
-.fv-toolbarScroll {
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-gutter: stable;
-}
-
-.fv-toolbarScroll .ant-space {
-  flex-wrap: nowrap !important;
-}
-
-.fv-headerRight {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-
-.fv-content {
-  background: transparent;
-  overflow: auto;
-  flex: 1;
-  scrollbar-gutter: stable;
-}
-
-.fv-loading {
-  padding: 24px;
-  display: flex;
-  justify-content: center;
-}
-
-.fv-sider {
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
-  display: flex;
-  flex-direction: column;
-}
-
-.fv-siderBrand {
-  padding: 16px;
-  color: white;
-  font-weight: 650;
-  letter-spacing: 0.2px;
-}
-
-.fv-siderMenu {
-  flex: 1;
-  overflow: auto;
-}
-
-.fv-siderBottom {
-  margin-top: auto;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.fv-drawerTitle {
-  color: white;
-  font-weight: 650;
-  letter-spacing: 0.2px;
-}
-
-.fv-drawerNav .fv-siderBrand {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.fv-page {
-  width: 100%;
-  max-width: 1440px;
-  margin: 0 auto;
-}
-
-.fv-pagePad {
-  padding: 16px;
-}
-
-.fv-pageBody {
-  padding-top: 16px;
-  padding-bottom: 24px;
-}
-
-@media (max-width: 767px) {
-  .fv-header {
-    padding: 0 12px;
-  }
-
-  .fv-pagePad {
-    padding: 12px;
-  }
-
-  .fv-pageBody {
-    padding-top: 12px;
-    padding-bottom: 16px;
-  }
-
-  .fv-toolbar {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .fv-toolbarLeft {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .fv-toolbarRight {
-    justify-content: flex-end;
-  }
-}
-
-.fv-titleRow {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  min-width: 0;
-}
-
-.fv-title {
-  font-weight: 650;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-}
-
-.fv-subtitle {
-  color: var(--fv-muted);
-  font-size: 12px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-}
-
-.fv-card {
-  background: var(--fv-surface);
-  border: 1px solid var(--fv-border);
-  box-shadow: var(--fv-shadow-sm);
-}
-
-.fv-cardHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: nowrap;
-  overflow: hidden;
-}
-
-.fv-cardHeaderTitle {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-}
-
-.fv-mono {
-  font-family: var(--font-mono);
-}
-
-/* KPI / metric grids */
-.fv-kpiGrid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.fv-kpiGrid4 {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
-}
-
-@media (max-width: 991px) {
-  .fv-kpiGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .fv-kpiGrid4 {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 767px) {
-  .fv-kpiGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .fv-kpiGrid4 {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* ---------- Ant Design polish: single-line headers, no surprise wrapping ---------- */
+/* ---------- antd 微调 ---------- */
 
 .ant-card {
-  background: var(--fv-surface);
-  border-color: var(--fv-border);
-  box-shadow: var(--fv-shadow-sm);
+  border-radius: var(--fv-radius);
 }
 
-.ant-card-head {
-  border-bottom-color: var(--fv-border);
-}
-
-.ant-card-head-wrapper {
-  flex-wrap: nowrap;
-}
-
-.ant-card-head-title {
-  min-width: 0;
-  white-space: nowrap;
+.ant-table-wrapper {
+  border-radius: 12px;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 
-.ant-card-extra {
-  flex-shrink: 0;
-  white-space: nowrap;
-  max-width: 70%;
-  overflow-x: auto;
-  overflow-y: hidden;
+.ant-table-thead > tr > th {
+  font-weight: 600;
+  font-size: 12.5px;
 }
 
-.ant-card-extra .ant-space {
-  flex-wrap: nowrap !important;
+.ant-btn-primary {
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.28);
 }
 
-.ant-tabs-tab-btn {
-  white-space: nowrap;
+.ant-btn-primary:hover {
+  box-shadow: 0 6px 16px rgba(79, 70, 229, 0.36);
 }
 
-/* 移动端：表格/按钮更紧凑（避免内容被挤出可视区域） */
-@media (max-width: 767px) {
-  .ant-table {
-    font-size: 12px;
-  }
-
-  .ant-table-thead > tr > th,
-  .ant-table-tbody > tr > td {
-    padding: 8px 10px;
-  }
-
-  .ant-btn {
-    padding-inline: 10px;
-  }
+.ant-menu-inline .ant-menu-item {
+  font-weight: 500;
 }
 
-/* 全局标题：默认单行省略（避免页面标题/卡片标题在窄屏换行导致布局抖动） */
-.fv-page :is(
-    h1.ant-typography,
-    h2.ant-typography,
-    h3.ant-typography,
-    h4.ant-typography,
-    h5.ant-typography
-  ) {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
+.ant-statistic-content {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 移动端抽屉 */
+.fv-drawerNav {
+  padding: 8px 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }

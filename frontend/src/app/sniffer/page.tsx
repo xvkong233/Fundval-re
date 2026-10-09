@@ -3,7 +3,6 @@
 import {
   Badge,
   Button,
-  Card,
   Col,
   Divider,
   Grid,
@@ -14,7 +13,6 @@ import {
   Select,
   Space,
   Spin,
-  Statistic,
   Table,
   Tag,
   Tabs,
@@ -38,7 +36,7 @@ import { buildSnifferAdvice, type SnifferSignalsSummary } from "../../lib/sniffe
 import { selectSnifferSignalCandidateCodes } from "../../lib/snifferSignalCandidates";
 import { liteListToSignalsSummaryByFund } from "../../lib/snifferSignals";
 
-const { Paragraph, Text, Title } = Typography;
+const { Paragraph, Text } = Typography;
 
 type SnifferItem = {
   fund_code: string;
@@ -340,13 +338,10 @@ export default function SnifferPage() {
   return (
     <AuthedLayout title="嗅探">
       <Space direction="vertical" size="large" style={{ width: "100%" }}>
-        <Card
-          styles={{ body: { padding: 16 } }}
-          title={
-            <Space size={10} wrap>
-              <Title level={3} style={{ margin: 0 }}>
-                嗅探
-              </Title>
+        <div className="fv-card">
+          <div className="fv-cardHead">
+            <div className="fv-cardTitle">
+              嗅探
               <Tag>自动</Tag>
               <Badge
                 status={signalsLoading ? "processing" : "default"}
@@ -361,9 +356,7 @@ export default function SnifferPage() {
                   </span>
                 </Tag>
               ) : null}
-            </Space>
-          }
-          extra={
+            </div>
             <Space wrap>
               <Link href="/tasks" style={{ whiteSpace: "nowrap" }}>
                 任务队列
@@ -380,45 +373,42 @@ export default function SnifferPage() {
                 </Button>
               ) : null}
             </Space>
-          }
-        >
-          <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            系统每天 03:10（Asia/Shanghai）自动采集星标快照，并镜像同步到所有用户自选组；页面右侧为“中性”购买建议（叠加
-            ML 位置/抄底/反转信号），仅供参考。
-          </Paragraph>
-          <Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
-            你也可以在 <Link href="/watchlists">自选</Link> 中查看同步后的分组。
-          </Paragraph>
-        </Card>
+          </div>
+          <div className="fv-cardBody">
+            <Paragraph type="secondary" style={{ marginBottom: 0 }}>
+              系统每天 03:10（Asia/Shanghai）自动采集星标快照，并镜像同步到所有用户自选组；页面右侧为“中性”购买建议（叠加
+              ML 位置/抄底/反转信号），仅供参考。
+            </Paragraph>
+            <Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
+              你也可以在 <Link href="/watchlists">自选</Link> 中查看同步后的分组。
+            </Paragraph>
+          </div>
+        </div>
 
-        <Row gutter={[12, 12]}>
-          <Col xs={24} md={6}>
-            <Card styles={{ body: { padding: 12 } }}>
-              <Statistic title="总基金数" value={itemsResp?.item_count ?? 0} />
-            </Card>
-          </Col>
-          <Col xs={24} md={6}>
-            <Card styles={{ body: { padding: 12 } }}>
-              <Statistic title="筛选后" value={filteredItems.length} />
-            </Card>
-          </Col>
-          <Col xs={24} md={6}>
-            <Card styles={{ body: { padding: 12 } }}>
-              <Statistic title="板块数" value={(itemsResp?.sectors ?? []).length} />
-            </Card>
-          </Col>
-          <Col xs={24} md={6}>
-            <Card styles={{ body: { padding: 12 } }}>
-              <Statistic title="标签数" value={(itemsResp?.tags ?? []).length} />
-            </Card>
-          </Col>
-        </Row>
+        <div className="fv-kpiGrid">
+          <div className="fv-kpi">
+            <div className="fv-kpiLabel">总基金数</div>
+            <div className="fv-kpiValue fv-num">{itemsResp?.item_count ?? 0}</div>
+          </div>
+          <div className="fv-kpi">
+            <div className="fv-kpiLabel">筛选后</div>
+            <div className="fv-kpiValue fv-num">{filteredItems.length}</div>
+          </div>
+          <div className="fv-kpi">
+            <div className="fv-kpiLabel">板块数</div>
+            <div className="fv-kpiValue fv-num">{(itemsResp?.sectors ?? []).length}</div>
+          </div>
+          <div className="fv-kpi">
+            <div className="fv-kpiLabel">标签数</div>
+            <div className="fv-kpiValue fv-num">{(itemsResp?.tags ?? []).length}</div>
+          </div>
+        </div>
 
         <Row gutter={[16, 16]}>
           <Col xs={24} lg={17}>
-            <Card
-              title="筛选与结果"
-              extra={
+            <div className="fv-card">
+              <div className="fv-cardHead">
+                <div className="fv-cardTitle">筛选与结果</div>
                 <Space wrap>
                   <Tag color={lastRunOk === true ? "green" : lastRunOk === false ? "red" : "default"}>
                     {lastRunOk === true ? "最近运行：成功" : lastRunOk === false ? "最近运行：失败" : "最近运行：-"}
@@ -426,9 +416,8 @@ export default function SnifferPage() {
                   {lastRunError ? <Tag color="red">{lastRunError.slice(0, 30)}</Tag> : null}
                   {itemsResp?.fetched_at ? <Tag>快照：{String(itemsResp.fetched_at).slice(0, 19)}</Tag> : null}
                 </Space>
-              }
-              styles={{ body: { padding: 12 } }}
-            >
+              </div>
+              <div className="fv-cardBody">
               <div className="fv-toolbar">
                 <div className="fv-toolbarLeft fv-toolbarScroll">
                   <Select
@@ -613,29 +602,21 @@ export default function SnifferPage() {
                   />
                 )}
               </div>
-            </Card>
+              </div>
+            </div>
           </Col>
 
           <Col xs={24} lg={7}>
             <div style={isDesktop ? { position: "sticky", top: 80 } : undefined}>
-              <Card
-                title="购买建议"
-                extra={
+              <div className="fv-card">
+                <div className="fv-cardHead">
+                  <div className="fv-cardTitle">购买建议</div>
                   <Space size={8} wrap>
                     <Tag color="green">中性</Tag>
                     {signalsLoading ? <Tag>加载信号…</Tag> : null}
                   </Space>
-                }
-                styles={{
-                  body: isDesktop
-                    ? {
-                        padding: 12,
-                        maxHeight: "calc(100vh - 140px)",
-                        overflowY: "auto",
-                      }
-                    : { padding: 12 },
-                }}
-              >
+                </div>
+                <div className="fv-cardBody">
                 <Paragraph type="secondary" style={{ marginBottom: 12 }}>
                   结合位置（20/60/20）、抄底/反转概率（20T/5T）与星级/回撤，给出“买入候选/观望/回避”的中性分桶。
                 </Paragraph>
@@ -782,7 +763,8 @@ export default function SnifferPage() {
                 <Text type="secondary" style={{ fontSize: 12 }}>
                   风险提示：所有建议均不构成投资建议；请结合你的持有周期（自然日/交易日）与风险承受能力。
                 </Text>
-              </Card>
+                </div>
+              </div>
             </div>
           </Col>
         </Row>

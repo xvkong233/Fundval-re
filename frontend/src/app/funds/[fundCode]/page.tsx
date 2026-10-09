@@ -3,8 +3,6 @@
 import dynamic from "next/dynamic";
 import {
   Button,
-  Card,
-  Descriptions,
   Empty,
   Grid,
   Popover,
@@ -12,13 +10,11 @@ import {
   Select,
   Space,
   Spin,
-  Statistic,
   Table,
   Tag,
   Tabs,
   Typography,
   message,
-  theme,
 } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -124,8 +120,6 @@ export default function FundDetailPage() {
 
   const [operationsLoading, setOperationsLoading] = useState(false);
   const [operations, setOperations] = useState<OperationRow[]>([]);
-
-  const { token } = theme.useToken();
 
   const title = useMemo(() => {
     if (!fund) return "基金详情";
@@ -385,11 +379,11 @@ export default function FundDetailPage() {
   if (loading) {
     return (
       <AuthedLayout title="基金详情">
-        <Card>
-          <div style={{ textAlign: "center", padding: "50px 0" }}>
+        <div className="fv-card">
+          <div className="fv-empty">
             <Spin tip="加载中..." />
           </div>
-        </Card>
+        </div>
       </AuthedLayout>
     );
   }
@@ -397,22 +391,24 @@ export default function FundDetailPage() {
   if (!fund) {
     return (
       <AuthedLayout title="基金详情">
-        <Card>
-          {fundLoadError ? (
-            <Result
-              status="error"
-              title="加载失败"
-              subTitle={fundLoadError}
-              extra={
-                <Button type="primary" onClick={() => void loadFund()}>
-                  重试
-                </Button>
-              }
-            />
-          ) : (
-            <Empty description={fundNotFound ? "基金不存在" : "暂无数据"} />
-          )}
-        </Card>
+        <div className="fv-card">
+          <div className="fv-cardBody">
+            {fundLoadError ? (
+              <Result
+                status="error"
+                title="加载失败"
+                subTitle={fundLoadError}
+                extra={
+                  <Button type="primary" onClick={() => void loadFund()}>
+                    重试
+                  </Button>
+                }
+              />
+            ) : (
+              <Empty description={fundNotFound ? "基金不存在" : "暂无数据"} />
+            )}
+          </div>
+        </div>
       </AuthedLayout>
     );
   }
@@ -439,60 +435,164 @@ export default function FundDetailPage() {
     return { text: "中等", color: "gold" };
   };
 
-  return (
-    <AuthedLayout title={title}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-        <Card title="基金信息">
-          <Descriptions column={{ xs: 1, sm: 2, md: 3 }}>
-            <Descriptions.Item label="基金代码">{fund.fund_code}</Descriptions.Item>
-            <Descriptions.Item label="基金名称">{fund.fund_name}</Descriptions.Item>
-            <Descriptions.Item label="基金类型">{fund.fund_type || "-"}</Descriptions.Item>
-            <Descriptions.Item label="数据源">
-              <Space wrap size={8}>
-                <Select
-                  style={{ minWidth: 160 }}
-                  loading={sourcesLoading}
-                  value={source}
-                  onChange={(v) => setSource(String(v))}
-                  options={(sources.length ? sources : [{ name: "tiantian" }]).map((s) => ({
-                    label: `${sourceDisplayName(s.name)} (${s.name})`,
-                    value: s.name,
-                  }))}
-                />
-                <Tag color="blue">{sourceDisplayName(source)}</Tag>
-              </Space>
-            </Descriptions.Item>
-          </Descriptions>
+  const latestNavNum = toNumber(latestNav);
+  const latestNavText = latestNavNum !== null ? latestNavNum.toFixed(4) : "-";
+  const dailyGrowthNum = toNumber(latestRow?.daily_growth);
+  const estimateNavRaw = estimate?.estimate_nav ?? estimate?.estimate_value;
+  const estimateNavNum = toNumber(estimateNavRaw);
+  const estimateNavText = estimateNavNum !== null ? estimateNavNum.toFixed(4) : "-";
+  const estimateGrowthNum = toNumber(estimate?.estimate_growth ?? estimate?.estimate_growth_rate);
+  const estimateTimeRaw = typeof estimate?.estimate_time === "string" ? (estimate.estimate_time as string) : "";
+  const estimateTimeText =
+    estimateTimeRaw && estimateTimeRaw.includes("T")
+      ? estimateTimeRaw.slice(5, 16).replace("T", " ")
+      : estimateTimeRaw;
+  const fundType = String(fund.fund_type ?? "").trim();
+  const winMetrics = (forecastWindow as any)?.metrics?.metrics;
+  const trNum = toNumber(winMetrics?.total_return);
+  const sharpeNum = toNumber(winMetrics?.sharpe);
+  const mddNum = toNumber(winMetrics?.max_drawdown);
+  const volNum = toNumber(winMetrics?.vol_annual);
 
-          <div className="fv-kpiGrid" style={{ marginTop: 16 }}>
-            <Statistic
-              title="最新净值"
-              value={latestNav || "-"}
-              precision={latestNav ? 4 : 0}
-              prefix={latestNav ? "¥" : ""}
-              suffix={latestNavDate ? ` (${String(latestNavDate).slice(5)})` : ""}
-            />
-            <Statistic
-              title="实时估值"
-              value={estimate?.estimate_nav || estimate?.estimate_value || "-"}
-              precision={estimate?.estimate_nav || estimate?.estimate_value ? 4 : 0}
-              prefix={estimate?.estimate_nav || estimate?.estimate_value ? "¥" : ""}
-            />
-            <Statistic
-              title="估算涨跌"
-              value={estimate?.estimate_growth || estimate?.estimate_growth_rate || "-"}
-              precision={estimate?.estimate_growth || estimate?.estimate_growth_rate ? 2 : 0}
-              suffix={estimate?.estimate_growth || estimate?.estimate_growth_rate ? "%" : ""}
-              valueStyle={{
-                color:
-                  Number(estimate?.estimate_growth ?? estimate?.estimate_growth_rate) >= 0 ? "#cf1322" : "#3f8600",
-              }}
-              prefix={
-                Number(estimate?.estimate_growth ?? estimate?.estimate_growth_rate) >= 0 ? "+" : ""
-              }
-            />
+  return (
+    <AuthedLayout
+      title={title}
+      subtitle={fundType ? `${fundType} · 数据源 ${sourceDisplayName(source)}` : `数据源 ${sourceDisplayName(source)}`}
+    >
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        {/* Hero：名称 / 代码 / 大字净值 / 日涨跌 */}
+        <div
+          className="fv-card fv-section"
+          style={{
+            border: "none",
+            background: "linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%)",
+            color: "#fff",
+            padding: isMobile ? 20 : 28,
+            boxShadow: "0 12px 32px rgba(79, 70, 229, 0.28)",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 22, fontWeight: 750, color: "#fff", letterSpacing: "-0.01em" }}>
+                  {fund.fund_name}
+                </span>
+                <span className="fv-pill fv-mono" style={{ background: "rgba(255,255,255,0.16)", color: "#fff" }}>
+                  {fund.fund_code}
+                </span>
+                {fundType ? (
+                  <span className="fv-pill" style={{ background: "rgba(255,255,255,0.16)", color: "#fff" }}>
+                    {fundType}
+                  </span>
+                ) : null}
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 18, flexWrap: "wrap" }}>
+                <span
+                  className="fv-num"
+                  style={{ fontSize: 42, fontWeight: 800, letterSpacing: "-0.02em", color: "#fff", lineHeight: 1 }}
+                >
+                  {latestNavText}
+                </span>
+                {dailyGrowthNum !== null ? (
+                  <span
+                    className="fv-pill fv-num"
+                    style={{ background: "rgba(255,255,255,0.16)", color: "#fff", fontSize: 13 }}
+                  >
+                    {dailyGrowthNum >= 0 ? "+" : ""}
+                    {dailyGrowthNum.toFixed(2)}%
+                  </span>
+                ) : null}
+              </div>
+              <div style={{ marginTop: 10, fontSize: 12.5, color: "rgba(255,255,255,0.72)" }}>
+                最新净值{latestNavDate ? `（${String(latestNavDate).slice(0, 10)}）` : ""}
+                {estimateNavNum !== null ? ` · 实时估值 ${estimateNavText}` : ""}
+              </div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end" }}>
+              <Select
+                style={{ minWidth: 160 }}
+                loading={sourcesLoading}
+                value={source}
+                onChange={(v) => setSource(String(v))}
+                options={(sources.length ? sources : [{ name: "tiantian" }]).map((s) => ({
+                  label: `${sourceDisplayName(s.name)} (${s.name})`,
+                  value: s.name,
+                }))}
+              />
+              <span className="fv-pill fv-pillPrimary">{sourceDisplayName(source)}</span>
+            </div>
           </div>
-        </Card>
+        </div>
+
+        {/* KPI 行 */}
+        <div className="fv-kpiGrid">
+          <div className="fv-kpi">
+            <div className="fv-kpiLabel">最新净值</div>
+            <div className="fv-kpiValue fv-num">{latestNavText}</div>
+            <div className="fv-kpiFoot fv-muted">{latestNavDate ? String(latestNavDate).slice(0, 10) : "-"}</div>
+          </div>
+          <div className="fv-kpi">
+            <div className="fv-kpiLabel">实时估值</div>
+            <div className="fv-kpiValue fv-num">{estimateNavText}</div>
+            <div className="fv-kpiFoot fv-muted">{estimateTimeText || "-"}</div>
+          </div>
+          <div className="fv-kpi">
+            <div className="fv-kpiLabel">估算涨跌</div>
+            <div
+              className={`fv-kpiValue fv-num ${estimateGrowthNum === null ? "" : estimateGrowthNum >= 0 ? "fv-up" : "fv-down"}`}
+            >
+              {estimateGrowthNum === null ? "-" : `${estimateGrowthNum >= 0 ? "+" : ""}${estimateGrowthNum.toFixed(2)}%`}
+            </div>
+            <div className="fv-kpiFoot fv-muted">盘中估算</div>
+          </div>
+          <div className="fv-kpi">
+            <div className="fv-kpiLabel">区间位置</div>
+            <div className="fv-kpiValue fv-num">
+              {rangePositionPct === null ? "-" : `${rangePositionPct.toFixed(0)}%`}
+            </div>
+            <div className="fv-kpiFoot">
+              {rangePositionBucket ? (
+                <span className={`fv-pill ${rangePositionBucket === "low" ? "fv-pillDown" : rangePositionBucket === "high" ? "fv-pillUp" : "fv-pillNeutral"}`}>
+                  {rangePositionLabel}
+                </span>
+              ) : (
+                <span className="fv-muted">-</span>
+              )}
+            </div>
+          </div>
+          {winMetrics ? (
+            <div className="fv-kpi">
+              <div className="fv-kpiLabel">区间收益</div>
+              <div className={`fv-kpiValue fv-num ${trNum === null ? "" : trNum >= 0 ? "fv-up" : "fv-down"}`}>
+                {trNum === null ? "-" : `${trNum >= 0 ? "+" : ""}${(trNum * 100).toFixed(2)}%`}
+              </div>
+              <div className="fv-kpiFoot fv-muted">分析窗口</div>
+            </div>
+          ) : null}
+          {winMetrics ? (
+            <div className="fv-kpi">
+              <div className="fv-kpiLabel">夏普比率</div>
+              <div className="fv-kpiValue fv-num">{sharpeNum === null ? "-" : sharpeNum.toFixed(2)}</div>
+              <div className="fv-kpiFoot fv-muted">风险调整收益</div>
+            </div>
+          ) : null}
+          {winMetrics ? (
+            <div className="fv-kpi">
+              <div className="fv-kpiLabel">最大回撤</div>
+              <div className={`fv-kpiValue fv-num ${mddNum === null ? "" : mddNum >= 0 ? "fv-up" : "fv-down"}`}>
+                {mddNum === null ? "-" : `${(mddNum * 100).toFixed(2)}%`}
+              </div>
+              <div className="fv-kpiFoot fv-muted">区间最大跌幅</div>
+            </div>
+          ) : null}
+          {winMetrics ? (
+            <div className="fv-kpi">
+              <div className="fv-kpiLabel">年化波动</div>
+              <div className="fv-kpiValue fv-num">{volNum === null ? "-" : `${(volNum * 100).toFixed(2)}%`}</div>
+              <div className="fv-kpiFoot fv-muted">年化标准差</div>
+            </div>
+          ) : null}
+        </div>
 
         <Tabs
           activeKey={activeTab}
@@ -507,10 +607,9 @@ export default function FundDetailPage() {
         />
 
         {activeTab === "analysis_v2" ? (
-        <Card
-          title="基金分析 v2（Qbot/xalpha）"
-          loading={analysisV2Loading}
-          extra={
+        <div className="fv-card fv-section">
+          <div className="fv-cardHead">
+            <div className="fv-cardTitle">基金分析 v2</div>
             <div className="fv-toolbarScroll">
               <Space size={8} wrap>
                 <Select
@@ -560,8 +659,9 @@ export default function FundDetailPage() {
                 </Button>
               </Space>
             </div>
-          }
-        >
+          </div>
+          <div className="fv-cardBody">
+            <Spin spinning={analysisV2Loading}>
           {analysisV2Error ? <Result status="info" title="暂无分析快照" subTitle={analysisV2Error} /> : null}
 
           {analysisV2?.result?.windows ? (
@@ -576,7 +676,9 @@ export default function FundDetailPage() {
                   title: "窗口",
                   key: "window",
                   width: 90,
-                  render: (_: any, r: any) => <Tag color="geekblue">{String(r?.window ?? "-")}T</Tag>,
+                  render: (_: any, r: any) => (
+                    <span className="fv-pill fv-pillPrimary">{String(r?.window ?? "-")}T</span>
+                  ),
                 },
                 {
                   title: "收益/回撤",
@@ -593,18 +695,27 @@ export default function FundDetailPage() {
                     const lowNav = toNumber(low?.nav);
                     const highNav = toNumber(high?.nav);
                     return (
-                      <Space wrap>
-                        <Tag color="blue">TR：{tr === null ? "-" : `${(tr * 100).toFixed(2)}%`}</Tag>
-                        <Tag color="purple">CAGR：{cagr === null ? "-" : `${(cagr * 100).toFixed(2)}%`}</Tag>
-                        <Tag color={dd !== null && dd < 0 ? "red" : "default"}>
-                          MDD：{dd === null ? "-" : `${(dd * 100).toFixed(2)}%`}
-                        </Tag>
-                        <Tag color="green">
-                          低点：{lowStep === null ? "-" : `f+${lowStep}`}（{lowNav === null ? "-" : lowNav.toFixed(4)}）
-                        </Tag>
-                        <Tag color="red">
-                          高点：{highStep === null ? "-" : `f+${highStep}`}（{highNav === null ? "-" : highNav.toFixed(4)}）
-                        </Tag>
+                      <Space wrap size={[4, 8]}>
+                        <span className="fv-muted">TR</span>
+                        <span className={`fv-num ${tr === null ? "" : tr >= 0 ? "fv-up" : "fv-down"}`}>
+                          {tr === null ? "-" : `${tr >= 0 ? "+" : ""}${(tr * 100).toFixed(2)}%`}
+                        </span>
+                        <span className="fv-muted">CAGR</span>
+                        <span className={`fv-num ${cagr === null ? "" : cagr >= 0 ? "fv-up" : "fv-down"}`}>
+                          {cagr === null ? "-" : `${cagr >= 0 ? "+" : ""}${(cagr * 100).toFixed(2)}%`}
+                        </span>
+                        <span className="fv-muted">MDD</span>
+                        <span className={`fv-num ${dd === null ? "" : dd >= 0 ? "fv-up" : "fv-down"}`}>
+                          {dd === null ? "-" : `${(dd * 100).toFixed(2)}%`}
+                        </span>
+                        <span className="fv-pill fv-pillDown">
+                          低点{lowStep === null ? " -" : ` f+${lowStep}`}（
+                          <span className="fv-num">{lowNav === null ? "-" : lowNav.toFixed(4)}</span>）
+                        </span>
+                        <span className="fv-pill fv-pillUp">
+                          高点{highStep === null ? " -" : ` f+${highStep}`}（
+                          <span className="fv-num">{highNav === null ? "-" : highNav.toFixed(4)}</span>）
+                        </span>
                       </Space>
                     );
                   },
@@ -618,9 +729,11 @@ export default function FundDetailPage() {
                     const sharpe = toNumber(m?.sharpe);
                     const vol = toNumber(m?.vol_annual);
                     return (
-                      <Space wrap>
-                        <Tag color="default">S：{sharpe === null ? "-" : sharpe.toFixed(2)}</Tag>
-                        <Tag color="default">Vol：{vol === null ? "-" : `${(vol * 100).toFixed(2)}%`}</Tag>
+                      <Space wrap size={[4, 8]}>
+                        <span className="fv-muted">S</span>
+                        <span className="fv-num">{sharpe === null ? "-" : sharpe.toFixed(2)}</span>
+                        <span className="fv-muted">Vol</span>
+                        <span className="fv-num">{vol === null ? "-" : `${(vol * 100).toFixed(2)}%`}</span>
                       </Space>
                     );
                   },
@@ -636,11 +749,11 @@ export default function FundDetailPage() {
                     const gridActs = Array.isArray(r?.grid?.actions) ? r.grid.actions.length : 0;
                     const schedActs = Array.isArray(r?.scheduled?.actions) ? r.scheduled.actions.length : 0;
                     return (
-                      <Space wrap>
-                        <Tag>MACD：{macdPts}</Tag>
-                        <Tag>TS：{tsActs === null ? "-" : tsActs}</Tag>
-                        <Tag>Grid：{gridActs}</Tag>
-                        <Tag>定投：{schedActs}</Tag>
+                      <Space wrap size={[4, 8]}>
+                        <span className="fv-pill fv-pillNeutral">MACD {macdPts}</span>
+                        <span className="fv-pill fv-pillNeutral">TS {tsActs === null ? "-" : tsActs}</span>
+                        <span className="fv-pill fv-pillNeutral">Grid {gridActs}</span>
+                        <span className="fv-pill fv-pillNeutral">定投 {schedActs}</span>
                       </Space>
                     );
                   },
@@ -648,14 +761,15 @@ export default function FundDetailPage() {
               ]}
             />
           ) : null}
-        </Card>
+            </Spin>
+          </div>
+        </div>
         ) : null}
 
         {activeTab === "signals" ? (
-        <Card
-          title="预测信号（ML）"
-          loading={signalsLoading}
-          extra={
+        <div className="fv-card fv-section">
+          <div className="fv-cardHead">
+            <div className="fv-cardTitle">预测信号</div>
             <div className="fv-toolbarScroll">
               <Space size={8} wrap>
                 {!isMobile ? <Tag color="geekblue">两套窗口：5T + 20T（默认 20T）</Tag> : null}
@@ -700,16 +814,15 @@ export default function FundDetailPage() {
                 {signals?.as_of_date ? <Tag color="default">as_of：{String(signals.as_of_date)}</Tag> : null}
               </Space>
             </div>
-          }
-        >
+          </div>
+          <div className="fv-cardBody">
+            <Spin spinning={signalsLoading}>
           {signalsError ? (
             <Result status="warning" title="预测信号暂不可用" subTitle={signalsError} />
           ) : bestPeerSignals ? (
-            <div className="fv-kpiGrid4">
-              <div>
-                <div style={{ marginBottom: 8 }}>
-                  <Text type="secondary">位置（同类分桶）</Text>
-                </div>
+            <div className="fv-kpiGrid">
+              <div className="fv-kpi">
+                <div className="fv-kpiLabel">位置（同类分桶）</div>
                 {(() => {
                   const b = bucketLabel(bestPeerSignals?.position_bucket);
                   const p =
@@ -717,51 +830,54 @@ export default function FundDetailPage() {
                       ? (bestPeerSignals.position_percentile_0_100 as number)
                       : null;
                   return (
-                    <Space wrap>
-                      <Tag color={b.color}>{b.text}</Tag>
-                      <Text type="secondary">{p !== null ? `分位 ${p.toFixed(0)}%` : "分位 -"}</Text>
-                    </Space>
+                    <>
+                      <div className="fv-kpiValue">
+                        <span
+                          className={`fv-pill ${b.color === "green" ? "fv-pillDown" : b.color === "red" ? "fv-pillUp" : "fv-pillNeutral"}`}
+                        >
+                          {b.text}
+                        </span>
+                      </div>
+                      <div className="fv-kpiFoot fv-muted">
+                        {p !== null ? `分位 ${p.toFixed(0)}%` : "分位 -"}
+                      </div>
+                    </>
                   );
                 })()}
               </div>
 
-              <Statistic
-                title="回撤抄底概率（20T）"
-                value={
-                  typeof bestPeerSignals?.dip_buy?.p_20t === "number" ? (bestPeerSignals.dip_buy.p_20t as number) * 100 : "-"
-                }
-                precision={typeof bestPeerSignals?.dip_buy?.p_20t === "number" ? 1 : 0}
-                suffix={typeof bestPeerSignals?.dip_buy?.p_20t === "number" ? "%" : ""}
-                valueStyle={{ color: token.colorPrimary }}
-              />
-              <Statistic
-                title="回撤抄底概率（5T）"
-                value={
-                  typeof bestPeerSignals?.dip_buy?.p_5t === "number" ? (bestPeerSignals.dip_buy.p_5t as number) * 100 : "-"
-                }
-                precision={typeof bestPeerSignals?.dip_buy?.p_5t === "number" ? 1 : 0}
-                suffix={typeof bestPeerSignals?.dip_buy?.p_5t === "number" ? "%" : ""}
-              />
-              <Statistic
-                title="神奇反转概率（20T）"
-                value={
-                  typeof bestPeerSignals?.magic_rebound?.p_20t === "number"
-                    ? (bestPeerSignals.magic_rebound.p_20t as number) * 100
-                    : "-"
-                }
-                precision={typeof bestPeerSignals?.magic_rebound?.p_20t === "number" ? 1 : 0}
-                suffix={typeof bestPeerSignals?.magic_rebound?.p_20t === "number" ? "%" : ""}
-              />
-              <Statistic
-                title="神奇反转概率（5T）"
-                value={
-                  typeof bestPeerSignals?.magic_rebound?.p_5t === "number"
-                    ? (bestPeerSignals.magic_rebound.p_5t as number) * 100
-                    : "-"
-                }
-                precision={typeof bestPeerSignals?.magic_rebound?.p_5t === "number" ? 1 : 0}
-                suffix={typeof bestPeerSignals?.magic_rebound?.p_5t === "number" ? "%" : ""}
-              />
+              <div className="fv-kpi">
+                <div className="fv-kpiLabel">回撤抄底概率（20T）</div>
+                <div className="fv-kpiValue fv-num" style={{ color: "#4F46E5" }}>
+                  {typeof bestPeerSignals?.dip_buy?.p_20t === "number"
+                    ? `${((bestPeerSignals.dip_buy.p_20t as number) * 100).toFixed(1)}%`
+                    : "-"}
+                </div>
+              </div>
+              <div className="fv-kpi">
+                <div className="fv-kpiLabel">回撤抄底概率（5T）</div>
+                <div className="fv-kpiValue fv-num" style={{ color: "#4F46E5" }}>
+                  {typeof bestPeerSignals?.dip_buy?.p_5t === "number"
+                    ? `${((bestPeerSignals.dip_buy.p_5t as number) * 100).toFixed(1)}%`
+                    : "-"}
+                </div>
+              </div>
+              <div className="fv-kpi">
+                <div className="fv-kpiLabel">神奇反转概率（20T）</div>
+                <div className="fv-kpiValue fv-num" style={{ color: "#4F46E5" }}>
+                  {typeof bestPeerSignals?.magic_rebound?.p_20t === "number"
+                    ? `${((bestPeerSignals.magic_rebound.p_20t as number) * 100).toFixed(1)}%`
+                    : "-"}
+                </div>
+              </div>
+              <div className="fv-kpi">
+                <div className="fv-kpiLabel">神奇反转概率（5T）</div>
+                <div className="fv-kpiValue fv-num" style={{ color: "#4F46E5" }}>
+                  {typeof bestPeerSignals?.magic_rebound?.p_5t === "number"
+                    ? `${((bestPeerSignals.magic_rebound.p_5t as number) * 100).toFixed(1)}%`
+                    : "-"}
+                </div>
+              </div>
             </div>
           ) : (
             <Empty description="暂无信号（需要先同步净值与关联板块缓存）" />
@@ -772,13 +888,15 @@ export default function FundDetailPage() {
               说明：信号与概率为模型输出，仅用于辅助理解当前“位置/回撤后的反弹概率”，不构成投资建议；模型会随数据源、板块同类样本与训练数据变化而变化。
             </Text>
           </div>
-        </Card>
+            </Spin>
+          </div>
+        </div>
         ) : null}
 
         {activeTab === "nav" ? (
-        <Card
-          title="历史净值"
-          extra={
+        <div className="fv-card fv-section">
+          <div className="fv-cardHead">
+            <div className="fv-cardTitle">历史净值</div>
             <div className="fv-toolbarScroll">
               <Space style={{ whiteSpace: "nowrap" }} size={8}>
                 {(["1W", "1M", "3M", "6M", "1Y", "ALL"] as TimeRange[]).map((range) => (
@@ -820,9 +938,11 @@ export default function FundDetailPage() {
                   同步并加载
                 </Button>
                 {rangePositionPct !== null ? (
-                  <Tag color={rangePositionColor}>
-                    区间位置：{rangePositionPct.toFixed(0)}%（{rangePositionLabel}）
-                  </Tag>
+                  <span
+                    className={`fv-pill ${rangePositionBucket === "low" ? "fv-pillDown" : rangePositionBucket === "high" ? "fv-pillUp" : "fv-pillNeutral"}`}
+                  >
+                    区间位置 {rangePositionPct.toFixed(0)}%（{rangePositionLabel}）
+                  </span>
                 ) : null}
                 {!isMobile && forecastWindow?.as_of_date ? (
                   <Tag color="default">seed_as_of：{String(forecastWindow.as_of_date)}</Tag>
@@ -832,14 +952,14 @@ export default function FundDetailPage() {
                 ) : null}
               </Space>
             </div>
-          }
-        >
+          </div>
+          <div className="fv-cardBody">
           {navHistory.length > 0 ? (
             <div style={{ marginBottom: 16 }}>
               <ReactECharts
                 option={buildNavChartOption(navHistory, {
                   compact: compactChart,
-                  color: token.colorPrimary,
+                  color: "#4F46E5",
                   swing: { enabled: showSwingPoints, window: compactChart ? 3 : 5, maxPointsPerKind: 6 },
                   forecast: showForecastOverlay ? (forecastWindow?.forecast as any) : undefined,
                 })}
@@ -855,12 +975,16 @@ export default function FundDetailPage() {
             locale={{ emptyText: "暂无数据（可点击右上角“同步并加载”）" }}
             columns={[
               { title: "日期", dataIndex: "nav_date", width: 140 },
-              { title: "单位净值", dataIndex: "unit_nav", render: (v: any) => (v ? Number(v).toFixed(4) : "-") },
+              {
+                title: "单位净值",
+                dataIndex: "unit_nav",
+                render: (v: any) => (v ? <span className="fv-num">{Number(v).toFixed(4)}</span> : "-"),
+              },
               {
                 title: "累计净值",
                 dataIndex: "accumulated_nav",
                 responsive: ["md"],
-                render: (v: any) => (v ? Number(v).toFixed(4) : "-"),
+                render: (v: any) => (v ? <span className="fv-num">{Number(v).toFixed(4)}</span> : "-"),
               },
               {
                 title: "日涨跌(%)",
@@ -871,18 +995,26 @@ export default function FundDetailPage() {
                   if (!Number.isFinite(n)) return String(v);
                   const positive = n >= 0;
                   const text = `${positive ? "+" : ""}${n.toFixed(2)}`;
-                  return <span style={{ color: positive ? "#cf1322" : "#3f8600" }}>{text}</span>;
+                  return (
+                    <span className={`fv-pill fv-num ${positive ? "fv-pillUp" : "fv-pillDown"}`}>{text}</span>
+                  );
                 },
               },
             ]}
           />
-        </Card>
+          </div>
+        </div>
         ) : null}
 
         {activeTab === "holdings" ? (
           <>
             {positionRows.length > 0 ? (
-              <Card title="我的持仓" loading={positionsLoading}>
+              <div className="fv-card fv-section">
+                <div className="fv-cardHead">
+                  <div className="fv-cardTitle">我的持仓</div>
+                </div>
+                <div className="fv-cardBody">
+                  <Spin spinning={positionsLoading}>
                 <Table<FundPositionRow>
                   rowKey={(r) => r.account_name}
                   dataSource={positionRows}
@@ -896,20 +1028,30 @@ export default function FundDetailPage() {
                       dataIndex: "holding_share",
                       key: "holding_share",
                       responsive: ["md"],
-                      render: (v: any) => (Number.isFinite(Number(v)) ? Number(v).toFixed(2) : "-"),
+                      render: (v: any) => (
+                        <span className="fv-num">{Number.isFinite(Number(v)) ? Number(v).toFixed(2) : "-"}</span>
+                      ),
                     },
                     {
                       title: "持仓成本",
                       dataIndex: "holding_cost",
                       key: "holding_cost",
                       responsive: ["md"],
-                      render: (v: any) => (Number.isFinite(Number(v)) ? `¥${Number(v).toFixed(2)}` : "-"),
+                      render: (v: any) => (
+                        <span className="fv-num">
+                          {Number.isFinite(Number(v)) ? `¥${Number(v).toFixed(2)}` : "-"}
+                        </span>
+                      ),
                     },
                     {
                       title: "市值",
                       dataIndex: "market_value",
                       key: "market_value",
-                      render: (v: any) => (Number.isFinite(Number(v)) ? `¥${Number(v).toFixed(2)}` : "-"),
+                      render: (v: any) => (
+                        <span className="fv-num">
+                          {Number.isFinite(Number(v)) ? `¥${Number(v).toFixed(2)}` : "-"}
+                        </span>
+                      ),
                     },
                     {
                       title: "盈亏",
@@ -925,7 +1067,10 @@ export default function FundDetailPage() {
                             ? ""
                             : ` (${pnlRate >= 0 ? "+" : ""}${pnlRate.toFixed(2)}%)`;
                         return (
-                          <span style={{ color: positive ? "#cf1322" : "#3f8600", whiteSpace: "nowrap" }}>
+                          <span
+                            className={`fv-num ${positive ? "fv-up" : "fv-down"}`}
+                            style={{ whiteSpace: "nowrap" }}
+                          >
                             {positive ? "+" : ""}¥{pnl.toFixed(2)}
                             {rateText}
                           </span>
@@ -934,11 +1079,18 @@ export default function FundDetailPage() {
                     },
                   ]}
                 />
-              </Card>
+                  </Spin>
+                </div>
+              </div>
             ) : null}
 
             {operations.length > 0 ? (
-              <Card title="操作记录" loading={operationsLoading}>
+              <div className="fv-card fv-section">
+                <div className="fv-cardHead">
+                  <div className="fv-cardTitle">操作记录</div>
+                </div>
+                <div className="fv-cardBody">
+                  <Spin spinning={operationsLoading}>
                 <Table<OperationRow>
                   rowKey={(r) => String(r.id ?? `${r.operation_date ?? ""}-${r.created_at ?? ""}`)}
                   dataSource={operations}
@@ -952,27 +1104,40 @@ export default function FundDetailPage() {
                       title: "类型",
                       dataIndex: "operation_type",
                       width: 120,
-                      render: (v: any) => (v === "BUY" ? "买入" : v === "SELL" ? "卖出" : String(v ?? "-")),
+                      render: (v: any) =>
+                        v === "BUY" ? (
+                          <span className="fv-pill fv-pillDown">买入</span>
+                        ) : v === "SELL" ? (
+                          <span className="fv-pill fv-pillUp">卖出</span>
+                        ) : (
+                          String(v ?? "-")
+                        ),
                     },
                     {
                       title: "金额",
                       dataIndex: "amount",
                       width: 140,
-                      render: (v: any) => (v ? `¥${Number(v).toFixed(2)}` : "-"),
+                      render: (v: any) => (
+                        <span className="fv-num">{v ? `¥${Number(v).toFixed(2)}` : "-"}</span>
+                      ),
                     },
                     {
                       title: "份额",
                       dataIndex: "share",
                       width: 140,
                       responsive: ["md"],
-                      render: (v: any) => (v ? Number(v).toFixed(4) : "-"),
+                      render: (v: any) => (
+                        <span className="fv-num">{v ? Number(v).toFixed(4) : "-"}</span>
+                      ),
                     },
                     {
                       title: "净值",
                       dataIndex: "nav",
                       width: 120,
                       responsive: ["md"],
-                      render: (v: any) => (v ? Number(v).toFixed(4) : "-"),
+                      render: (v: any) => (
+                        <span className="fv-num">{v ? Number(v).toFixed(4) : "-"}</span>
+                      ),
                     },
                     {
                       title: "15点前",
@@ -983,7 +1148,9 @@ export default function FundDetailPage() {
                     },
                   ]}
                 />
-              </Card>
+                  </Spin>
+                </div>
+              </div>
             ) : null}
 
             {positionRows.length === 0 && operations.length === 0 ? <Empty description="暂无持仓/操作记录" /> : null}

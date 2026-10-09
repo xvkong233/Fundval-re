@@ -105,7 +105,7 @@ export default function QuantTradingPage() {
         fund_code: values.fund_code.trim(),
         source: values.source?.trim() || undefined,
         initial_capital: values.initial_capital || 100000,
-        enter_threshold: values.enter_threshold ?? 0.85,
+        enter_threshold: values.enter_threshold ?? 0.80,
       });
       setResult(res.data as BacktestResult);
       message.success("回测完成");
@@ -139,7 +139,7 @@ export default function QuantTradingPage() {
           layout="inline"
           initialValues={{
             initial_capital: 100000,
-            enter_threshold: 0.85,
+            enter_threshold: 0.80,
             source: "tiantian",
           }}
         >
@@ -252,7 +252,7 @@ export default function QuantTradingPage() {
             <Descriptions column={1} size="small">
               <Descriptions.Item label="入场">
                 模型预测该笔交易盈利概率 ≥{" "}
-                {(form.getFieldValue("enter_threshold") ?? 0.85) * 100}%{" "}
+                {(form.getFieldValue("enter_threshold") ?? 0.80) * 100}%{" "}
                 时入场；低于此阈值不交易
               </Descriptions.Item>
               <Descriptions.Item label="出场">

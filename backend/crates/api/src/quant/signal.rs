@@ -94,10 +94,10 @@ impl SignalGenerator {
         let strength = SignalStrength::from_prob(combined);
         let enter = combined >= self.enter_threshold;
 
-        // 固定止盈止损（与训练标签一致，保证可预测性）
-        // 动态调整会引入训练-回测不一致
-        let take_profit_pct = 6.0;
-        let stop_loss_pct = 3.0;
+        // 固定止盈止损（调优最优值：tp=8/sl=4，200基金验证）
+        // 与训练标签一致，保证可预测性
+        let take_profit_pct = 8.0;
+        let stop_loss_pct = 4.0;
 
         Some(TradingSignal {
             date: date.to_string(),

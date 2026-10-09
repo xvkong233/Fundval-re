@@ -144,8 +144,8 @@ pub async fn train_and_store_sector_model(    pool: &sqlx::AnyPool,
 
     let train_cfg = LogRegTrainConfig {
         learning_rate: 0.5,
-        epochs: 600,
-        l2: 0.1,
+        epochs: 400, // 调优最优值（200基金验证）
+        l2: 0.05,    // 调优最优值（200基金验证）
         pos_weight,
     };
     let model = train_logreg(&x, &y, &train_cfg).ok_or("train_logreg failed")?;

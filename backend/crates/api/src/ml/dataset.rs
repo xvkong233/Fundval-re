@@ -191,7 +191,7 @@ pub async fn build_trigger_samples_for_peer(
 
             // dip_buy 标签：按策略交易是否盈利（止盈6%/止损3%/最长持有h天）
             // 比单纯看涨幅更直接对应交易目标
-            let dip_buy_success = trade_profitable(navs, idx, h, 6.0, 3.0);
+            let dip_buy_success = trade_profitable(navs, idx, h, 8.0, 4.0);
             let max_future = max_nav(navs, idx + 1, idx + h);
             let magic_rebound = (max_future / nav_now - 1.0) >= rebound_th;
 
@@ -369,7 +369,7 @@ pub async fn build_trigger_samples_for_all_funds(
                 continue;
             }
 
-            let dip_buy_success = trade_profitable(navs, idx, h, 6.0, 3.0);
+            let dip_buy_success = trade_profitable(navs, idx, h, 8.0, 4.0);
             let max_future = max_nav(navs, idx + 1, idx + h);
             let magic_rebound = (max_future / nav_now - 1.0) >= rebound_th;
 

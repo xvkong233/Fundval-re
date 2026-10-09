@@ -82,7 +82,7 @@ pub async fn backtest(
 
     let source = req.source.unwrap_or_else(|| "tiantian".to_string());
     let initial_capital = req.initial_capital.unwrap_or(100_000.0);
-    let enter_threshold = req.enter_threshold.unwrap_or(0.85);
+    let enter_threshold = req.enter_threshold.unwrap_or(0.80);
 
     // 1. 加载基金净值历史
     let navs = match load_nav_history(&pool, &req.fund_code, &source).await {
@@ -270,7 +270,7 @@ pub async fn current_signal(
         magic_rebound_model: magic_model,
         dip_buy_calibrator: PlattCalibrator::identity(),
         magic_calibrator: PlattCalibrator::identity(),
-        enter_threshold: 0.85,
+        enter_threshold: 0.80,
     };
 
     let labeled: Vec<(String, f64)> =

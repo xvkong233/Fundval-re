@@ -3,6 +3,11 @@
 :root {
   --background: #f4f5f7;
   --foreground: #1a1d26;
+  /* 本地字体栈（不再依赖 Google Fonts，任何环境构建都可过） */
+  --fv-font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", Roboto, Arial, "Noto Sans SC", sans-serif;
+  --fv-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    monospace;
   --fv-surface: #ffffff;
   --fv-border: #eceef1;
   --fv-border-soft: #f0f1f4;

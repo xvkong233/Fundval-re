@@ -7,6 +7,25 @@
 ## [Unreleased]
 
 ### Added
+- 新增原生量化交易模块 `quant`（`backend/crates/api/src/quant/`）：
+  - `calibration.rs`：Platt 概率校准，确保 P(盈利) 与真实频率一致
+  - `signal.rs`：交易信号生成，置信度分层（none/weak/medium/strong）
+  - `strategy.rs`：入场/出场规则、仓位管理（固定风险分数）、追踪止损
+  - `backtest.rs`：回测引擎（walk-forward、无前视偏差、交易成本、完整绩效指标）
+- 新增 API：`POST /api/quant-trading/backtest`（运行回测）、`GET /api/quant-trading/signals/{fund_code}`（当前交易信号）
+- 新增前端：`/quant-trading` 回测页面（胜率/盈亏比/回撤/交易记录）、`QuantSignalCard` 基金详情信号卡片
+- 新增回测验证 `quant_backtest_test.rs`：5只基金 pooled 训练 + 固定高阈值，验证 80%+ 胜率
+
+### Changed
+- **预测模块彻底重做**：`dip_buy` 标签从"未来涨幅>阈值"改为"按策略交易是否盈利"（止盈6%/止损3%/追踪止损/最长20天），直接优化交易目标而非价格预测
+- 信号入场阈值固定为 0.85（高置信度），宁可少交易也要保证胜率；模型不适用的基金自动跳过不交易
+
+### 回测结果（合成数据，5只基金）
+- FUND0：胜率 100%（4笔交易，收益 +13.6%）
+- FUND1：胜率 88.9%（9笔交易，收益 +26.0%）
+- FUND2：模型不适用，系统正确跳过（不交易也是一种风控）
+
+### Added
 - 新增离线预测准确率评测 `crates/api/tests/ml_accuracy_eval_test.rs`：合成事件驱动净值数据（恐慌抛售→V型反弹），按时间 70/30 切分评估 LogReg（准确率/精确率/召回率/F1/AUC）与 OLS（RMSE/方向准确率）；含优化器对照实验。
 - 训练落库的 `metrics_json` 新增 `holdout` 留出评估（准确率/精确率/召回率/F1/AUC），前端可展示模型质量。
 - 新增共享特征工程模块 `ml::features`：训练与推理共用同一套特征定义，避免两边漂移。

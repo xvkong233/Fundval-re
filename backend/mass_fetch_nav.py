@@ -61,7 +61,7 @@ async def fetch_one(session, sem, code, ftype):
             except Exception:
                 await asyncio.sleep(2 ** attempt)
             finally:
-                await asyncio.sleep(1.0)  # 降速：每次请求间隔1秒
+                await asyncio.sleep(3.0)  # 降速：每次请求间隔1秒
         return ("err", code)
 
 async def main():

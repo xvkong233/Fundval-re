@@ -1,6 +1,9 @@
+pub mod adx_trend;
 pub mod backtest;
+pub mod boll;
 pub mod calibration;
 pub mod daily;
+pub mod donchian;
 pub mod factors;
 pub mod lookthrough;
 pub mod optimize;

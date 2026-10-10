@@ -1,4 +1,4 @@
-//! 真实数据训练验证：用 /tmp/fund_data/ 的真实净值+持仓训练16特征模型。
+//! 真实数据训练验证：用 /home/hatch/workspace/fund_data/ 的真实净值+持仓训练16特征模型。
 
 use api::ml::dataset::trade_profitable;
 use api::ml::features::build_features;
@@ -18,7 +18,7 @@ struct FundData {
 
 fn load_fund_data() -> Vec<FundData> {
     let mut out = Vec::new();
-    let entries = std::fs::read_dir("/tmp/fund_data").expect("read dir");
+    let entries = std::fs::read_dir("/home/hatch/workspace/fund_data").expect("read dir");
     for entry in entries.flatten() {
         let path = entry.path();
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
@@ -51,7 +51,7 @@ fn load_fund_data() -> Vec<FundData> {
 }
 
 fn load_lookthrough(code: &str) -> [f64; 3] {
-    let path = format!("/tmp/fund_data/holdings_{code}.json");
+    let path = format!("/home/hatch/workspace/fund_data/holdings_{code}.json");
     let text = std::fs::read_to_string(&path).unwrap_or_default();
     if text.is_empty() {
         return [0.0, 0.0, 0.0];
@@ -137,6 +137,21 @@ fn train_on_real_data() {
                 let b = ((cal * 10.0) as usize).min(9);
                 buckets[b] += 1;
             }
+        }
+        println!("原始概率分布:");
+        let mut raw_buckets = [0; 10];
+        for fund in funds.iter().take(10) {
+            let n = fund.navs.len();
+            let test_start = n * 70 / 100;
+            for i in (test_start..n).step_by(10) {
+                let feat = build_16features(&fund.navs, i, &fund.lt_features);
+                let raw = sig_gen.dip_buy_model.predict_proba(&feat).unwrap_or(0.5);
+                let b = ((raw * 10.0) as usize).min(9);
+                raw_buckets[b] += 1;
+            }
+        }
+        for (i, c) in raw_buckets.iter().enumerate() {
+            println!("  {:.1}-{:.1}: {}", i as f64 / 10.0, (i + 1) as f64 / 10.0, c);
         }
         println!("校准后概率分布:");
         for (i, c) in buckets.iter().enumerate() {

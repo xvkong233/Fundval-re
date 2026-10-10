@@ -1,7 +1,7 @@
 //! 真实基金数据抓取：获取200只股混基金的净值历史与持仓。
 //!
 //! 用法：cargo run -p api --bin fetch_fund_data
-//! 输出：/tmp/fund_data/nav_<code>.json, /tmp/fund_data/holdings_<code>.json
+//! 输出：/home/hatch/workspace/fund_data/nav_<code>.json, /home/hatch/workspace/fund_data/holdings_<code>.json
 
 use api::eastmoney::{
     build_client, fetch_fund_holdings, fetch_fund_list, fetch_nav_history_mobile,
@@ -12,7 +12,7 @@ use std::time::Duration;
 #[tokio::main]
 async fn main() -> Result<(), String> {
     let client = build_client()?;
-    fs::create_dir_all("/tmp/fund_data").map_err(|e| e.to_string())?;
+    fs::create_dir_all("/home/hatch/workspace/fund_data").map_err(|e| e.to_string())?;
 
     // 1. 获取基金列表，筛选股混型
     println!("获取基金列表...");
@@ -46,13 +46,13 @@ async fn main() -> Result<(), String> {
             .collect::<Vec<_>>(),
     )
     .map_err(|e| e.to_string())?;
-    fs::write("/tmp/fund_data/fund_list.json", list_json).map_err(|e| e.to_string())?;
+    fs::write("/home/hatch/workspace/fund_data/fund_list.json", list_json).map_err(|e| e.to_string())?;
 
     // 2. 抓取净值历史
     let mut nav_ok = 0;
     let mut nav_fail = 0;
     for (i, (code, name)) in selected.iter().enumerate() {
-        let path = format!("/tmp/fund_data/nav_{code}.json");
+        let path = format!("/home/hatch/workspace/fund_data/nav_{code}.json");
         if std::path::Path::new(&path).exists() {
             nav_ok += 1;
             continue; // 已抓取则跳过
@@ -91,7 +91,7 @@ async fn main() -> Result<(), String> {
     // 3. 抓取持仓
     let mut hold_ok = 0;
     for (i, (code, _)) in selected.iter().enumerate() {
-        let path = format!("/tmp/fund_data/holdings_{code}.json");
+        let path = format!("/home/hatch/workspace/fund_data/holdings_{code}.json");
         if std::path::Path::new(&path).exists() {
             hold_ok += 1;
             continue;
@@ -124,6 +124,6 @@ async fn main() -> Result<(), String> {
     }
     println!("持仓抓取完成: 成功{hold_ok}");
 
-    println!("\n完成！数据在 /tmp/fund_data/");
+    println!("\n完成！数据在 /home/hatch/workspace/fund_data/");
     Ok(())
 }

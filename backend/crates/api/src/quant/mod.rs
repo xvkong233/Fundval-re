@@ -1,7 +1,12 @@
 pub mod backtest;
 pub mod calibration;
 pub mod daily;
+pub mod factors;
 pub mod lookthrough;
+pub mod optimize;
+pub mod patterns;
+pub mod portfolio;
 pub mod screen4433;
 pub mod signal;
 pub mod strategy;
+pub mod trend;

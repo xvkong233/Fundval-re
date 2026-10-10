@@ -80,6 +80,8 @@ pub struct DailyRecommendation {
     pub signal_desc: String,
     /// 股票透视：持仓加权今日涨跌（%），None 表示无数据
     pub lookthrough_change_pct: Option<f64>,
+    /// 4433法则评分（0-7），None 表示数据不足
+    pub score_4433: Option<u8>,
     /// 操作理由
     pub reason: String,
     /// T+1 提示（如 "15:00前下单按今日净值成交"）
@@ -183,6 +185,7 @@ pub fn generate_daily_recommendations(
             confidence: *proba,
             signal_desc,
             lookthrough_change_pct: *lt_change,
+            score_4433: None, // 由调用方在有净值数据时填充
             reason: full_reason,
             t1_note: nav_note.clone(),
             hold_days,

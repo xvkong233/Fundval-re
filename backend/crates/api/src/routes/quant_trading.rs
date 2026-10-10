@@ -473,3 +473,61 @@ pub async fn daily_recommendations(
     )
         .into_response()
 }
+
+// ── 4433法则筛选 ──────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct Screen4433Request {
+    pub fund_codes: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Screen4433Response {
+    pub results: Vec<crate::quant::screen4433::Screen4433Result>,
+    pub pass_count: usize,
+    pub total: usize,
+}
+
+/// POST /api/quant-trading/screen-4433：运行4433法则筛选。
+pub async fn screen_4433_endpoint(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<Screen4433Request>,
+) -> axum::response::Response {
+    let _user_id = match auth::authenticate(&state, &headers) {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+    let pool = match state.pool() {
+        Some(p) => p.clone(),
+        None => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({"error": "database not available"})),
+            )
+                .into_response()
+        }
+    };
+
+    let mut returns = Vec::new();
+    for fund_code in &req.fund_codes {
+        let navs = match load_nav_history(&pool, fund_code, "tiantian").await {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if navs.len() < 800 {
+            continue;
+        }
+        returns.push(crate::quant::screen4433::FundReturns::from_navs(fund_code, &navs));
+    }
+
+    let results = crate::quant::screen4433::screen_4433(&returns);
+    let pass_count = results.iter().filter(|r| r.pass_all).count();
+    let total = results.len();
+
+    (
+        StatusCode::OK,
+        Json(Screen4433Response { results, pass_count, total }),
+    )
+        .into_response()
+}

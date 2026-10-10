@@ -25,6 +25,15 @@ pub struct StrategyConfig {
     pub commission_rate: f64,
     /// 最小建仓金额
     pub min_position_value: f64,
+    /// 是否使用ATR自适应止损（代替固定百分比）
+    /// 参考 Trader 项目的海龟交易法：止损随波动率自适应
+    pub use_atr_stop: bool,
+    /// ATR止损倍数（止损 = 入场价 - atr_mult * ATR）
+    pub atr_stop_mult: f64,
+    /// ATR止盈倍数（止盈 = 入场价 + atr_profit_mult * ATR）
+    pub atr_profit_mult: f64,
+    /// ATR计算周期
+    pub atr_period: usize,
 }
 
 impl Default for StrategyConfig {
@@ -37,8 +46,36 @@ impl Default for StrategyConfig {
             risk_per_trade: 0.02,
             commission_rate: 0.0015,
             min_position_value: 1000.0,
+            use_atr_stop: false, // 默认关闭，保持向后兼容
+            atr_stop_mult: 2.0,
+            atr_profit_mult: 3.0,
+            atr_period: 14,
         }
     }
+}
+
+/// 计算 ATR（平均真实波幅）。
+///
+/// 基金只有净值（无OHLC），用 |当日涨跌| 的 N 日均值近似。
+/// 返回相对于价格的比例（如 0.015 = 1.5%）。
+pub fn calc_atr(navs: &[(String, f64)], idx: usize, period: usize) -> Option<f64> {
+    if idx < period || idx >= navs.len() {
+        return None;
+    }
+    let mut sum = 0.0;
+    let mut count = 0;
+    for i in (idx + 1 - period)..=idx {
+        let prev = navs[i - 1].1;
+        let now = navs[i].1;
+        if prev > 0.0 && now > 0.0 {
+            sum += (now - prev).abs() / prev;
+            count += 1;
+        }
+    }
+    if count == 0 {
+        return None;
+    }
+    Some(sum / count as f64)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

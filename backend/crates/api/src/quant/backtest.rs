@@ -238,6 +238,24 @@ pub fn backtest_single_fund(
                             if total_cost <= cash && position_value >= strategy.config.min_position_value {
                                 let shares = position_value / nav;
                                 cash -= total_cost;
+                                // ATR自适应止损（Trader海龟交易法思想）：波动大则止损宽，波动小则止损窄
+                                let (take_profit_nav, stop_loss_nav) = if strategy.config.use_atr_stop {
+                                    match crate::quant::strategy::calc_atr(navs, i, strategy.config.atr_period) {
+                                        Some(atr) => (
+                                            nav * (1.0 + strategy.config.atr_profit_mult * atr),
+                                            nav * (1.0 - strategy.config.atr_stop_mult * atr),
+                                        ),
+                                        None => (
+                                            nav * (1.0 + signal.take_profit_pct / 100.0),
+                                            nav * (1.0 - signal.stop_loss_pct / 100.0),
+                                        ),
+                                    }
+                                } else {
+                                    (
+                                        nav * (1.0 + signal.take_profit_pct / 100.0),
+                                        nav * (1.0 - signal.stop_loss_pct / 100.0),
+                                    )
+                                };
                                 position = Some(Position {
                                     fund_code: fund_code.to_string(),
                                     entry_date: date.clone(),
@@ -245,10 +263,8 @@ pub fn backtest_single_fund(
                                     shares,
                                     entry_value: position_value,
                                     highest_nav: *nav,
-                                    take_profit_nav: nav
-                                        * (1.0 + signal.take_profit_pct / 100.0),
-                                    stop_loss_nav: nav
-                                        * (1.0 - signal.stop_loss_pct / 100.0),
+                                    take_profit_nav,
+                                    stop_loss_nav,
                                     days_held: 0,
                                     entry_signal_strength: signal.strength,
                                 });

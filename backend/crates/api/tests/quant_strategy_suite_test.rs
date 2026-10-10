@@ -9,6 +9,8 @@
 //!
 //! 另做单因子 IC 测试（QUANTAXIS式因子研究）。
 
+mod common;
+
 use api::ml::dataset::trade_profitable;
 use api::ml::features::build_features;
 use api::ml::logreg::{train_logreg, LogRegTrainConfig};
@@ -19,32 +21,12 @@ use api::quant::signal::SignalGenerator;
 use api::quant::trend::{backtest_buy_hold, backtest_trend, TrendParams};
 use std::collections::HashMap;
 
-const DATA_DIR: &str = "/home/hatch/workspace/fund_data";
-
 fn load_funds() -> HashMap<String, Vec<(String, f64)>> {
-    let mut funds = HashMap::new();
-    let entries = std::fs::read_dir(DATA_DIR).expect("read dir");
-    for entry in entries.flatten() {
-        let name = entry.file_name().into_string().unwrap_or_default();
-        if !name.starts_with("nav_") || !name.ends_with(".json") {
-            continue;
-        }
-        let code = name[4..name.len() - 5].to_string();
-        let text = std::fs::read_to_string(entry.path()).unwrap_or_default();
-        let items: Vec<serde_json::Value> = serde_json::from_str(&text).unwrap_or_default();
-        let mut navs: Vec<(String, f64)> = Vec::new();
-        for item in items {
-            let date = item.get("date").and_then(|d| d.as_str()).unwrap_or("").to_string();
-            let nav: f64 = item.get("nav").and_then(|n| n.as_str()).and_then(|s| s.parse().ok()).unwrap_or(0.0);
-            if !date.is_empty() && nav > 0.0 {
-                navs.push((date, nav));
-            }
-        }
-        if navs.len() >= 800 {
-            funds.insert(code, navs);
-        }
-    }
-    funds
+    // 随机抽样200只基金（可复现）
+    common::load_random_funds(200, 42, 800)
+        .into_iter()
+        .map(|(code, navs, _)| (code, navs))
+        .collect()
 }
 
 #[test]

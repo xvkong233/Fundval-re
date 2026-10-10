@@ -13,9 +13,10 @@ use api::ml::features::build_features;
 use api::ml::logreg::{train_logreg, LogRegModel, LogRegTrainConfig};
 use api::quant::backtest::backtest_single_fund;
 use api::quant::calibration::PlattCalibrator;
-use api::quant::lookthrough::LookThroughFactors;
 use api::quant::signal::{SignalGenerator, TradingSignal};
 use api::quant::strategy::{Strategy, StrategyConfig};
+
+mod common;
 
 const DATA_DIR: &str = "/home/hatch/workspace/fund_data";
 
@@ -234,42 +235,9 @@ fn train_ensemble(
 
 #[test]
 fn model_v2_improvement() {
-    // 加载数据
-    let mut funds: Vec<(String, Vec<(String, f64)>, [f64; 3])> = Vec::new();
-    let entries = std::fs::read_dir(DATA_DIR).expect("read dir");
-    for entry in entries.flatten() {
-        let name = entry.file_name().into_string().unwrap_or_default();
-        if !name.starts_with("nav_") || !name.ends_with(".json") {
-            continue;
-        }
-        let code = name[4..name.len() - 5].to_string();
-        let text = std::fs::read_to_string(entry.path()).unwrap_or_default();
-        let items: Vec<serde_json::Value> = serde_json::from_str(&text).unwrap_or_default();
-        let mut navs: Vec<(String, f64)> = Vec::new();
-        for item in items {
-            let date = item.get("date").and_then(|d| d.as_str()).unwrap_or("").to_string();
-            let nav: f64 = item.get("nav").and_then(|n| n.as_str()).and_then(|s| s.parse().ok()).unwrap_or(0.0);
-            if !date.is_empty() && nav > 0.0 {
-                navs.push((date, nav));
-            }
-        }
-        if navs.len() < 800 {
-            continue;
-        }
-        let hpath = format!("{DATA_DIR}/holdings_{code}.json");
-        let htext = std::fs::read_to_string(&hpath).unwrap_or_default();
-        let hitems: Vec<serde_json::Value> = serde_json::from_str(&htext).unwrap_or_default();
-        let weights: Vec<f64> = hitems.iter().filter_map(|h| h.get("weight_pct").and_then(|w| w.as_f64())).collect();
-        let lt = if weights.is_empty() {
-            [0.0, 0.0, 0.0]
-        } else {
-            let f = LookThroughFactors::from_weights(&weights);
-            let v = f.as_features();
-            [v[0], v[1], v[2]]
-        };
-        funds.push((code, navs, lt));
-    }
-    println!("\n加载 {} 只基金", funds.len());
+    // 随机抽样200只基金（seed=42可复现），代替固定基金池
+    let funds = common::load_random_funds(200, 42, 800);
+    println!("\n随机抽样 {} 只基金（seed=42）", funds.len());
 
     // 训练 v1（基线）：13特征+3透视，单模型
     println!("训练 v1 基线...");

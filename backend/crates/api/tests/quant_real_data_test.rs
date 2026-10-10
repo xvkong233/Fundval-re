@@ -1,11 +1,12 @@
 //! 真实数据训练验证：用 /home/hatch/workspace/fund_data/ 的真实净值+持仓训练16特征模型。
 
+mod common;
+
 use api::ml::dataset::trade_profitable;
 use api::ml::features::build_features;
 use api::ml::logreg::{train_logreg, LogRegTrainConfig};
 use api::quant::backtest::backtest_single_fund;
 use api::quant::calibration::PlattCalibrator;
-use api::quant::lookthrough::LookThroughFactors;
 use api::quant::signal::{SignalGenerator, TradingSignal};
 use api::quant::strategy::{Strategy, StrategyConfig};
 
@@ -17,56 +18,11 @@ struct FundData {
 }
 
 fn load_fund_data() -> Vec<FundData> {
-    let mut out = Vec::new();
-    let entries = std::fs::read_dir("/home/hatch/workspace/fund_data").expect("read dir");
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        if !name.starts_with("nav_") || !name.ends_with(".json") {
-            continue;
-        }
-        let code = name[4..name.len() - 5].to_string();
-        let text = std::fs::read_to_string(&path).unwrap_or_default();
-        let items: Vec<serde_json::Value> = serde_json::from_str(&text).unwrap_or_default();
-        let mut navs: Vec<(String, f64)> = Vec::new();
-        for item in items {
-            let date = item.get("date").and_then(|d| d.as_str()).unwrap_or("").to_string();
-            let nav: f64 = item
-                .get("nav")
-                .and_then(|n| n.as_str())
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(0.0);
-            if !date.is_empty() && nav > 0.0 {
-                navs.push((date, nav));
-            }
-        }
-        if navs.len() < 500 {
-            continue;
-        }
-        let lt_features = load_lookthrough(&code);
-        out.push(FundData { code, navs, lt_features });
-    }
-    out.sort_by(|a, b| a.code.cmp(&b.code));
-    out
-}
-
-fn load_lookthrough(code: &str) -> [f64; 3] {
-    let path = format!("/home/hatch/workspace/fund_data/holdings_{code}.json");
-    let text = std::fs::read_to_string(&path).unwrap_or_default();
-    if text.is_empty() {
-        return [0.0, 0.0, 0.0];
-    }
-    let items: Vec<serde_json::Value> = serde_json::from_str(&text).unwrap_or_default();
-    let weights: Vec<f64> = items
-        .iter()
-        .filter_map(|h| h.get("weight_pct").and_then(|w| w.as_f64()))
-        .collect();
-    if weights.is_empty() {
-        return [0.0, 0.0, 0.0];
-    }
-    let factors = LookThroughFactors::from_weights(&weights);
-    let feats = factors.as_features();
-    [feats[0], feats[1], feats[2]]
+    // 随机抽样200只基金（可复现）
+    common::load_random_funds(200, 42, 800)
+        .into_iter()
+        .map(|(code, navs, lt_features)| FundData { code, navs, lt_features })
+        .collect()
 }
 
 fn build_16features(navs: &[(String, f64)], idx: usize, lt: &[f64; 3]) -> Vec<f64> {

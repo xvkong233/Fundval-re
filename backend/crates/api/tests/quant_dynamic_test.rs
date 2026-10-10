@@ -11,17 +11,16 @@
 //! - mkt_mom_20d: 沪深300的20日动量
 //! - mkt_vol: 沪深300的20日波动率
 
+mod common;
+
 use api::ml::dataset::trade_profitable;
 use api::ml::features::build_features;
 use api::ml::logreg::{train_logreg, LogRegTrainConfig};
 use api::quant::backtest::backtest_single_fund;
 use api::quant::calibration::PlattCalibrator;
-use api::quant::lookthrough::LookThroughFactors;
 use api::quant::signal::{SignalGenerator, TradingSignal};
 use api::quant::strategy::{Strategy, StrategyConfig};
 use std::collections::HashMap;
-
-const DATA_DIR: &str = "/home/hatch/workspace/fund_data";
 
 #[derive(Debug, Clone)]
 struct Holding {
@@ -42,7 +41,7 @@ type KlineMap = HashMap<String, f64>;
 
 fn load_klines() -> HashMap<String, KlineMap> {
     let mut out: HashMap<String, KlineMap> = HashMap::new();
-    let entries = std::fs::read_dir(DATA_DIR).expect("read dir");
+    let entries = std::fs::read_dir(common::DATA_DIR).expect("read dir");
     for entry in entries.flatten() {
         let name = entry.file_name().into_string().unwrap_or_default();
         if !name.starts_with("klines_") || !name.ends_with(".json") {
@@ -78,37 +77,14 @@ fn load_klines() -> HashMap<String, KlineMap> {
 }
 
 fn load_funds() -> Vec<FundData> {
+    // 随机抽样200只基金（可复现），再为每只加载详细持仓（动态因子需要成分股secid）
+    let sampled = common::load_random_funds(200, 42, 800);
     let mut out = Vec::new();
-    let entries = std::fs::read_dir(DATA_DIR).expect("read dir");
-    for entry in entries.flatten() {
-        let name = entry.file_name().into_string().unwrap_or_default();
-        if !name.starts_with("nav_") || !name.ends_with(".json") {
-            continue;
-        }
-        let code = name[4..name.len() - 5].to_string();
-        let text = std::fs::read_to_string(entry.path()).unwrap_or_default();
-        let items: Vec<serde_json::Value> = serde_json::from_str(&text).unwrap_or_default();
-        let mut navs: Vec<(String, f64)> = Vec::new();
-        for item in items {
-            let date = item.get("date").and_then(|d| d.as_str()).unwrap_or("").to_string();
-            let nav: f64 = item
-                .get("nav")
-                .and_then(|n| n.as_str())
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(0.0);
-            if !date.is_empty() && nav > 0.0 {
-                navs.push((date, nav));
-            }
-        }
-        if navs.len() < 500 {
-            continue;
-        }
-        // 持仓
-        let hpath = format!("{DATA_DIR}/holdings_{code}.json");
+    for (code, navs, static_lt) in sampled {
+        let hpath = format!("{}/holdings_{code}.json", common::DATA_DIR);
         let htext = std::fs::read_to_string(&hpath).unwrap_or_default();
         let hitems: Vec<serde_json::Value> = serde_json::from_str(&htext).unwrap_or_default();
         let mut holdings = Vec::new();
-        let mut weights = Vec::new();
         for h in hitems {
             let sc = h.get("stock_code").and_then(|c| c.as_str()).unwrap_or("");
             let ex = h.get("exchange").and_then(|e| e.as_str()).unwrap_or("");
@@ -118,18 +94,9 @@ fn load_funds() -> Vec<FundData> {
             }
             let secid = format!("{}.{sc:0>6}", ex);
             holdings.push(Holding { secid, weight: w });
-            weights.push(w);
         }
-        let static_lt = if weights.is_empty() {
-            [0.0, 0.0, 0.0]
-        } else {
-            let f = LookThroughFactors::from_weights(&weights);
-            let v = f.as_features();
-            [v[0], v[1], v[2]]
-        };
         out.push(FundData { code, navs, holdings, static_lt });
     }
-    out.sort_by(|a, b| a.code.cmp(&b.code));
     out
 }
 

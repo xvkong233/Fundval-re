@@ -1,19 +1,18 @@
 //! 市场状态过滤验证：只在沪深300处于上升趋势时交易，看胜率是否提升。
 
+mod common;
+
 use api::ml::dataset::trade_profitable;
 use api::ml::features::build_features;
 use api::ml::logreg::{train_logreg, LogRegTrainConfig};
 use api::quant::backtest::backtest_single_fund;
 use api::quant::calibration::PlattCalibrator;
-use api::quant::lookthrough::LookThroughFactors;
 use api::quant::signal::{SignalGenerator, TradingSignal};
 use api::quant::strategy::{Strategy, StrategyConfig};
 use std::collections::HashMap;
 
-const DATA_DIR: &str = "/home/hatch/workspace/fund_data";
-
 fn load_index() -> HashMap<String, f64> {
-    let text = std::fs::read_to_string(format!("{DATA_DIR}/klines_index_000300.json")).unwrap_or_default();
+    let text = std::fs::read_to_string(format!("{}/klines_index_000300.json", common::DATA_DIR)).unwrap_or_default();
     let items: Vec<serde_json::Value> = serde_json::from_str(&text).unwrap_or_default();
     let mut out = HashMap::new();
     for item in items {
@@ -47,43 +46,9 @@ fn regime_filter_test() {
     let index = load_index();
     println!("\n沪深300数据: {} 条", index.len());
 
-    // 加载基金（复用之前的逻辑，简化）
-    let mut funds: Vec<(String, Vec<(String, f64)>, [f64; 3])> = Vec::new();
-    let entries = std::fs::read_dir(DATA_DIR).expect("read dir");
-    for entry in entries.flatten() {
-        let name = entry.file_name().into_string().unwrap_or_default();
-        if !name.starts_with("nav_") || !name.ends_with(".json") {
-            continue;
-        }
-        let code = name[4..name.len() - 5].to_string();
-        let text = std::fs::read_to_string(entry.path()).unwrap_or_default();
-        let items: Vec<serde_json::Value> = serde_json::from_str(&text).unwrap_or_default();
-        let mut navs: Vec<(String, f64)> = Vec::new();
-        for item in items {
-            let date = item.get("date").and_then(|d| d.as_str()).unwrap_or("").to_string();
-            let nav: f64 = item.get("nav").and_then(|n| n.as_str()).and_then(|s| s.parse().ok()).unwrap_or(0.0);
-            if !date.is_empty() && nav > 0.0 {
-                navs.push((date, nav));
-            }
-        }
-        if navs.len() < 500 {
-            continue;
-        }
-        // 静态透视因子
-        let hpath = format!("{DATA_DIR}/holdings_{code}.json");
-        let htext = std::fs::read_to_string(&hpath).unwrap_or_default();
-        let hitems: Vec<serde_json::Value> = serde_json::from_str(&htext).unwrap_or_default();
-        let weights: Vec<f64> = hitems.iter().filter_map(|h| h.get("weight_pct").and_then(|w| w.as_f64())).collect();
-        let lt = if weights.is_empty() {
-            [0.0, 0.0, 0.0]
-        } else {
-            let f = LookThroughFactors::from_weights(&weights);
-            let v = f.as_features();
-            [v[0], v[1], v[2]]
-        };
-        funds.push((code, navs, lt));
-    }
-    println!("加载 {} 只基金", funds.len());
+    // 加载基金（随机抽样200只，可复现）
+    let funds = common::load_random_funds(200, 42, 800);
+    println!("加载 {} 只基金（随机抽样）", funds.len());
 
     // 训练（16特征）
     let mut all_x = Vec::new();

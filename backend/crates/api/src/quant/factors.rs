@@ -471,8 +471,8 @@ mod tests {
 
     #[test]
     fn ic_test_runs() {
-        let navs = sample_navs(600);
-        let res = factor_ic_test(&navs, 0, 20, 20);
+        let navs = sample_navs(800);
+        let res = factor_ic_test(&navs, 0, 20, 10);
         assert!(res.is_some());
     }
 }

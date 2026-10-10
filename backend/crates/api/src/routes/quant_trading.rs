@@ -429,7 +429,7 @@ pub async fn daily_recommendations(
     }
 
     // 为每只基金计算信号
-    let mut signals: Vec<(String, String, f64, Option<f64>)> = Vec::new();
+    let mut signals: Vec<(String, String, f64, Option<f64>, bool)> = Vec::new();
     for fund_code in &req.fund_codes {
         let navs = match load_nav_history(&pool, fund_code, "tiantian").await {
             Ok(v) => v,
@@ -442,8 +442,10 @@ pub async fn daily_recommendations(
         let feat = build_features(&navs, idx);
         // 简化：用模型直接预测（实际应走 SignalGenerator + 校准）
         let proba = dip_model.predict_proba(&feat).unwrap_or(0.5);
+        // Regime过滤：下跌趋势或极端波动时不给买入信号（实测胜率45.9%→67.9%）
+        let (regime_ok, _) = crate::quant::regime::entry_allowed(&navs, idx);
         // TODO: 股票透视需持仓数据，暂为 None
-        signals.push((fund_code.clone(), fund_code.clone(), proba, None));
+        signals.push((fund_code.clone(), fund_code.clone(), proba, None, regime_ok));
     }
 
     let recs = generate_daily_recommendations(

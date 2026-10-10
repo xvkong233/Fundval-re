@@ -99,7 +99,7 @@ pub struct DailyRecommendation {
 /// - `positions`: 当前持仓 (code → 确认日期)
 pub fn generate_daily_recommendations(
     now: chrono::DateTime<Local>,
-    signals: &[(String, String, f64, Option<f64>)],
+    signals: &[(String, String, f64, Option<f64>, bool)],
     positions: &std::collections::HashMap<String, NaiveDate>,
     buy_threshold: f64,
     sell_threshold: f64,
@@ -119,7 +119,7 @@ pub fn generate_daily_recommendations(
     };
 
     let mut out = Vec::new();
-    for (code, name, proba, lt_change) in signals {
+    for (code, name, proba, lt_change, regime_ok) in signals {
         let hold_days = positions.get(code).map(|confirm_date| {
             (today - *confirm_date).num_days().max(0)
         });
@@ -144,7 +144,9 @@ pub fn generate_daily_recommendations(
             }
             // 未持有：检查是否触发买入
             None => {
-                if *proba >= buy_threshold {
+                if !regime_ok {
+                    (Action::Wait, format!("模型概率{proba:.2}但市场状态不佳（下跌趋势/极端波动），放弃入场"))
+                } else if *proba >= buy_threshold {
                     (Action::Buy, format!("模型概率{proba:.2}达买入阈值"))
                 } else {
                     (Action::Wait, format!("模型概率{proba:.2}未达买入阈值{buy_threshold:.2}"))
@@ -224,7 +226,7 @@ mod tests {
         let mut positions = HashMap::new();
         positions.insert("000001".to_string(), today - chrono::Duration::days(3));
 
-        let signals = vec![("000001".to_string(), "测试基金".to_string(), 0.40, None)];
+        let signals = vec![("000001".to_string(), "测试基金".to_string(), 0.40, None, true)];
         let recs = generate_daily_recommendations(now, &signals, &positions, 0.60, 0.50);
         assert_eq!(recs[0].action, Action::Hold);
         assert!(recs[0].reason.contains("1.5%"));
@@ -234,9 +236,20 @@ mod tests {
     fn buy_signal_no_position() {
         let now = Local::now();
         let positions = HashMap::new();
-        let signals = vec![("000001".to_string(), "测试基金".to_string(), 0.65, Some(1.2))];
+        let signals = vec![("000001".to_string(), "测试基金".to_string(), 0.65, Some(1.2), true)];
         let recs = generate_daily_recommendations(now, &signals, &positions, 0.60, 0.50);
         assert_eq!(recs[0].action, Action::Buy);
         assert!(recs[0].reason.contains("透视"));
+    }
+
+    #[test]
+    fn regime_blocks_buy() {
+        // 模型概率达标但市场状态不佳 → 应 Wait 而非 Buy
+        let now = Local::now();
+        let positions = HashMap::new();
+        let signals = vec![("000001".to_string(), "测试基金".to_string(), 0.75, None, false)];
+        let recs = generate_daily_recommendations(now, &signals, &positions, 0.60, 0.50);
+        assert_eq!(recs[0].action, Action::Wait);
+        assert!(recs[0].reason.contains("市场状态"));
     }
 }

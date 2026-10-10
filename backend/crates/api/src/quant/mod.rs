@@ -6,6 +6,7 @@ pub mod lookthrough;
 pub mod optimize;
 pub mod patterns;
 pub mod portfolio;
+pub mod regime;
 pub mod screen4433;
 pub mod signal;
 pub mod strategy;

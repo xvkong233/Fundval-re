@@ -82,9 +82,9 @@ impl TrendStrategy {
         let ma_align = fi("ma_align");
 
         if !self.in_position {
-            // 入场条件：站上长期均线 + 缓冲 + 短期强于长期（动量确认）
+            // 入场条件：站上长期均线 + 缓冲 + 短期不处于下跌（动量确认）
             let above_long = dist_long > self.params.entry_buffer;
-            let momentum_ok = dist_short > dist_long * 0.5;
+            let momentum_ok = dist_short > -0.01; // 短期均线未破位
             let align_ok = ma_align > -0.2; // 不要求完全多头，但不能严重空头
             if above_long && momentum_ok && align_ok {
                 self.in_position = true;
@@ -196,7 +196,7 @@ mod tests {
 
     #[test]
     fn trend_runs() {
-        let navs: Vec<(String, f64)> = (0..400)
+        let navs: Vec<(String, f64)> = (0..600)
             .map(|i| {
                 (
                     format!("d{i}"),
@@ -205,7 +205,7 @@ mod tests {
             })
             .collect();
         let params = TrendParams::default();
-        let (ret, trades, mdd) = backtest_trend(&navs, &params, 250);
+        let (ret, trades, mdd) = backtest_trend(&navs, &params, 300);
         assert!(trades > 0);
         assert!(mdd >= 0.0);
         let _ = ret;
